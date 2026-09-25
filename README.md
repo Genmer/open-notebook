@@ -448,3 +448,26 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 
 ### 2026-09-24：文件夹体验第 1 轮评审修复（两页范式对齐）
 修复评审发现：命名弹窗 onConfirm 现真正返回 Promise（后端拒绝时保持打开可重试，两页建夹/重命名改 mutateAsync）；右键内联新建子夹成功后有落点 toast（「已在『父夹』内创建…」）；笔记本页浏览中的视图/文件夹被他页删除时自动回退根层/全部视图（不再卡幽灵位置）；深度上限前端三道防线（建夹入口限深禁用、移动弹窗按"目标深度+子树高>5"预置灰、后端 400 映射中文）+ MAX_GROUP_DEPTH 前端常量统一到 group-tree.ts；/sources 新建文件夹落点改为当前浏览文件夹（与笔记本页文件浏览器语义一致，弹窗落点提示/同级列表同步）；笔记本来源列表加 keepPreviousData（进出文件夹不再整列闪 loading）；移动弹窗空文件夹也显示 0 计数；无自定义视图的全新用户右键建夹自动先创建「我的文件夹」视图（绝不落进会被 AI 重分类覆盖的视图）；高亮计时改为新夹渲染出来后才开始；zh-CN/zh-TW/en-US 清掉 aiOverwriteHint 与重分类确认里的「视图」措辞（改「文件夹集」）。后端零改动。涉及：frontend/src/components/sources/（GroupDialogs/FolderRail/GroupTree/GroupPickerDialog/folder-parity.test）、frontend/src/app/(dashboard)/notebooks/components/SourcesColumn.tsx、frontend/src/app/(dashboard)/sources/page.tsx、frontend/src/lib/（hooks/use-sources.ts、utils/group-tree.ts、utils/error-handler.ts、locales/×14）。
+
+### 2026-09-25：笔记本页双列文件管理器交互与添加来源文件夹预填
+彻底重构笔记本详情页交互：废除原来源列内下拉框与大瓷砖网格遮盖卡片的繁琐交互，改为经典双列文件管理器范式。左侧新增独立可折叠的文件夹侧栏列 FoldersColumn（树形层级、数量徽章、增删改查菜单、视图切换、支持 w-60/w-12 独立收起），右侧来源列 SourcesColumn 始终直观展示对应来源卡片，点击左侧文件夹即时联动过滤并展示面包屑导航；添加来源对话框第 1 步前置曝光折叠条 FolderTargetSection，直观展示目标文件夹并支持直接修改，在特定文件夹下添加时自动预填上下文，填完 URL/文件后在第 1 步直接点完成即可落盘归档；空文件夹显示空态引导按钮。涉及：frontend/src/app/(dashboard)/notebooks/components/（FoldersColumn.tsx、SourcesColumn.tsx）、frontend/src/components/sources/（FolderTargetSection.tsx、AddSourceDialog.tsx）、notebook-columns-store.ts。
+
+### 2026-09-25：数据导出包包含系统设置与提示词配置
+完善数据备份与容灾：将通用系统设置 `open_notebook:content_settings`（处理引擎、向量化切块参数、Docling OCR/公式/视觉开关、Token 审计开关等）与全局自定义提示词 `open_notebook:default_prompts` 纳入数据导出与导入链路（分别生成 data/content_settings.ndjson 与 data/default_prompts.ndjson），导入时通过 UPSERT MERGE 安全还原合并，保持向后兼容老版本导出包，且物理隔离私有凭据。涉及：commands/data_transfer_commands.py、tests/test_data_transfer_commands.py。
+
+---
+
+## 后续体验优化与新功能规划路线图 (Roadmap)
+
+> 基于多维度工程与交互体检提炼，聚焦本地优先、隐私友好与知识研读体验，待后续逐步落地实现。
+
+### 1. 数据管理与备份体验增强
+- [ ] **导出包体积预估与文件明细预览（Export Size Estimation）**：在点击开始导出前，自动扫描统计当前项目附件大小、向量总数与文本体积，实时展示“预估压缩包体积（如 ~18.5 MB）”与文件清单，让备份心中有底。
+- [ ] **流式分块下载与实时百分比进度（Progressive Download with Percentage）**：解决大文件导出包下载时仅有转圈菊花的问题，通过流式进度监听展示实时下载速率、已下载字节与百分比进度条（如 `已下载 12.4 MB / 18.5 MB (67%)`）。
+- [ ] **按笔记本维度的模块化导出/分享（.onbook 课题包）**：支持勾选单个或多个笔记本进行针对性导出（包含对应的来源、笔记、向量和自定义文件夹结构），便于不同设备间迁移特定研究课题、分享轻量知识包或执行项目休眠归档。
+- [ ] **大包断点续传与解除 100MB 限制（Chunked Upload & Resume）**：重构大包导入逻辑，引入分片哈希校验与断点续传接口，彻底解除 100MB 单请求体限制，提升在弱网与超大知识库场景下的导入成功率。
+
+### 2. 深度研读与知识探索体验
+- [ ] **精确段落引用高亮与原文跳跃（Deep Citation Highlighting）**：将 AI 回答底部的文档级粗粒度引用升级为段落级引文锚点，点击引用标签直接在原 PDF 或文本对应页码精准高亮显示依据，大幅降低长文查证成本。
+- [ ] **多来源对比研读与结构化脑图生成（Source Comparison & Mindmap）**：支持多选指定来源一键提取核心异同点、自动提炼结构化思维导图（Mindmap）与大纲，辅助论文精读与考试备考。
+- [ ] **音频速记与播客转写批注增强**：提升音频/播客转写文字的段落结构化排版，支持在播放时词句级高亮联动与一键摘录进笔记。
