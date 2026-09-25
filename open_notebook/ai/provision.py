@@ -1,3 +1,6 @@
+from dataclasses import dataclass, field
+from typing import Optional
+
 from esperanto import LanguageModel
 from langchain_core.language_models.chat_models import BaseChatModel
 from loguru import logger
@@ -7,9 +10,20 @@ from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import token_count
 
 
-async def provision_langchain_model(
+@dataclass(frozen=True)
+class ProvisionedModel:
+    """The provisioned LangChain model plus the metadata usage tracking needs."""
+
+    langchain_model: BaseChatModel
+    model_name: Optional[str] = field(default=None)
+    provider: Optional[str] = field(default=None)
+    model_id: Optional[str] = field(default=None)
+    selection_reason: str = ""
+
+
+async def provision_langchain_model_with_info(
     content, model_id, default_type, **kwargs
-) -> BaseChatModel:
+) -> ProvisionedModel:
     """
     Returns the best model to use based on the context size and on whether there is a specific model being requested in Config.
     If context > 105_000, returns the large_context_model
@@ -58,4 +72,18 @@ async def provision_langchain_model(
             f"Please check that the model configured for '{default_type}' is a language model, not an embedding or speech model."
         )
 
-    return model.to_langchain()
+    return ProvisionedModel(
+        langchain_model=model.to_langchain(),
+        model_name=getattr(model, "model_name", None),
+        provider=getattr(model, "provider", None),
+        model_id=model_id,
+        selection_reason=selection_reason,
+    )
+
+
+async def provision_langchain_model(
+    content, model_id, default_type, **kwargs
+) -> BaseChatModel:
+    return (await provision_langchain_model_with_info(
+        content, model_id, default_type, **kwargs
+    )).langchain_model

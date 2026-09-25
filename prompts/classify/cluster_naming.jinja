@@ -1,0 +1,51 @@
+You are a research librarian organizing a personal knowledge base. Source documents were pre-clustered by the semantic similarity of their content embeddings. Your job is to turn these raw clusters into named thematic groups.
+
+<clusters>
+{% for cluster in clusters %}
+<cluster id="{{ cluster.cluster_id }}">
+Representative titles:
+{% for title in cluster.representative_titles %}
+- {{ title }}
+{% endfor %}
+</cluster>
+{% endfor %}
+</clusters>
+
+{% if suggested_merges %}
+Some cluster pairs are nearly identical in embedding space and are strong merge candidates:
+<suggested_merges>
+{% for pair in suggested_merges %}
+- clusters {{ pair[0] }} and {{ pair[1] }}
+{% endfor %}
+</suggested_merges>
+Merge such pairs when one group name fits both.
+{% endif %}
+
+{% if leftover_sources %}
+The following sources could not be clustered (missing or inconsistent embeddings). Assign each one to one of the groups above where it fits, or give it a new group. If a source clearly belongs to no group, leave it out of every group:
+<leftover_sources>
+{% for source in leftover_sources %}
+- {{ source.source_id }}: {{ source.title }}
+{% endfor %}
+</leftover_sources>
+{% endif %}
+
+{% if previous_error %}
+A previous attempt produced invalid output: {{ previous_error }}
+Correct that problem this time.
+{% endif %}
+
+Rules:
+1. Group names must be short (30 characters max), descriptive, and in the same language as the source titles.
+2. A group may combine one or more clusters (list their ids in cluster_ids) plus any leftover sources (list their ids in extra_source_ids).
+3. A single-source cluster with nothing in common with any other source is noise: do NOT create a group for it (its members simply stay ungrouped).
+4. Every cluster id must appear in at most one group. Leftover sources not mentioned anywhere stay ungrouped.
+5. Prefer fewer, broader groups over many tiny ones.
+
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

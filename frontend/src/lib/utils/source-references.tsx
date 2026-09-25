@@ -324,6 +324,24 @@ export function createReferenceLinkComponent(
   return ReferenceLinkComponent
 }
 
+// Max characters of a resolved source title shown in the reference list.
+const TITLE_MAX_LENGTH = 40
+
+// Cut by code points, not UTF-16 units, so an emoji astral char never gets
+// split into a lone surrogate.
+function truncateTitle(title: string): string {
+  const chars = Array.from(title)
+  return chars.length > TITLE_MAX_LENGTH
+    ? `${chars.slice(0, TITLE_MAX_LENGTH).join('')}...`
+    : title
+}
+
+// Titles are user content: [ ] ( ) would break the [text](href) link, so escape
+// them (and backslash first) before embedding into the link text.
+function escapeMarkdownLinkText(text: string): string {
+  return text.replace(/([\\\[\]()])/g, '\\$1')
+}
+
 /**
  * Convert references in text to compact numbered format with reference list
  *
@@ -339,13 +357,18 @@ export function createReferenceLinkComponent(
  *
  * @param text - Original text with references
  * @param referencesLabel - Locales label for "References" title (default: "References")
+ * @param titleLookup - Optional source id → display title map for the reference list
  * @returns Text with numbered citations and reference list appended
  *
  * @example
  * Input: "See [source:abc] and [note:xyz]. Also [source:abc] again."
  * Output: "See [1] and [2]. Also [1] again.\n\nReferences:\n[1] - [source:abc]\n[2] - [note:xyz]"
  */
-export function convertReferencesToCompactMarkdown(text: string, referencesLabel: string = 'References'): string {
+export function convertReferencesToCompactMarkdown(
+  text: string,
+  referencesLabel: string = 'References',
+  titleLookup?: Map<string, string>
+): string {
   // Step 1: Parse all references using existing function
   const references = parseSourceReferences(text)
 
@@ -410,7 +433,12 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Iterate through reference map in insertion order (Map preserves order)
   for (const [, refData] of referenceMap) {
-    const refListItem = `[${refData.number}] - [${refData.type}:${refData.id}](#ref-${refData.type}-${refData.id})`
+    const resolvedTitle =
+      refData.type === 'source' && titleLookup ? titleLookup.get(refData.id) : undefined
+    const linkText = resolvedTitle
+      ? escapeMarkdownLinkText(truncateTitle(resolvedTitle))
+      : `${refData.type}:${refData.id}`
+    const refListItem = `[${refData.number}] - [${linkText}](#ref-${refData.type}-${refData.id})`
     refListLines.push(refListItem)
   }
 

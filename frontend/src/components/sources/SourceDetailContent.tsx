@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { sourcesApi } from '@/lib/api/sources'
 import { QUERY_KEYS } from '@/lib/api/query-client'
-import { useSource, useUpdateSource, useDeleteSource } from '@/lib/hooks/use-sources'
+import { useSource, useSourceStatus, useUpdateSource, useDeleteSource } from '@/lib/hooks/use-sources'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
 import { embeddingApi } from '@/lib/api/embedding'
@@ -14,11 +14,11 @@ import { Transformation } from '@/lib/types/transformations'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ContentUnavailable } from '@/components/common/ContentUnavailable'
 import { isNotFoundError } from '@/lib/utils/error-handler'
+import { displayTransformationTitle } from '@/lib/utils/transformation-display'
 import { InlineEdit } from '@/components/common/InlineEdit'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   DropdownMenu,
@@ -58,7 +58,6 @@ import {
   Plus,
   Lightbulb,
   Database,
-  AlertCircle,
   MessageSquare,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -67,6 +66,8 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceInsightDialog } from '@/components/sources/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/sources/NotebookAssociations'
+import { SourceEmbeddingProgress } from '@/components/sources/SourceEmbeddingProgress'
+import { SourceProcessingSteps } from '@/components/sources/SourceProcessingSteps'
 
 interface SourceDetailContentProps {
   sourceId: string
@@ -122,6 +123,15 @@ function SourceDetailContentInner({
   const loadError = loadQueryError ? (isNotFoundError(loadQueryError) ? 'not-found' : 'error') : null
   const updateSource = useUpdateSource()
   const deleteSource = useDeleteSource()
+
+  // Embedding progress: prefer the polled status endpoint, fall back to the
+  // denormalized fields on the detail payload.
+  const { data: statusData } = useSourceStatus(sourceId)
+  const embedding = statusData?.embedding ?? source?.embedding ?? null
+  const embeddingBusy = embedding?.status === 'queued' || embedding?.status === 'running'
+  const invalidateEmbeddingStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['sources', sourceId, 'status'] })
+  }, [queryClient, sourceId])
 
   // file_available comes from the source payload; downloads may flip it later,
   // so keep it as local state synced from the query data.
@@ -247,6 +257,8 @@ function SourceDetailContentInner({
       setIsEmbedding(true)
       const response = await embeddingApi.embedContent(sourceId, 'source')
       toast.success(response.message || t('common.success'))
+      // Kick off status polling so the embedding progress UI kicks in.
+      invalidateEmbeddingStatus()
       await refetchSource()
     } catch (err) {
       console.error('Failed to embed content:', err)
@@ -464,10 +476,16 @@ function SourceDetailContentInner({
                 )}
                 <DropdownMenuItem
                   onClick={handleEmbedContent}
-                  disabled={isEmbedding || source.embedded}
+                  disabled={isEmbedding || embeddingBusy || source.embedded}
                 >
                   <Database className="mr-2 h-4 w-4" />
-                  {isEmbedding ? t('sources.embedding') : source.embedded ? t('sources.alreadyEmbedded') : t('sources.embedContent')}
+                  {embeddingBusy
+                    ? t('sources.embeddingInProgress')
+                    : isEmbedding
+                      ? t('sources.embedding')
+                      : source.embedded
+                        ? t('sources.alreadyEmbedded')
+                        : t('sources.embedContent')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -482,6 +500,8 @@ function SourceDetailContentInner({
           </div>
         </div>
       </div>
+
+      <SourceProcessingSteps sourceId={sourceId} steps={statusData?.steps ?? null} />
 
       {/* Tabs Content */}
       <div className="flex-1 overflow-y-auto">
@@ -576,7 +596,7 @@ function SourceDetailContentInner({
                     <SelectContent>
                       {transformations.map((trans) => (
                         <SelectItem key={trans.id} value={trans.id}>
-                          {trans.title || trans.name}
+                          {displayTransformationTitle(trans.title, t) || trans.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -619,7 +639,7 @@ function SourceDetailContentInner({
                       <div className="flex items-center gap-2">
                         <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden="true" />
                         <span className="text-xs font-medium uppercase tracking-wide text-teal">
-                          {insight.insight_type}
+                          {displayTransformationTitle(insight.insight_type, t)}
                         </span>
                       </div>
                       <p className="mt-2 text-sm text-muted-foreground">
@@ -649,28 +669,17 @@ function SourceDetailContentInner({
             <section className="space-y-5">
               <h3 className="text-[15.5px] font-medium">{t('sources.details')}</h3>
               <div className="space-y-5">
-                {/* Embedding Alert */}
-                {!source.embedded && (
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>
-                      {t('sources.notEmbeddedAlert')}
-                    </AlertTitle>
-                    <AlertDescription>
-                      {t('sources.notEmbeddedDesc')}
-                      <div className="mt-3">
-                        <Button
-                          onClick={handleEmbedContent}
-                          disabled={isEmbedding}
-                          size="sm"
-                        >
-                          <Database className="mr-2 h-4 w-4" />
-                          {isEmbedding ? t('sources.embedding') : t('sources.embedContent')}
-                        </Button>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
+                {/* Embedding progress / call-to-action */}
+                <SourceEmbeddingProgress
+                  sourceId={sourceId}
+                  embedding={
+                    embedding ?? {
+                      status: source.embedded ? 'completed' : 'not_embedded',
+                      embedded_chunks: source.embedded_chunks ?? 0,
+                    }
+                  }
+                  onEmbedSubmitted={invalidateEmbeddingStatus}
+                />
 
                 {/* Source Information */}
                 <div className="space-y-4">

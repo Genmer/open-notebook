@@ -71,7 +71,7 @@ Normative rules for working on the Python backend. Architecture and design ratio
 | Variable | Meaning |
 |---|---|
 | `OPEN_NOTEBOOK_ENCRYPTION_KEY` (or `_FILE`) | Required for credential storage; any string, no default |
-| `OPEN_NOTEBOOK_CHUNK_SIZE` / `_CHUNK_OVERLAP` | Token-based (default 400 / 15%); restart required |
+| `OPEN_NOTEBOOK_CHUNK_SIZE` / `_CHUNK_OVERLAP` | Token-based (default 400 / 15%); Settings page (DB) overrides env only when explicitly filled in, no restart needed |
 | `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` | Upload cap (default 100) |
 | `LANGGRAPH_CHECKPOINT_FILE` | Chat history SQLite path |
 | `CORS_ORIGINS` | Restrict before production |

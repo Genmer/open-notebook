@@ -1,9 +1,12 @@
+from typing import Dict
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from surreal_commands import get_command_status
 
 from api.command_service import CommandService
 from api.models import (
+    EmbeddingStatusSummary,
     RebuildProgress,
     RebuildRequest,
     RebuildResponse,
@@ -15,19 +18,76 @@ from open_notebook.exceptions import OpenNotebookError
 
 router = APIRouter()
 
+# Group-by normalization buckets; anything unlisted (incl. NULL) is not_embedded.
+_KNOWN_STATUS_COUNTS = ("completed", "queued", "running", "failed", "partial")
+
+
+@router.get("/status", response_model=EmbeddingStatusSummary)
+async def get_embedding_status():
+    """Per-status source counts for the 'embed all pending' panel."""
+    try:
+        # Aliasing the grouped field breaks GROUP BY here (returns one bogus
+        # bucket) - group by the raw field name and read that key back.
+        rows = await repo_query(
+            """
+            SELECT embedding_status, count() AS c FROM source
+            WHERE full_text != NONE AND string::trim(full_text) != ''
+            GROUP BY embedding_status
+            """
+        )
+        counts: Dict[str, int] = {key: 0 for key in _KNOWN_STATUS_COUNTS}
+        counts["not_embedded"] = 0
+        for row in rows or []:
+            status = row.get("embedding_status", row.get("s"))
+            n = int(row.get("c") or 0)
+            if status in counts:
+                counts[status] += n
+            else:
+                # NULL / unknown values mean "never embedded"
+                counts["not_embedded"] += n
+
+        pending = counts["not_embedded"] + counts["failed"] + counts["partial"]
+        return EmbeddingStatusSummary(
+            total_sources=sum(counts.values()),
+            completed=counts["completed"],
+            queued=counts["queued"],
+            running=counts["running"],
+            failed=counts["failed"],
+            partial=counts["partial"],
+            not_embedded=counts["not_embedded"],
+            pending=pending,
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get embedding status: {e}")
+        logger.exception(e)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get embedding status: {str(e)}"
+        )
+
 
 @router.post("/rebuild", response_model=RebuildResponse)
 async def start_rebuild(request: RebuildRequest):
     """
     Start a background job to rebuild embeddings.
 
-    - **mode**: "existing" (re-embed items with embeddings) or "all" (embed everything)
+    - **mode**: "existing" (re-embed items with embeddings), "all" (embed everything)
+      or "missing" (sources-only: embed sources without a completed embedding;
+      include flags are ignored for notes/insights)
     - **include_sources**: Include sources in rebuild (default: true)
     - **include_notes**: Include notes in rebuild (default: true)
     - **include_insights**: Include insights in rebuild (default: true)
 
     Returns command ID to track progress and estimated item count.
     """
+    include_notes = request.include_notes
+    include_insights = request.include_insights
+    if request.mode == "missing":
+        # missing mode is sources-only; contradicting flags are silently dropped.
+        include_notes = False
+        include_insights = False
+
     try:
         logger.info(f"Starting rebuild request: mode={request.mode}")
 
@@ -50,6 +110,15 @@ async def start_rebuild(request: RebuildRequest):
                     )) as count FROM {}
                     """
                 )
+            elif request.mode == "missing":
+                result = await repo_query(
+                    """
+                    SELECT VALUE count() FROM source
+                    WHERE full_text != NONE AND string::trim(full_text) != ''
+                    AND (embedding_status IS NONE OR embedding_status IN ['not_embedded', 'failed', 'partial'])
+                    GROUP ALL
+                    """
+                )
             else:
                 # Count all sources with content
                 result = await repo_query(
@@ -61,7 +130,7 @@ async def start_rebuild(request: RebuildRequest):
             elif result:
                 total_estimate += result[0] if isinstance(result[0], int) else 0
 
-        if request.include_notes:
+        if include_notes:
             if request.mode == "existing":
                 result = await repo_query(
                     "SELECT VALUE count() as count FROM note WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
@@ -76,7 +145,7 @@ async def start_rebuild(request: RebuildRequest):
             elif result:
                 total_estimate += result[0] if isinstance(result[0], int) else 0
 
-        if request.include_insights:
+        if include_insights:
             if request.mode == "existing":
                 result = await repo_query(
                     "SELECT VALUE count() as count FROM source_insight WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
@@ -100,8 +169,8 @@ async def start_rebuild(request: RebuildRequest):
             {
                 "mode": request.mode,
                 "include_sources": request.include_sources,
-                "include_notes": request.include_notes,
-                "include_insights": request.include_insights,
+                "include_notes": include_notes,
+                "include_insights": include_insights,
             },
         )
 

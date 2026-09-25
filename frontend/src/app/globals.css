@@ -364,6 +364,158 @@
   --shadow-overlay: 0 2px 6px rgba(0, 0, 0, 0.4), 0 20px 52px rgba(0, 0, 0, 0.55);
 }
 
+/* ============================================================================
+   CLASSIC SKIN — light. Raw layers only, same set as :root above
+   (shadows/radius/motion inherited); aliases re-resolve on their own.
+   Order matters: this block, the font redirect, then classic dark last.
+   ========================================================================== */
+:root[data-skin='classic'] {
+  /* core palette */
+  --fern: oklch(0.623 0.214 259.815);
+  --fern-deep: oklch(0.546 0.245 262.881);
+  --fern-tint: oklch(0.955 0.02 254.6);
+
+  --sage: oklch(0.552 0.016 285.938);
+  --sage-deep: oklch(0.444 0.017 285.786);
+  --sage-tint: oklch(0.967 0.001 286.375);
+
+  --gold: #a97b12;
+  --gold-deep: #7c5a05;
+  --gold-tint: #f3ead3;
+
+  --teal: oklch(0.623 0.214 259.815);
+  --teal-deep: oklch(0.546 0.245 262.881);
+  --teal-tint: oklch(0.955 0.02 254.6);
+
+  --plum: oklch(0.5 0.19 300);
+  --plum-tint: oklch(0.93 0.03 300);
+
+  --mauve: oklch(0.55 0.13 350);
+  --mauve-deep: oklch(0.45 0.12 350);
+  --mauve-tint: oklch(0.94 0.025 350);
+
+  --slate: oklch(0.48 0.06 255);
+  --slate-deep: oklch(0.4 0.055 255);
+  --slate-tint: oklch(0.935 0.015 255);
+
+  --violet: oklch(0.5 0.2 295);
+  --violet-deep: oklch(0.43 0.19 295);
+  --violet-tint: oklch(0.94 0.03 295);
+
+  --clay: #b0451f;
+  --clay-deep: #93330f;
+  --clay-tint: #f5e4db;
+
+  /* semantic raws */
+  --bg: oklch(1 0 0);
+  --bg-deep: oklch(0.985 0 0);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+  --surface-recessed: oklch(0.967 0.001 286.375);
+  --surface-sunken: oklch(0.94 0.002 286.375);
+
+  --ink: oklch(0.141 0.005 285.823);
+  --ink-soft: oklch(0.552 0.016 285.938);
+  --ink-faint: oklch(0.65 0.012 286);
+  --ink-faintest: oklch(0.75 0.01 286);
+
+  --line: oklch(0.92 0.004 286.32);
+  --line-soft: oklch(0.94 0.002 286.32);
+  --line-strong: oklch(0.141 0.005 285.823);
+
+  --primary: oklch(0.623 0.214 259.815);
+  --primary-hover: oklch(0.546 0.245 262.881);
+  --on-primary: oklch(0.97 0.014 254.604);
+
+  --danger: oklch(0.577 0.245 27.325);
+  --danger-deep: oklch(0.5 0.22 27.3);
+  --danger-tint: oklch(0.96 0.02 27.3);
+
+  --excerpt-wash: oklch(0.97 0.008 254.6);
+  --best-match: oklch(0.623 0.214 259.815 / 0.16);
+  --best-match-ring: oklch(0.623 0.214 259.815 / 0.16);
+}
+
+/* Font redirect for classic — next/font classes define the source vars on
+   body, this higher-specificity override re-points them at Geist; both
+   light and dark classic use it. */
+:root[data-skin='classic'] body {
+  --font-instrument-sans: var(--font-geist-sans);
+  --font-spline-mono: var(--font-geist-mono);
+  --font-bricolage: var(--font-geist-sans);
+}
+
+/* ============================================================================
+   CLASSIC SKIN — dark. Must stay after the classic-light block: equal
+   specificity, file order decides when both match.
+   ========================================================================== */
+.dark[data-skin='classic'] {
+  /* core palette */
+  --fern: oklch(0.7 0.15 254);
+  --fern-deep: oklch(0.76 0.13 254);
+  --fern-tint: oklch(0.25 0.04 254);
+
+  --sage: oklch(0.68 0.015 286);
+  --sage-deep: oklch(0.74 0.015 286);
+  --sage-tint: oklch(0.24 0.012 286);
+
+  --gold: #cfa13e;
+  --gold-deep: #ddb55f;
+  --gold-tint: #322b1b;
+
+  --teal: oklch(0.7 0.15 254);
+  --teal-deep: oklch(0.76 0.13 254);
+  --teal-tint: oklch(0.25 0.04 254);
+
+  --plum: oklch(0.7 0.12 300);
+  --plum-tint: oklch(0.27 0.04 300);
+
+  --mauve: oklch(0.72 0.09 350);
+  --mauve-deep: oklch(0.78 0.08 350);
+  --mauve-tint: oklch(0.28 0.03 350);
+
+  --slate: oklch(0.68 0.05 255);
+  --slate-deep: oklch(0.74 0.05 255);
+  --slate-tint: oklch(0.25 0.03 255);
+
+  --violet: oklch(0.68 0.15 295);
+  --violet-deep: oklch(0.74 0.14 295);
+  --violet-tint: oklch(0.28 0.05 295);
+
+  --clay: #f08a5c;
+  --clay-deep: #f5a07a;
+  --clay-tint: #35211a;
+
+  /* semantic raws */
+  --bg: oklch(0.141 0.005 285.823);
+  --bg-deep: oklch(0.11 0.005 285.823);
+  --surface: oklch(0.21 0.006 285.885);
+  --surface-raised: oklch(0.24 0.006 286);
+  --surface-recessed: oklch(0.274 0.006 286.033);
+  --surface-sunken: oklch(0.35 0.01 286.033);
+
+  --ink: oklch(0.985 0 0);
+  --ink-soft: oklch(0.705 0.015 286.067);
+  --ink-faint: oklch(0.52 0.012 286);
+  --ink-faintest: oklch(0.45 0.01 286);
+
+  --line: oklch(1 0 0 / 10%);
+  --line-soft: oklch(1 0 0 / 8%);
+  --line-strong: oklch(0.985 0 0);
+
+  --primary: oklch(0.546 0.245 262.881);
+  --primary-hover: oklch(0.6 0.22 262.9);
+  --on-primary: oklch(0.97 0.014 254.604);
+
+  --danger: oklch(0.704 0.191 22.216);
+  --danger-deep: oklch(0.75 0.17 22.216);
+  --danger-tint: oklch(0.25 0.05 22.216);
+
+  --excerpt-wash: oklch(0.25 0.03 254.6);
+  --best-match: oklch(0.546 0.245 262.881 / 0.25);
+  --best-match-ring: oklch(0.546 0.245 262.881 / 0.25);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

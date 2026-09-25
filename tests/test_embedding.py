@@ -6,13 +6,31 @@ Tests embedding generation and mean pooling functionality.
 
 import pytest
 
-from open_notebook.utils.chunking import CHUNK_SIZE
 from open_notebook.utils.embedding import (
     generate_embedding,
     generate_embeddings,
     mean_pool_embeddings,
 )
+from open_notebook.utils.embedding_config import (
+    get_embedding_params,
+    reset_embedding_params_cache,
+)
 from open_notebook.utils.token_utils import token_count
+
+
+@pytest.fixture(autouse=True)
+def _default_embedding_params(monkeypatch):
+    """Pin params to built-in defaults so tests don't depend on local .env."""
+    for var in (
+        "OPEN_NOTEBOOK_CHUNK_SIZE",
+        "OPEN_NOTEBOOK_CHUNK_OVERLAP",
+        "OPEN_NOTEBOOK_MIN_CHUNK_SIZE",
+        "OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    reset_embedding_params_cache()
+    yield
+    reset_embedding_params_cache()
 
 
 def _build_text_exceeding_tokens(fragment: str, threshold_tokens: int) -> str:
@@ -194,7 +212,9 @@ class TestGenerateEmbedding:
         """Test that long text is chunked and mean pooled."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        long_text = _build_text_exceeding_tokens("This is a sentence. ", CHUNK_SIZE)
+        long_text = _build_text_exceeding_tokens(
+            "This is a sentence. ", get_embedding_params().chunk_size
+        )
 
         mock_model = MagicMock()
         # Return multiple embeddings (one per chunk)
@@ -237,14 +257,46 @@ class TestGenerateEmbedding:
             )
             assert len(result) == 3
 
+    @pytest.mark.asyncio
+    async def test_explicit_params_override_snapshot(self):
+        """Explicit EmbeddingParams win over the shared snapshot for chunking."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from open_notebook.utils.embedding_config import EmbeddingParams
+
+        long_text = _build_text_exceeding_tokens(
+            "This is a sentence. ", 200  # > small chunk_size below, < snapshot 400
+        )
+
+        mock_model = MagicMock()
+        mock_model.aembed = AsyncMock(return_value=[[1.0, 0.0, 0.0]])
+
+        with patch(
+            "open_notebook.ai.models.model_manager.get_embedding_model",
+            new_callable=AsyncMock,
+            return_value=mock_model,
+        ):
+            result = await generate_embedding(
+                long_text,
+                params=EmbeddingParams(
+                    chunk_size=100,
+                    chunk_overlap=0,
+                    min_chunk_size=0,
+                    embedding_batch_size=50,
+                ),
+            )
+            # Text was split under chunk_size=100 (snapshot default 400 would
+            # have embedded it directly), then all chunks sent in one batch.
+            (embedded_texts,) = mock_model.aembed.call_args[0]
+            assert len(embedded_texts) >= 3
+            assert len(result) == 3
 
     @pytest.mark.asyncio
     async def test_batching(self):
-        """Test that large input is split into batches of EMBEDDING_BATCH_SIZE."""
+        """Test that large input is split into batches of the given batch_size."""
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        from open_notebook.utils.embedding import EMBEDDING_BATCH_SIZE
-
+        batch_size = 50
         num_texts = 120
         texts = [f"text_{i}" for i in range(num_texts)]
 
@@ -261,13 +313,13 @@ class TestGenerateEmbedding:
             new_callable=AsyncMock,
             return_value=mock_model,
         ):
-            result = await generate_embeddings(texts)
+            result = await generate_embeddings(texts, batch_size=batch_size)
 
             assert len(result) == num_texts
             # 120 texts / 50 batch size = 3 batches (50, 50, 20)
             assert mock_model.aembed.call_count == 3
-            assert len(mock_model.aembed.call_args_list[0][0][0]) == EMBEDDING_BATCH_SIZE
-            assert len(mock_model.aembed.call_args_list[1][0][0]) == EMBEDDING_BATCH_SIZE
+            assert len(mock_model.aembed.call_args_list[0][0][0]) == batch_size
+            assert len(mock_model.aembed.call_args_list[1][0][0]) == batch_size
             assert len(mock_model.aembed.call_args_list[2][0][0]) == 20
 
     @pytest.mark.asyncio

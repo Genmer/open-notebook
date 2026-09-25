@@ -28,10 +28,22 @@ from open_notebook.graphs.ask import (
 EMPTY_CONFIG = cast(RunnableConfig, {"configurable": {}})
 
 
+@pytest.fixture(autouse=True)
+def _no_usage_recording():
+    with patch("open_notebook.graphs.ask.record_llm_usage", new=AsyncMock()):
+        yield
+
+
 def _model_returning(content: str) -> MagicMock:
     model = MagicMock()
     model.ainvoke = AsyncMock(return_value=MagicMock(content=content))
     return model
+
+
+def _provision_returning(content: str) -> MagicMock:
+    prov = MagicMock()
+    prov.langchain_model = _model_returning(content)
+    return prov
 
 
 def _strategy_json(terms: list[str]) -> str:
@@ -52,8 +64,8 @@ class TestAskTokenBudget:
     async def test_strategy_stage_uses_shared_budget(self):
         state = cast(ThreadState, {"question": "q"})
         with patch(
-            "open_notebook.graphs.ask.provision_langchain_model",
-            new=AsyncMock(return_value=_model_returning(_strategy_json(["rag"]))),
+            "open_notebook.graphs.ask.provision_langchain_model_with_info",
+            new=AsyncMock(return_value=_provision_returning(_strategy_json(["rag"]))),
         ) as provision:
             await call_model_with_messages(state, EMPTY_CONFIG)
         assert provision.call_args.kwargs["max_tokens"] == ASK_MAX_TOKENS
@@ -67,8 +79,8 @@ class TestAskTokenBudget:
                 new=AsyncMock(return_value=[{"id": "source:1", "content": "x"}]),
             ),
             patch(
-                "open_notebook.graphs.ask.provision_langchain_model",
-                new=AsyncMock(return_value=_model_returning("partial")),
+                "open_notebook.graphs.ask.provision_langchain_model_with_info",
+                new=AsyncMock(return_value=_provision_returning("partial")),
             ) as provision,
         ):
             await provide_answer(state, EMPTY_CONFIG)  # type: ignore[arg-type]
@@ -85,8 +97,8 @@ class TestAskTokenBudget:
             },
         )
         with patch(
-            "open_notebook.graphs.ask.provision_langchain_model",
-            new=AsyncMock(return_value=_model_returning("final")),
+            "open_notebook.graphs.ask.provision_langchain_model_with_info",
+            new=AsyncMock(return_value=_provision_returning("final")),
         ) as provision:
             result = await write_final_answer(state, EMPTY_CONFIG)
         assert provision.call_args.kwargs["max_tokens"] == ASK_MAX_TOKENS
@@ -98,9 +110,9 @@ class TestEmptyStrategyHandling:
     async def test_blank_search_terms_are_dropped(self):
         state = cast(ThreadState, {"question": "q"})
         with patch(
-            "open_notebook.graphs.ask.provision_langchain_model",
+            "open_notebook.graphs.ask.provision_langchain_model_with_info",
             new=AsyncMock(
-                return_value=_model_returning(_strategy_json(["", "  ", "rag"]))
+                return_value=_provision_returning(_strategy_json(["", "  ", "rag"]))
             ),
         ):
             result = await call_model_with_messages(state, EMPTY_CONFIG)
@@ -110,8 +122,8 @@ class TestEmptyStrategyHandling:
     async def test_all_blank_terms_raise_instead_of_silent_no_results(self):
         state = cast(ThreadState, {"question": "q"})
         with patch(
-            "open_notebook.graphs.ask.provision_langchain_model",
-            new=AsyncMock(return_value=_model_returning(_strategy_json(["", "", ""]))),
+            "open_notebook.graphs.ask.provision_langchain_model_with_info",
+            new=AsyncMock(return_value=_provision_returning(_strategy_json(["", "", ""]))),
         ):
             with pytest.raises(ExternalServiceError, match="no search terms"):
                 await call_model_with_messages(state, EMPTY_CONFIG)
@@ -120,8 +132,8 @@ class TestEmptyStrategyHandling:
     async def test_no_searches_raise(self):
         state = cast(ThreadState, {"question": "q"})
         with patch(
-            "open_notebook.graphs.ask.provision_langchain_model",
-            new=AsyncMock(return_value=_model_returning(_strategy_json([]))),
+            "open_notebook.graphs.ask.provision_langchain_model_with_info",
+            new=AsyncMock(return_value=_provision_returning(_strategy_json([]))),
         ):
             with pytest.raises(ExternalServiceError):
                 await call_model_with_messages(state, EMPTY_CONFIG)
@@ -135,9 +147,9 @@ class TestEmptyStrategyHandling:
                 new=AsyncMock(return_value=[{"id": "source:1", "content": "x"}]),
             ),
             patch(
-                "open_notebook.graphs.ask.provision_langchain_model",
+                "open_notebook.graphs.ask.provision_langchain_model_with_info",
                 new=AsyncMock(
-                    return_value=_model_returning("<think>only reasoning</think>")
+                    return_value=_provision_returning("<think>only reasoning</think>")
                 ),
             ),
         ):
@@ -154,8 +166,8 @@ class TestEmptyStrategyHandling:
                 new=AsyncMock(return_value=[{"id": "source:1", "content": "x"}]),
             ),
             patch(
-                "open_notebook.graphs.ask.provision_langchain_model",
-                new=AsyncMock(return_value=_model_returning("<think>cut off mid")),
+                "open_notebook.graphs.ask.provision_langchain_model_with_info",
+                new=AsyncMock(return_value=_provision_returning("<think>cut off mid")),
             ),
         ):
             result = await provide_answer(state, EMPTY_CONFIG)  # type: ignore[arg-type]
@@ -219,8 +231,8 @@ class TestNotebookScope:
                 new=AsyncMock(return_value=[{"id": "source:1", "content": "x"}]),
             ) as search,
             patch(
-                "open_notebook.graphs.ask.provision_langchain_model",
-                new=AsyncMock(return_value=_model_returning("partial")),
+                "open_notebook.graphs.ask.provision_langchain_model_with_info",
+                new=AsyncMock(return_value=_provision_returning("partial")),
             ),
         ):
             await provide_answer(state, EMPTY_CONFIG)  # type: ignore[arg-type]

@@ -6,7 +6,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.ai.usage import record_llm_usage
 from open_notebook.utils.text_utils import clean_thinking_content, extract_text_content
 
 
@@ -18,27 +19,38 @@ class PatternChainState(TypedDict):
 
 
 async def call_model(state: dict, config: RunnableConfig) -> dict:
-    content = state["input_text"]
-    # state["prompt"] is caller-supplied free text. Never compile it as Jinja
-    # template *source* (Prompter(template_text=...)) - pass it as a plain
-    # render variable into a fixed, developer-authored template instead.
-    # See docs/7-DEVELOPMENT/security.md (GHSA-f35w-wx37-26q7).
-    system_prompt = Prompter(
-        prompt_template="pattern/generic", parser=state.get("parser")
-    ).render(data=state)
-    payload = [SystemMessage(content=system_prompt)] + [HumanMessage(content=content)]
-    chain = await provision_langchain_model(
-        str(payload),
-        config.get("configurable", {}).get("model_id"),
-        "transformation",
-        max_tokens=5000,
-    )
+    prov = None
+    try:
+        content = state["input_text"]
+        # state["prompt"] is caller-supplied free text. Never compile it as Jinja
+        # template *source* (Prompter(template_text=...)) - pass it as a plain
+        # render variable into a fixed, developer-authored template instead.
+        # See docs/7-DEVELOPMENT/security.md (GHSA-f35w-wx37-26q7).
+        system_prompt = Prompter(
+            prompt_template="pattern/generic", parser=state.get("parser")
+        ).render(data=state)
+        payload = [SystemMessage(content=system_prompt)] + [HumanMessage(content=content)]
+        prov = await provision_langchain_model_with_info(
+            str(payload),
+            config.get("configurable", {}).get("model_id"),
+            "transformation",
+            max_tokens=5000,
+        )
+        chain = prov.langchain_model
 
-    response = await chain.ainvoke(payload)
+        response = await chain.ainvoke(payload)
 
-    # Clean thinking tags from response (handles extended thinking models)
-    output = clean_thinking_content(extract_text_content(response.content))
-    return {"output": output}
+        # Clean thinking tags from response (handles extended thinking models)
+        output = clean_thinking_content(extract_text_content(response.content))
+
+        await record_llm_usage(model=prov, ai_message=response, call_type="prompt")
+
+        return {"output": output}
+    except Exception as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="prompt", success=False, error=str(e)
+        )
+        raise
 
 
 agent_state = StateGraph(PatternChainState)

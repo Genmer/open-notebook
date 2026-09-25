@@ -14,10 +14,21 @@ export interface EmbedContentResponse {
 }
 
 export interface RebuildEmbeddingsRequest {
-  mode: 'existing' | 'all'
+  mode: 'existing' | 'all' | 'missing'
   include_sources?: boolean
   include_notes?: boolean
   include_insights?: boolean
+}
+
+export interface EmbeddingStatusSummary {
+  total_sources: number
+  completed: number
+  queued: number
+  running: number
+  failed: number
+  partial: number
+  not_embedded: number
+  pending: number
 }
 
 export interface RebuildEmbeddingsResponse {
@@ -74,6 +85,11 @@ export const embeddingApi = {
 
   getRebuildStatus: async (commandId: string): Promise<RebuildStatusResponse> => {
     const response = await apiClient.get<RebuildStatusResponse>(`/embeddings/rebuild/${commandId}/status`)
+    return response.data
+  },
+
+  getStatus: async (): Promise<EmbeddingStatusSummary> => {
+    const response = await apiClient.get<EmbeddingStatusSummary>('/embeddings/status')
     return response.data
   }
 }

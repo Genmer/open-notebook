@@ -69,8 +69,10 @@ Comprehensive list of all environment variables available in Open Notebook.
 
 | Variable | Required? | Default | Description |
 |----------|-----------|---------|-------------|
-| `OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE` | No | 50 | Number of texts sent per embedding batch. Lower this for CPU-only or stricter OpenAI-compatible embedding providers. |
-| `OPEN_NOTEBOOK_MIN_CHUNK_SIZE` | No | 5 | Minimum chunk size in tokens. Chunks below this threshold are dropped before embedding to avoid degenerate single-character fragments that some providers (e.g. llama.cpp) return null embeddings for. Set to `0` to disable filtering. |
+| `OPEN_NOTEBOOK_CHUNK_SIZE` | No | 400 | Maximum chunk size in tokens when splitting documents for embedding (minimum 100). A value only overrides this env var when explicitly filled in and saved on the Settings page (stored in DB); leave it empty to keep following the env var. |
+| `OPEN_NOTEBOOK_CHUNK_OVERLAP` | No | 15% of chunk size | Tokens shared between adjacent chunks (must be < chunk size). A value only overrides this env var when explicitly filled in and saved on the Settings page (stored in DB); leave it empty to keep following the env var. |
+| `OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE` | No | 50 | Number of texts sent per embedding batch. Lower this for CPU-only or stricter OpenAI-compatible embedding providers. A value only overrides this env var when explicitly filled in and saved on the Settings page (stored in DB); leave it empty to keep following the env var. |
+| `OPEN_NOTEBOOK_MIN_CHUNK_SIZE` | No | 5 | Minimum chunk size in tokens. Chunks below this threshold are dropped before embedding to avoid degenerate single-character fragments that some providers (e.g. llama.cpp) return null embeddings for. Set to `0` to disable filtering. A value only overrides this env var when explicitly filled in and saved on the Settings page (stored in DB); leave it empty to keep following the env var. |
 
 ---
 

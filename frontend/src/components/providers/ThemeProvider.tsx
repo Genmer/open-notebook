@@ -9,6 +9,11 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { theme, getSystemTheme, getEffectiveTheme } = useThemeStore()
+  const skin = useThemeStore((s) => s.skin)
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-skin', skin)
+  }, [skin])
 
   useEffect(() => {
     // Initialize theme on mount

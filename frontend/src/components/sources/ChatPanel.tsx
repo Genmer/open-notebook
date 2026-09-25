@@ -1,8 +1,10 @@
 'use client'
 
-import { memo, useCallback, useState, useRef, useEffect, useId } from 'react'
+import { memo, useCallback, useMemo, useState, useRef, useEffect, useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,8 +20,10 @@ import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
+import { useSourceTitles } from '@/lib/hooks/use-sources'
+import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
@@ -246,7 +250,15 @@ function ChatComposer({
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
+  const enterToSendId = useId()
   const [input, setInput] = useState('')
+  const enterToSendRaw = useChatPreferencesStore((state) => state.enterToSend)
+  const setEnterToSend = useChatPreferencesStore((state) => state.setEnterToSend)
+  const hasHydrated = useChatPreferencesStore((state) => state.hasHydrated)
+  // persist rehydrate 前按默认值渲染，避免 SSR/客户端首帧属性不一致
+  const enterToSend = hasHydrated ? enterToSendRaw : false
+  // Safari 的 compositionend 先于选词确认的 keydown 派发，isComposing 已复位，需用 ref 兜底
+  const composingRef = useRef(false)
 
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
@@ -256,11 +268,18 @@ function ChatComposer({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Detect platform for correct modifier key
-    const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
-    const isModifierPressed = isMac ? e.metaKey : e.ctrlKey
+    // IME 组合期的回车是选词确认，不是发送意图，直接放行给输入法
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || composingRef.current) return
 
-    if (e.key === 'Enter' && isModifierPressed) {
+    const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+
+    if (enterToSend) {
+      // Shift+Enter 保留换行
+      if (!e.shiftKey) {
+        e.preventDefault()
+        handleSend()
+      }
+    } else if (isMac ? e.metaKey : e.ctrlKey) {
       e.preventDefault()
       handleSend()
     }
@@ -269,20 +288,38 @@ function ChatComposer({
   // Detect platform for placeholder text
   const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
   const keyHint = isMac ? '⌘+Enter' : 'Ctrl+Enter'
+  const sendHint = enterToSend
+    ? t('chat.enterToSendHint')
+    : t('chat.pressToSend', { key: keyHint })
 
   return (
     <div className="flex-shrink-0 p-4 space-y-3 border-t">
-      {/* Model selector */}
-      {onModelChange && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
-          <ModelSelector
-            currentModel={modelOverride}
-            onModelChange={onModelChange}
-            disabled={isStreaming}
+      {/* Model selector + enter-to-send preference */}
+      <div className="flex items-center justify-between gap-2">
+        {onModelChange && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
+            <ModelSelector
+              currentModel={modelOverride}
+              onModelChange={onModelChange}
+              disabled={isStreaming}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+          <Checkbox
+            id={enterToSendId}
+            checked={enterToSend}
+            onCheckedChange={(checked) => setEnterToSend(checked === true)}
           />
+          <Label
+            htmlFor={enterToSendId}
+            className="text-xs text-muted-foreground cursor-pointer"
+          >
+            {t('chat.enterToSend')}
+          </Label>
         </div>
-      )}
+      </div>
 
       <div className="flex gap-2 items-end min-w-0">
         <Textarea
@@ -292,7 +329,16 @@ function ChatComposer({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={`${t('chat.sendPlaceholder')} (${t('chat.pressToSend', { key: keyHint })})`}
+          onCompositionStart={() => {
+            composingRef.current = true
+          }}
+          onCompositionEnd={() => {
+            // 推迟一个宏任务清除，跨过 Safari「compositionend → keydown」的派发顺序
+            setTimeout(() => {
+              composingRef.current = false
+            }, 0)
+          }}
+          placeholder={`${t('chat.sendPlaceholder')} (${sendHint})`}
           disabled={isStreaming}
           className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
           rows={1}
@@ -384,8 +430,29 @@ function AIMessageContent({
   onReferenceClick: (type: string, id: string) => void
 }) {
   const { t } = useTranslation()
+  // The hook lives here (not in memoized ChatMessage) so arriving title data
+  // re-renders only this message body, and messages without source references
+  // never issue a request (enabled: ids.length > 0).
+  const sourceIds = useMemo(() => {
+    const ids = parseSourceReferences(content)
+      .filter((reference) => reference.type === 'source')
+      .map((reference) => reference.id)
+    return [...new Set(ids)]
+  }, [content])
+  const { data: titles } = useSourceTitles(sourceIds)
+
+  // Reference ids are bare (no table prefix); the API returns full record ids.
+  const titleLookup = useMemo(() => {
+    if (!titles?.length) return undefined
+    const map = new Map<string, string>()
+    for (const item of titles) {
+      if (item.title) map.set(item.id.replace(/^source:/, ''), item.title)
+    }
+    return map.size > 0 ? map : undefined
+  }, [titles])
+
   // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'))
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'), titleLookup)
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)

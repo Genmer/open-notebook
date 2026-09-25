@@ -8,6 +8,11 @@ from open_notebook.utils.proxy import ensure_internal_no_proxy
 
 ensure_internal_no_proxy()
 
+from .classification_commands import classify_sources_command
+from .data_transfer_commands import (
+    export_data_command,
+    import_data_command,
+)
 from .embedding_commands import (
     embed_insight_command,
     embed_note_command,
@@ -23,6 +28,11 @@ __all__ = [
     "embed_insight_command",
     "embed_source_command",
     "rebuild_embeddings_command",
+    # Classification commands
+    "classify_sources_command",
+    # Data transfer commands
+    "export_data_command",
+    "import_data_command",
     # Other commands
     "generate_podcast_command",
     "process_source_command",

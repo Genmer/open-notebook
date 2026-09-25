@@ -10,7 +10,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.ai.usage import record_llm_usage_sync
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import OpenNotebookError
@@ -150,16 +151,20 @@ def _call_model_with_source_context_inner(
     payload = [SystemMessage(content=system_prompt)] + state.get("messages", [])
 
     # Handle async model provisioning from sync context
+    prov = None
+    model_id = config.get("configurable", {}).get("model_id") or state.get(
+        "model_override"
+    )
+
     def run_in_new_loop():
         """Run the async function in a new event loop"""
         new_loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(new_loop)
             return new_loop.run_until_complete(
-                provision_langchain_model(
+                provision_langchain_model_with_info(
                     str(payload),
-                    config.get("configurable", {}).get("model_id")
-                    or state.get("model_override"),
+                    model_id,
                     "chat",
                     max_tokens=8192,
                 )
@@ -171,30 +176,62 @@ def _call_model_with_source_context_inner(
     try:
         # Try to get the current event loop
         asyncio.get_running_loop()
-        # If we're in an event loop, run in a thread with a new loop
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_in_new_loop)
-            model = future.result()
+        in_loop = True
     except RuntimeError:
-        # No event loop running, safe to use asyncio.run()
-        model = asyncio.run(
-            provision_langchain_model(
-                str(payload),
-                config.get("configurable", {}).get("model_id")
-                or state.get("model_override"),
-                "chat",
-                max_tokens=8192,
-            )
-        )
+        in_loop = False
 
-    ai_message = model.invoke(payload)
+    try:
+        if in_loop:
+            # If we're in an event loop, run in a thread with a new loop
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_new_loop)
+                prov = future.result()
+        else:
+            # No event loop running, safe to use asyncio.run()
+            prov = asyncio.run(
+                provision_langchain_model_with_info(
+                    str(payload),
+                    model_id,
+                    "chat",
+                    max_tokens=8192,
+                )
+            )
+        model = prov.langchain_model
+        ai_message = model.invoke(payload)
+    except OpenNotebookError:
+        record_llm_usage_sync(
+            model=prov,
+            ai_message=None,
+            call_type="source_chat",
+            correlation_id=str(source_id),
+            success=False,
+            error="provisioning failed",
+        )
+        raise
+    except Exception as e:
+        record_llm_usage_sync(
+            model=prov,
+            ai_message=None,
+            call_type="source_chat",
+            correlation_id=str(source_id),
+            success=False,
+            error=str(e),
+        )
+        raise
 
     # Clean thinking content from AI response (e.g., <think>...</think> tags)
     content = extract_text_content(ai_message.content)
     cleaned_content = clean_thinking_content(content)
     cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
+
+    record_llm_usage_sync(
+        model=prov,
+        ai_message=ai_message,
+        call_type="source_chat",
+        correlation_id=str(source_id),
+    )
 
     # Update state with context information
     return {

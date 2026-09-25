@@ -9,7 +9,8 @@ from langgraph.types import Send
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.ai.usage import record_llm_usage
 from open_notebook.domain.notebook import vector_search
 from open_notebook.exceptions import ExternalServiceError, OpenNotebookError
 from open_notebook.utils import clean_thinking_content
@@ -59,6 +60,7 @@ class ThreadState(TypedDict):
 
 
 async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
+    prov = None
     try:
         parser: PydanticOutputParser[Strategy] = PydanticOutputParser(
             pydantic_object=Strategy
@@ -66,13 +68,14 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         system_prompt = Prompter(prompt_template="ask/entry", parser=parser).render(  # type: ignore[arg-type]
             data=state  # type: ignore[arg-type]
         )
-        model = await provision_langchain_model(
+        prov = await provision_langchain_model_with_info(
             system_prompt,
             config.get("configurable", {}).get("strategy_model"),
             "tools",
             max_tokens=ASK_MAX_TOKENS,
             structured=dict(type="json"),
         )
+        model = prov.langchain_model
         # model = model.bind_tools(tools)
         # First get the raw response from the model
         ai_message = await model.ainvoke(system_prompt)
@@ -97,10 +100,18 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
                 "the Ask page's advanced model options, or rephrase the question."
             )
 
+        await record_llm_usage(model=prov, ai_message=ai_message, call_type="ask")
+
         return {"strategy": strategy}
-    except OpenNotebookError:
+    except OpenNotebookError as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         raise
     except Exception as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         error_class, user_message = classify_error(e)
         raise error_class(user_message) from e
 
@@ -122,6 +133,7 @@ async def trigger_queries(state: ThreadState, config: RunnableConfig):
 
 
 async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
+    prov = None
     try:
         payload = state
         # if state["type"] == "text":
@@ -140,41 +152,62 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         ids = [r["id"] for r in results]
         payload["ids"] = ids
         system_prompt = Prompter(prompt_template="ask/query_process").render(data=payload)  # type: ignore[arg-type]
-        model = await provision_langchain_model(
+        prov = await provision_langchain_model_with_info(
             system_prompt,
             config.get("configurable", {}).get("answer_model"),
             "tools",
             max_tokens=ASK_MAX_TOKENS,
         )
+        model = prov.langchain_model
         ai_message = await model.ainvoke(system_prompt)
         ai_content = clean_thinking_content(extract_text_content(ai_message.content))
         if not ai_content.strip():
             # Nothing left after stripping thinking content — an empty partial
             # answer only pollutes the final synthesis.
             return {"answers": []}
+
+        await record_llm_usage(model=prov, ai_message=ai_message, call_type="ask")
+
         return {"answers": [ai_content]}
-    except OpenNotebookError:
+    except OpenNotebookError as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         raise
     except Exception as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         error_class, user_message = classify_error(e)
         raise error_class(user_message) from e
 
 
 async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict:
+    prov = None
     try:
         system_prompt = Prompter(prompt_template="ask/final_answer").render(data=state)  # type: ignore[arg-type]
-        model = await provision_langchain_model(
+        prov = await provision_langchain_model_with_info(
             system_prompt,
             config.get("configurable", {}).get("final_answer_model"),
             "tools",
             max_tokens=ASK_MAX_TOKENS,
         )
+        model = prov.langchain_model
         ai_message = await model.ainvoke(system_prompt)
         final_content = extract_text_content(ai_message.content)
+
+        await record_llm_usage(model=prov, ai_message=ai_message, call_type="ask")
+
         return {"final_answer": clean_thinking_content(final_content)}
-    except OpenNotebookError:
+    except OpenNotebookError as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         raise
     except Exception as e:
+        await record_llm_usage(
+            model=prov, ai_message=None, call_type="ask", success=False, error=str(e)
+        )
         error_class, user_message = classify_error(e)
         raise error_class(user_message) from e
 

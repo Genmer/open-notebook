@@ -1,0 +1,4 @@
+REMOVE EVENT IF NOT EXISTS source_membership_cleanup ON TABLE source;
+REMOVE TABLE IF EXISTS source_group_member;
+REMOVE TABLE IF EXISTS source_group;
+REMOVE TABLE IF EXISTS source_view;

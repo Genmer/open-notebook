@@ -1,0 +1,15 @@
+-- Migration 27: denormalized embedding progress on source (SCHEMAFULL, fields required).
+-- Backfill: sources that already have chunk embeddings count as completed, with
+-- their real chunk counters. The correlated aggregate needs $parent + GROUP ALL
+-- (a bare count() counts per row, and the subquery must not shadow the outer id).
+DEFINE FIELD IF NOT EXISTS embedding_status ON source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS embedding_command ON source TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS embedding_error ON source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS total_chunks ON source TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS embedded_chunks ON source TYPE option<int>;
+LET $embedded = SELECT VALUE source FROM source_embedding WHERE embedding != NONE;
+UPDATE source SET
+    embedding_status = 'completed',
+    embedded_chunks = (SELECT count() AS chunks FROM source_embedding WHERE source = $parent.id GROUP ALL)[0].chunks ?? 0,
+    total_chunks = (SELECT count() AS chunks FROM source_embedding WHERE source = $parent.id GROUP ALL)[0].chunks ?? 0
+WHERE id IN $embedded;

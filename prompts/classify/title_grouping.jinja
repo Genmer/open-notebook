@@ -1,0 +1,35 @@
+You are a research librarian organizing a personal knowledge base by the file names of its source documents. Group the sources below into thematic folders based on what their titles have in common.
+
+{% if existing_groups %}
+These groups already exist from earlier batches. Reuse one of these exact names for a source that belongs there instead of inventing a near-duplicate:
+<existing_groups>
+{% for name in existing_groups %}
+- {{ name }}
+{% endfor %}
+</existing_groups>
+{% endif %}
+
+<sources>
+{% for item in items %}
+- {{ item.source_id }}: {{ item.title }}
+{% endfor %}
+</sources>
+
+{% if previous_error %}
+A previous attempt produced invalid output: {{ previous_error }}
+Correct that problem this time.
+{% endif %}
+
+Rules:
+1. Group names must be short (30 characters max), descriptive, and in the same language as the source titles.
+2. Assign every source to exactly one group by listing its id in that group's extra_source_ids (leave cluster_ids as an empty list).
+3. A source whose title fits no group may get a new group; never leave a source out unless it has no meaningful title.
+4. Prefer fewer, broader groups over many tiny ones; a single-source group is only acceptable when the title is truly unrelated to everything else.
+
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

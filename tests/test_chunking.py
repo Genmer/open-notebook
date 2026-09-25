@@ -7,15 +7,37 @@ Tests content type detection and text chunking functionality.
 import pytest
 
 from open_notebook.utils.chunking import (
-    CHUNK_SIZE,
-    MIN_CHUNK_SIZE,
     ContentType,
     chunk_text,
     detect_content_type,
     detect_content_type_from_extension,
     detect_content_type_from_heuristics,
 )
+from open_notebook.utils.embedding_config import (
+    EmbeddingParams,
+    get_embedding_params,
+    reset_embedding_params_cache,
+)
 from open_notebook.utils.token_utils import token_count
+
+
+@pytest.fixture(autouse=True)
+def _default_embedding_params(monkeypatch):
+    """Pin params to built-in defaults so tests don't depend on local .env."""
+    for var in (
+        "OPEN_NOTEBOOK_CHUNK_SIZE",
+        "OPEN_NOTEBOOK_CHUNK_OVERLAP",
+        "OPEN_NOTEBOOK_MIN_CHUNK_SIZE",
+        "OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    reset_embedding_params_cache()
+    yield
+    reset_embedding_params_cache()
+
+
+def _params() -> EmbeddingParams:
+    return get_embedding_params()
 
 
 def _build_text_with_max_tokens(fragment: str, max_tokens: int) -> str:
@@ -39,8 +61,9 @@ def _build_text_exceeding_tokens(fragment: str, threshold_tokens: int) -> str:
 def _assert_chunks_within_token_limit(chunks: list[str]) -> None:
     """Assert chunks stay within the configured token window."""
     assert chunks
+    chunk_size = _params().chunk_size
     for chunk in chunks:
-        assert token_count(chunk) <= CHUNK_SIZE
+        assert token_count(chunk) <= chunk_size
 
 # ============================================================================
 # TEST SUITE 1: Content Type Detection from Extension
@@ -250,21 +273,22 @@ class TestChunkText:
 
     def test_text_at_chunk_limit(self):
         """Test text within the token chunk size limit."""
-        text = _build_text_with_max_tokens("This is a sentence. ", CHUNK_SIZE)
-        assert token_count(text) <= CHUNK_SIZE
+        chunk_size = _params().chunk_size
+        text = _build_text_with_max_tokens("This is a sentence. ", chunk_size)
+        assert token_count(text) <= chunk_size
         chunks = chunk_text(text)
         assert len(chunks) == 1
 
     def test_long_text_is_chunked(self):
         """Test that long English text is chunked by token budget."""
-        text = _build_text_exceeding_tokens("This is a sentence. ", CHUNK_SIZE)
+        text = _build_text_exceeding_tokens("This is a sentence. ", _params().chunk_size)
         chunks = chunk_text(text)
         assert len(chunks) > 1
         _assert_chunks_within_token_limit(chunks)
 
     def test_cjk_text_is_chunked_by_tokens(self):
         """Test that long CJK text is chunked using token measurement."""
-        text = _build_text_exceeding_tokens("這是一段中文內容，用來驗證分塊邏輯。", CHUNK_SIZE)
+        text = _build_text_exceeding_tokens("這是一段中文內容，用來驗證分塊邏輯。", _params().chunk_size)
         chunks = chunk_text(text, content_type=ContentType.PLAIN)
         assert len(chunks) > 1
         _assert_chunks_within_token_limit(chunks)
@@ -272,7 +296,7 @@ class TestChunkText:
     def test_mixed_language_text_is_chunked_by_tokens(self):
         """Test that mixed-language text is chunked using token measurement."""
         fragment = "This paragraph mixes English and 中文內容 to verify token-based chunking. "
-        text = _build_text_exceeding_tokens(fragment, CHUNK_SIZE)
+        text = _build_text_exceeding_tokens(fragment, _params().chunk_size)
         chunks = chunk_text(text, content_type=ContentType.PLAIN)
         assert len(chunks) > 1
         _assert_chunks_within_token_limit(chunks)
@@ -309,7 +333,7 @@ Content for section 2.
 
     def test_explicit_content_type_plain(self):
         """Test chunking with explicit plain content type."""
-        plain_text = _build_text_exceeding_tokens("Word ", CHUNK_SIZE)
+        plain_text = _build_text_exceeding_tokens("Word ", _params().chunk_size)
         chunks = chunk_text(plain_text, content_type=ContentType.PLAIN)
         assert len(chunks) > 1
         _assert_chunks_within_token_limit(chunks)
@@ -323,7 +347,7 @@ Content for section 2.
     def test_secondary_chunking_for_large_sections(self):
         """Test that large Markdown sections are further chunked by tokens."""
         large_section = _build_text_exceeding_tokens(
-            "這是一段很長的章節內容，用來測試次級分塊。", CHUNK_SIZE
+            "這是一段很長的章節內容，用來測試次級分塊。", _params().chunk_size
         )
         md_text = f"# Title\n\n{large_section}"
         chunks = chunk_text(md_text, content_type=ContentType.MARKDOWN)
@@ -333,13 +357,14 @@ Content for section 2.
     def test_drops_degenerate_short_chunks(self):
         """Header splitters can emit single-char chunks; they must be filtered."""
         large_section = _build_text_exceeding_tokens(
-            "This is a paragraph with enough content to be useful. ", CHUNK_SIZE
+            "This is a paragraph with enough content to be useful. ", _params().chunk_size
         )
         # A trailing micro-section ("# .") would otherwise produce a "." chunk.
         md_text = f"# Real Title\n\n{large_section}\n\n# .\n"
         chunks = chunk_text(md_text, content_type=ContentType.MARKDOWN)
         assert len(chunks) >= 1
-        assert all(token_count(c) >= MIN_CHUNK_SIZE for c in chunks)
+        min_chunk_size = _params().min_chunk_size
+        assert all(token_count(c) >= min_chunk_size for c in chunks)
         assert all(c.strip() not in (".", ",", ";", "#") for c in chunks)
 
     def test_filter_never_empties_result(self):

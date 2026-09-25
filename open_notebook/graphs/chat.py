@@ -10,7 +10,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.ai.usage import record_llm_usage_sync
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import OpenNotebookError
@@ -28,6 +29,8 @@ class ThreadState(TypedDict):
 
 
 def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
+    prov = None
+    thread_id = config.get("configurable", {}).get("thread_id")
     try:
         system_prompt = Prompter(prompt_template="chat/system").render(data=state)  # type: ignore[arg-type]
         payload = [SystemMessage(content=system_prompt)] + state.get("messages", [])
@@ -42,7 +45,7 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
             try:
                 asyncio.set_event_loop(new_loop)
                 return new_loop.run_until_complete(
-                    provision_langchain_model(
+                    provision_langchain_model_with_info(
                         str(payload), model_id, "chat", max_tokens=8192
                     )
                 )
@@ -58,17 +61,18 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_in_new_loop)
-                model = future.result()
+                prov = future.result()
         except RuntimeError:
             # No event loop running, safe to use asyncio.run()
-            model = asyncio.run(
-                provision_langchain_model(
+            prov = asyncio.run(
+                provision_langchain_model_with_info(
                     str(payload),
                     model_id,
                     "chat",
                     max_tokens=8192,
                 )
             )
+        model = prov.langchain_model
 
         ai_message = model.invoke(payload)
 
@@ -77,10 +81,33 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
         cleaned_content = clean_thinking_content(content)
         cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
 
+        record_llm_usage_sync(
+            model=prov,
+            ai_message=ai_message,
+            call_type="chat",
+            correlation_id=str(thread_id) if thread_id else None,
+        )
+
         return {"messages": cleaned_message}
     except OpenNotebookError:
+        record_llm_usage_sync(
+            model=prov,
+            ai_message=None,
+            call_type="chat",
+            correlation_id=str(thread_id) if thread_id else None,
+            success=False,
+            error="provisioning failed",
+        )
         raise
     except Exception as e:
+        record_llm_usage_sync(
+            model=prov,
+            ai_message=None,
+            call_type="chat",
+            correlation_id=str(thread_id) if thread_id else None,
+            success=False,
+            error=str(e),
+        )
         error_class, user_message = classify_error(e)
         raise error_class(user_message) from e
 

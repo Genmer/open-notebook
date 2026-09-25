@@ -18,6 +18,32 @@ export interface NoteResponse {
   updated: string
 }
 
+export interface SourceEmbeddingStatus {
+  status: 'not_embedded' | 'queued' | 'running' | 'completed' | 'partial' | 'failed'
+  embedded_chunks: number
+  total_chunks?: number | null
+  error?: string | null
+  command_id?: string | null
+}
+
+export type SourceProcessingStepKey = 'extraction' | 'embedding' | 'transformation' | 'completion'
+
+export type SourceProcessingStepStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'done'
+  | 'failed'
+  | 'skipped'
+  | 'unknown'
+
+export interface SourceProcessingStep {
+  key: SourceProcessingStepKey
+  status: SourceProcessingStepStatus
+  current?: number | null
+  total?: number | null
+  error?: string | null
+}
+
 export interface SourceListResponse {
   id: string
   title: string | null
@@ -36,20 +62,103 @@ export interface SourceListResponse {
   command_id?: string
   status?: string
   processing_info?: Record<string, unknown>
+  embedding_status?: string | null
 }
 
 export interface SourceDetailResponse extends SourceListResponse {
   full_text: string
   notebooks?: string[]  // List of notebook IDs this source is linked to
+  embedding?: SourceEmbeddingStatus | null
 }
 
 export type SourceResponse = SourceDetailResponse
+
+export interface SourceTitleResponse {
+  id: string
+  title: string | null
+}
+
+export interface SourceTypeGroupResponse {
+  key: string
+  count: number
+}
+
 
 export interface SourceStatusResponse {
   status?: string
   message: string
   processing_info?: Record<string, unknown>
   command_id?: string
+  embedding?: SourceEmbeddingStatus | null
+  steps?: SourceProcessingStep[] | null
+}
+
+export type SourceViewType = 'ai_content' | 'ai_title' | 'custom'
+
+export interface SourceViewResponse {
+  id: string
+  name: string
+  view_type: SourceViewType
+  is_default: boolean
+  last_classified_at: string | null
+  classify_progress: ClassifyProgress | null
+  created: string | null
+  updated: string | null
+}
+
+export interface ClassifyProgress {
+  stage: 'clustering' | 'llm' | 'assigning' | 'done' | 'failed'
+  percent: number
+  message: string
+  error: string | null
+  groups_created?: number
+  sources_classified?: number
+  unclassified?: number
+}
+
+export interface ClassifyViewResponse {
+  command_id: string
+}
+
+export interface SourceGroupResponse {
+  id: string
+  view_id: string
+  name: string
+  parent_id: string | null
+  source_count: number
+  created: string | null
+  updated: string | null
+}
+
+export interface GroupMembersRequest {
+  source_ids: string[]
+}
+
+export interface GroupMembersResponse {
+  moved: number
+}
+
+export interface ViewUngroupResponse {
+  removed: number
+}
+
+export interface CopyFailure {
+  source_id: string
+  reason: string
+}
+
+export interface CopyToGroupResponse {
+  created: string[]
+  failed: CopyFailure[]
+}
+
+export interface ViewDeleteResponse {
+  deleted_groups: number
+}
+
+export interface GroupDeleteResponse {
+  deleted_groups: number
+  deleted_sources: number
 }
 
 export interface SettingsResponse {
@@ -61,6 +170,17 @@ export interface SettingsResponse {
   docling_formulas?: boolean
   docling_vision?: boolean
   youtube_preferred_languages?: string[]
+  // Raw DB values: undefined means "not set, follow env var / default".
+  chunk_size?: number
+  chunk_overlap?: number
+  min_chunk_size?: number
+  embedding_batch_size?: number
+  usage_tracking_enabled?: boolean
+  // Read-only resolved values (DB > env > default) for display.
+  effective_chunk_size: number
+  effective_chunk_overlap: number
+  effective_min_chunk_size: number
+  effective_embedding_batch_size: number
 }
 
 export interface Capabilities {
@@ -254,4 +374,63 @@ export interface RecentlyViewedResponse {
   id: string
   title: string
   last_viewed_at: string
+}
+
+// Usage tracking types. estimated_tokens / previous_totals are optional so
+// the UI keeps working against an API that predates them.
+export interface UsageTotals {
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  estimated_tokens?: number
+}
+
+export interface UsageByModel extends UsageTotals {
+  model_name?: string | null
+  provider?: string | null
+}
+
+export interface UsageByDay extends UsageTotals {
+  day: string
+}
+
+export interface UsageDayModel {
+  day: string
+  model_name: string | null
+  total_tokens: number
+}
+
+export interface UsageSummaryResponse {
+  totals: UsageTotals
+  previous_totals?: UsageTotals
+  by_model: UsageByModel[]
+  by_day: UsageByDay[]
+  daily_by_model: UsageDayModel[]
+}
+
+export interface UsageRecord {
+  id?: string | null
+  created?: string | null
+  day?: string | null
+  model_name?: string | null
+  provider?: string | null
+  model_id?: string | null
+  call_type?: string | null
+  correlation_id?: string | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  total_tokens?: number | null
+  is_estimated: boolean
+  success: boolean
+  error?: string | null
+}
+
+export interface UsageRecordsResponse {
+  records: UsageRecord[]
+  total: number
+}
+
+export interface UsageClearResponse {
+  deleted: number
 }

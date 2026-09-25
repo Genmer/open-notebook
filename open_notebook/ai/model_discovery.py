@@ -161,6 +161,11 @@ DASHSCOPE_MODEL_TYPES = {
     "language": ["qwen"],
 }
 
+# Zhipu embedding models are named embedding-2/embedding-3…; glm-* are chat.
+ZHIPU_MODEL_TYPES = {
+    "embedding": ["embedding"],
+}
+
 MINIMAX_MODEL_TYPES = {
     "language": ["minimax", "abab"],
 }
@@ -205,6 +210,7 @@ def classify_model_type(model_name: str, provider: str) -> str:
         "elevenlabs": ELEVENLABS_MODEL_TYPES,
         "deepgram": DEEPGRAM_MODEL_TYPES,
         "dashscope": DASHSCOPE_MODEL_TYPES,
+        "zhipu": ZHIPU_MODEL_TYPES,
         "minimax": MINIMAX_MODEL_TYPES,
         "ppq": PPQ_MODEL_TYPES,
     }
@@ -336,6 +342,7 @@ discover_mistral_models = _make_openai_compat_discoverer("mistral")
 discover_deepseek_models = _make_openai_compat_discoverer("deepseek")
 discover_xai_models = _make_openai_compat_discoverer("xai")
 discover_dashscope_models = _make_openai_compat_discoverer("dashscope")
+discover_zhipu_models = _make_openai_compat_discoverer("zhipu")
 discover_minimax_models = _make_openai_compat_discoverer("minimax")
 discover_novita_models = _make_openai_compat_discoverer("novita")
 discover_ppq_models = _make_openai_compat_discoverer("ppq")
@@ -872,6 +879,7 @@ PROVIDER_DISCOVERY_FUNCTIONS = {
     "openai_compatible": discover_openai_compatible_models,
     "anthropic_compatible": discover_anthropic_compatible_models,
     "dashscope": discover_dashscope_models,
+    "zhipu": discover_zhipu_models,
     "minimax": discover_minimax_models,
     "novita": discover_novita_models,
     "ppq": discover_ppq_models,

@@ -653,7 +653,9 @@ async def discover_with_config(provider: str, config: dict) -> List[dict]:
     # Standard OpenAI-style API discovery
     discovery_url = url_map.get(provider)
     user_supplied_url = False
-    if provider == "openai" and base_url:
+    if provider in url_map and base_url:
+        # A credential-level base_url overrides the registry's discovery URL
+        # (e.g. DashScope dedicated endpoints, Zhipu coding endpoint).
         discovery_url = models_endpoint(base_url)
         user_supplied_url = True
     if not discovery_url or not api_key:

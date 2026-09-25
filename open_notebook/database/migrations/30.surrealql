@@ -1,0 +1,3 @@
+-- Migration 30: progress/result state for the data export/import commands
+-- (progress carrier of last resort: surreal-commands has no native API).
+DEFINE TABLE IF NOT EXISTS data_transfer_state SCHEMALESS;

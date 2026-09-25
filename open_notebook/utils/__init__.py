@@ -10,7 +10,6 @@ To avoid circular imports, import functions directly:
 """
 
 from .chunking import (
-    CHUNK_SIZE,
     ContentType,
     chunk_text,
     detect_content_type,
@@ -42,7 +41,6 @@ from .version_utils import (
 
 __all__ = [
     # Chunking
-    "CHUNK_SIZE",
     "ContentType",
     "chunk_text",
     "detect_content_type",

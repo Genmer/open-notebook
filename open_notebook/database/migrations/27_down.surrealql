@@ -1,0 +1,5 @@
+REMOVE FIELD IF NOT EXISTS embedding_status ON source;
+REMOVE FIELD IF NOT EXISTS embedding_command ON source;
+REMOVE FIELD IF NOT EXISTS embedding_error ON source;
+REMOVE FIELD IF NOT EXISTS total_chunks ON source;
+REMOVE FIELD IF NOT EXISTS embedded_chunks ON source;

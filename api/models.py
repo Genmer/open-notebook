@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -261,9 +262,13 @@ class EmbedResponse(BaseModel):
 
 # Rebuild request/response models
 class RebuildRequest(BaseModel):
-    mode: Literal["existing", "all"] = Field(
+    mode: Literal["existing", "all", "missing"] = Field(
         ...,
-        description="Rebuild mode: 'existing' only re-embeds items with embeddings, 'all' embeds everything",
+        description=(
+            "Rebuild mode: 'existing' only re-embeds items with embeddings, "
+            "'all' embeds everything, 'missing' only embeds sources without a "
+            "completed embedding (sources-only)"
+        ),
     )
     include_sources: bool = Field(True, description="Include sources in rebuild")
     include_notes: bool = Field(True, description="Include notes in rebuild")
@@ -299,6 +304,103 @@ class RebuildStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class EmbeddingStatusSummary(BaseModel):
+    total_sources: int = Field(..., description="Sources with non-empty full_text")
+    completed: int = Field(..., description="Sources with a completed embedding")
+    queued: int = Field(..., description="Sources queued for embedding")
+    running: int = Field(..., description="Sources currently embedding")
+    failed: int = Field(..., description="Sources whose last embedding failed")
+    partial: int = Field(..., description="Sources partially embedded")
+    not_embedded: int = Field(..., description="Sources never embedded")
+    pending: int = Field(
+        ..., description="not_embedded + failed + partial: still worth embedding"
+    )
+
+
+# Source grouping API models (views + hierarchical groups)
+class SourceViewCreate(BaseModel):
+    name: str = Field(..., description="View name (1-100 chars after strip)")
+    view_type: Literal["ai_content", "ai_title", "custom"] = Field(
+        ..., description="View type"
+    )
+
+
+class SourceViewUpdate(BaseModel):
+    name: Optional[str] = Field(None, description="New view name (1-100 chars)")
+
+
+class SourceViewResponse(BaseModel):
+    id: str
+    name: str
+    view_type: str
+    is_default: bool = Field(..., description="True for the two built-in views")
+    last_classified_at: Optional[str] = None
+    classify_progress: Optional[Dict[str, Any]] = None
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class SourceGroupCreate(BaseModel):
+    name: str = Field(..., description="Group name (1-100 chars after strip)")
+    parent_id: Optional[str] = Field(
+        None, description="Parent group id; omit or null for a root group"
+    )
+
+
+class SourceGroupUpdate(BaseModel):
+    name: Optional[str] = Field(None, description="New group name (1-100 chars)")
+    parent_id: Optional[str] = Field(
+        None, description="New parent group id; null moves the group to the root"
+    )
+
+
+class SourceGroupResponse(BaseModel):
+    id: str
+    view_id: str
+    name: str
+    parent_id: Optional[str] = None
+    source_count: int
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class ViewDeleteResponse(BaseModel):
+    deleted_groups: int
+
+
+class GroupDeleteResponse(BaseModel):
+    deleted_groups: int
+    deleted_sources: int
+
+
+class GroupMembersRequest(BaseModel):
+    source_ids: List[str] = Field(
+        ..., description="Source ids (1-100 items); validated in the service"
+    )
+
+
+class GroupMembersResponse(BaseModel):
+    moved: int
+
+
+class ViewUngroupResponse(BaseModel):
+    removed: int
+
+
+class CopyFailure(BaseModel):
+    source_id: str
+    reason: str = Field(..., description="Failure reason, truncated to 200 chars")
+
+
+class CopyToGroupResponse(BaseModel):
+    created: List[str]
+    failed: List[CopyFailure]
+
+
+class ClassifyViewResponse(BaseModel):
+    command_id: str = Field(..., description="Job id to poll via GET /api/commands/jobs/{id}")
+
+
 # Settings API models
 class SettingsResponse(BaseModel):
     default_content_processing_engine_doc: Optional[str] = None
@@ -309,6 +411,17 @@ class SettingsResponse(BaseModel):
     docling_formulas: Optional[bool] = None
     docling_vision: Optional[bool] = None
     youtube_preferred_languages: Optional[List[str]] = None
+    # Raw DB values: None means "not set, follow env var / default".
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
+    min_chunk_size: Optional[int] = None
+    embedding_batch_size: Optional[int] = None
+    usage_tracking_enabled: Optional[bool] = None
+    # Read-only resolved values (DB > env > default) for display.
+    effective_chunk_size: int
+    effective_chunk_overlap: int
+    effective_min_chunk_size: int
+    effective_embedding_batch_size: int
 
 
 class SettingsUpdate(BaseModel):
@@ -320,6 +433,11 @@ class SettingsUpdate(BaseModel):
     docling_formulas: Optional[bool] = None
     docling_vision: Optional[bool] = None
     youtube_preferred_languages: Optional[List[str]] = None
+    chunk_size: Optional[int] = Field(None, ge=100)
+    chunk_overlap: Optional[int] = Field(None, ge=0)
+    min_chunk_size: Optional[int] = Field(None, ge=0)
+    embedding_batch_size: Optional[int] = Field(None, ge=1)
+    usage_tracking_enabled: Optional[bool] = None
 
 
 # Sources API models
@@ -384,6 +502,32 @@ class SourceUpdate(BaseModel):
     topics: Optional[List[str]] = Field(None, description="Source topics")
 
 
+class SourceEmbeddingStatus(BaseModel):
+    status: Literal[
+        "not_embedded", "queued", "running", "completed", "partial", "failed"
+    ]
+    embedded_chunks: int = 0
+    total_chunks: Optional[int] = None
+    error: Optional[str] = None
+    command_id: Optional[str] = None
+
+
+SourceProcessingStepKey = Literal[
+    "extraction", "embedding", "transformation", "completion"
+]
+SourceProcessingStepStatus = Literal[
+    "pending", "in_progress", "done", "failed", "skipped", "unknown"
+]
+
+
+class SourceProcessingStep(BaseModel):
+    key: SourceProcessingStepKey
+    status: SourceProcessingStepStatus
+    current: Optional[int] = None  # in_progress 分子（嵌入=embedded_chunks，转换=m）
+    total: Optional[int] = None  # 分母（转换=N；嵌入 total_chunks 空则 None）
+    error: Optional[str] = None  # failed 时的截断错误
+
+
 class SourceResponse(BaseModel):
     id: str
     title: Optional[str]
@@ -401,6 +545,7 @@ class SourceResponse(BaseModel):
     processing_info: Optional[Dict] = None
     # Notebook associations
     notebooks: Optional[List[str]] = None
+    embedding: Optional[SourceEmbeddingStatus] = None
 
 
 class SourceListResponse(BaseModel):
@@ -418,6 +563,17 @@ class SourceListResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[Dict[str, Any]] = None
+    embedding_status: Optional[str] = None
+
+
+class SourceTitleResponse(BaseModel):
+    id: str
+    title: Optional[str]
+
+
+class SourceTypeGroupResponse(BaseModel):
+    key: str
+    count: int
 
 
 # Insights API models
@@ -463,6 +619,8 @@ class SourceStatusResponse(BaseModel):
         None, description="Detailed processing information"
     )
     command_id: Optional[str] = Field(None, description="Command ID if available")
+    embedding: Optional[SourceEmbeddingStatus] = None
+    steps: Optional[List[SourceProcessingStep]] = None
 
 
 # Error response
@@ -598,6 +756,7 @@ SupportedProvider = Literal[
     "xai",
     "openrouter",
     "dashscope",
+    "zhipu",
     "minimax",
     "novita",
     "ppq",
@@ -822,3 +981,120 @@ class NotebookDeleteResponse(BaseModel):
     deleted_chat_sessions: int = Field(
         ..., description="Number of chat sessions deleted"
     )
+
+
+# Usage API models
+class UsageTotals(BaseModel):
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    estimated_tokens: int = 0
+
+
+class UsageByModel(BaseModel):
+    model_name: Optional[str] = None
+    provider: Optional[str] = None
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    estimated_tokens: int = 0
+
+
+class UsageByDay(BaseModel):
+    day: str
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+class UsageDayModel(BaseModel):
+    day: str
+    model_name: Optional[str] = None
+    total_tokens: int = 0
+
+
+class UsageSummaryResponse(BaseModel):
+    totals: UsageTotals
+    previous_totals: UsageTotals
+    by_model: List[UsageByModel]
+    by_day: List[UsageByDay]
+    daily_by_model: List[UsageDayModel] = []
+
+
+class UsageRecord(BaseModel):
+    id: Optional[str] = None
+    created: Optional[datetime] = None
+    day: Optional[str] = None
+    model_name: Optional[str] = None
+    provider: Optional[str] = None
+    model_id: Optional[str] = None
+    call_type: Optional[str] = None
+    correlation_id: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    is_estimated: bool = False
+    success: bool = True
+    error: Optional[str] = None
+
+
+class UsageRecordsResponse(BaseModel):
+    records: List[UsageRecord]
+    total: int
+
+
+class UsageClearResponse(BaseModel):
+    deleted: int
+
+
+# Data transfer (export/import) models
+class DataTransferStartResponse(BaseModel):
+    command_id: str = Field(..., description="ID of the submitted command job")
+    message: str = Field(..., description="Human-readable confirmation")
+
+
+class TransferProgress(BaseModel):
+    stage: Optional[str] = None
+    percent: int = 0
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ExportSummary(BaseModel):
+    package_filename: str
+    package_size_bytes: int = 0
+    counts: Dict[str, int] = {}
+    files_skipped: int = 0
+    embedding_model_id: Optional[str] = None
+    embedding_dimension: Optional[int] = None
+    exported_at: Optional[str] = None
+
+
+class ExportStatusResponse(BaseModel):
+    # none | queued | running | completed | failed
+    status: Literal["none", "queued", "running", "completed", "failed"]
+    command_id: Optional[str] = None
+    progress: Optional[TransferProgress] = None
+    summary: Optional[ExportSummary] = None
+
+
+class ImportSummary(BaseModel):
+    imported: Dict[str, int] = {}
+    skipped: Dict[str, int] = {}
+    warnings: List[str] = []
+    embedding_model_id: Optional[str] = None
+    embedding_dimension: Optional[int] = None
+
+
+class ImportStatusResponse(BaseModel):
+    status: Literal["none", "queued", "running", "completed", "failed"]
+    command_id: Optional[str] = None
+    progress: Optional[TransferProgress] = None
+    summary: Optional[ImportSummary] = None
+
+
+class PackageDeleteResponse(BaseModel):
+    deleted: bool

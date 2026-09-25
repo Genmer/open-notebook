@@ -8,13 +8,10 @@ Key functions:
 - detect_content_type(): Detects content type from file extension or content heuristics
 - chunk_text(): Splits text into chunks using appropriate splitter for content type
 
-Environment Variables:
-    OPEN_NOTEBOOK_CHUNK_SIZE: Maximum chunk size in tokens (default: 400)
-    OPEN_NOTEBOOK_CHUNK_OVERLAP: Overlap between chunks in tokens (default: 15% of CHUNK_SIZE)
-    OPEN_NOTEBOOK_MIN_CHUNK_SIZE: Minimum chunk size in tokens (default: 5)
+Chunk/vectorization parameters come from open_notebook.utils.embedding_config
+(DB > env > default, resolved at call time — see EmbeddingParams).
 """
 
-import os
 import re
 from enum import Enum
 from pathlib import Path
@@ -27,101 +24,10 @@ from langchain_text_splitters import (
 )
 from loguru import logger
 
+from .embedding_config import EmbeddingParams, get_embedding_params
 from .token_utils import token_count
 
-
-def _get_chunk_size() -> int:
-    """Get chunk size from environment variable or use default."""
-    chunk_size_str = os.getenv("OPEN_NOTEBOOK_CHUNK_SIZE")
-    if chunk_size_str:
-        try:
-            chunk_size = int(chunk_size_str)
-            if chunk_size < 100:
-                logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is too small. "
-                    f"Using minimum value of 100."
-                )
-                return 100
-            if chunk_size > 8192:
-                logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_SIZE ({chunk_size}) is very large. "
-                    f"This may cause issues with some embedding models."
-                )
-            logger.info(f"Using custom chunk size: {chunk_size} tokens")
-            return chunk_size
-        except ValueError:
-            logger.warning(
-                f"Invalid OPEN_NOTEBOOK_CHUNK_SIZE value: '{chunk_size_str}'. "
-                f"Using default: 400"
-            )
-    return 400
-
-
-def _get_chunk_overlap(chunk_size: int) -> int:
-    """Get chunk overlap from environment variable or calculate default (15% of chunk size)."""
-    overlap_str = os.getenv("OPEN_NOTEBOOK_CHUNK_OVERLAP")
-    if overlap_str:
-        try:
-            overlap = int(overlap_str)
-            if overlap < 0:
-                logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be negative. "
-                    f"Using 0."
-                )
-                return 0
-            if overlap >= chunk_size:
-                logger.warning(
-                    f"OPEN_NOTEBOOK_CHUNK_OVERLAP ({overlap}) cannot be >= chunk size ({chunk_size}). "
-                    f"Using 15% of chunk size: {int(chunk_size * 0.15)}"
-                )
-                return int(chunk_size * 0.15)
-            logger.info(f"Using custom chunk overlap: {overlap} tokens")
-            return overlap
-        except ValueError:
-            logger.warning(
-                f"Invalid OPEN_NOTEBOOK_CHUNK_OVERLAP value: '{overlap_str}'. "
-                f"Using default: 15% of chunk size"
-            )
-    return int(chunk_size * 0.15)
-
-
-def _get_min_chunk_size() -> int:
-    """Get minimum chunk size from environment variable or use default.
-
-    Chunks below this token count are dropped. Some splitters (notably the
-    HTML header splitter on complex pages) can emit single-character or
-    punctuation-only chunks that produce useless or null embeddings —
-    llama.cpp's OpenAI-compatible endpoint, for example, returns null vector
-    elements for such inputs and crashes downstream parsing.
-    """
-    raw = os.getenv("OPEN_NOTEBOOK_MIN_CHUNK_SIZE")
-    if raw is None:
-        return 5
-    try:
-        value = int(raw)
-        if value < 0:
-            logger.warning(
-                f"OPEN_NOTEBOOK_MIN_CHUNK_SIZE ({value}) cannot be negative. Using 0."
-            )
-            return 0
-        return value
-    except ValueError:
-        logger.warning(
-            f"Invalid OPEN_NOTEBOOK_MIN_CHUNK_SIZE value: '{raw}'. Using default: 5"
-        )
-        return 5
-
-
-# Constants (computed at import time from environment variables)
-CHUNK_SIZE = _get_chunk_size()
-CHUNK_OVERLAP = _get_chunk_overlap(CHUNK_SIZE)
-MIN_CHUNK_SIZE = _get_min_chunk_size()
 HIGH_CONFIDENCE_THRESHOLD = 0.8  # Threshold for heuristics to override extension
-
-logger.debug(
-    f"Chunking configuration: CHUNK_SIZE={CHUNK_SIZE}, "
-    f"CHUNK_OVERLAP={CHUNK_OVERLAP}, MIN_CHUNK_SIZE={MIN_CHUNK_SIZE}"
-)
 
 
 class ContentType(Enum):
@@ -385,27 +291,29 @@ def _get_markdown_splitter() -> MarkdownHeaderTextSplitter:
     )
 
 
-def _get_plain_splitter() -> RecursiveCharacterTextSplitter:
-    """Get plain text splitter using CHUNK_SIZE and CHUNK_OVERLAP constants."""
+def _get_plain_splitter(params: EmbeddingParams) -> RecursiveCharacterTextSplitter:
+    """Get plain text splitter using the given chunk size/overlap."""
     return RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
+        chunk_size=params.chunk_size,
+        chunk_overlap=params.chunk_overlap,
         length_function=token_count,
         separators=["\n\n", "\n", ". ", ", ", " ", ""],
     )
 
 
-def _apply_secondary_chunking(chunks: List[str]) -> List[str]:
+def _apply_secondary_chunking(
+    chunks: List[str], params: EmbeddingParams
+) -> List[str]:
     """
-    Apply secondary chunking to ensure no chunk exceeds CHUNK_SIZE tokens.
+    Apply secondary chunking to ensure no chunk exceeds the chunk size limit.
 
     Used when primary splitters (HTML/Markdown) produce oversized chunks.
     """
     result = []
-    secondary_splitter = _get_plain_splitter()
+    secondary_splitter = _get_plain_splitter(params)
 
     for chunk in chunks:
-        if token_count(chunk) > CHUNK_SIZE:
+        if token_count(chunk) > params.chunk_size:
             # Split oversized chunk
             sub_chunks = secondary_splitter.split_text(chunk)
             result.extend(sub_chunks)
@@ -419,6 +327,7 @@ def chunk_text(
     text: str,
     content_type: Optional[ContentType] = None,
     file_path: Optional[str] = None,
+    params: Optional[EmbeddingParams] = None,
 ) -> List[str]:
     """
     Split text into chunks using appropriate splitter for content type.
@@ -427,16 +336,19 @@ def chunk_text(
         text: The text to chunk
         content_type: Optional explicit content type (auto-detected if not provided)
         file_path: Optional file path for content type detection
+        params: Optional embedding params (defaults to the shared snapshot)
 
     Returns:
-        List of text chunks, each approximately <= CHUNK_SIZE tokens
+        List of text chunks, each approximately <= chunk_size tokens
     """
     if not text or not text.strip():
         return []
 
+    p = params or get_embedding_params()
+
     # Short text doesn't need chunking
     text_tokens = token_count(text)
-    if text_tokens <= CHUNK_SIZE:
+    if text_tokens <= p.chunk_size:
         return [text]
 
     # Detect content type if not provided
@@ -465,11 +377,11 @@ def chunk_text(
         ]
     else:
         # Plain text - use recursive splitter directly
-        chunks = _get_plain_splitter().split_text(text)
+        chunks = _get_plain_splitter(p).split_text(text)
 
     # Apply secondary chunking if needed (for HTML/Markdown that may produce large chunks)
     if content_type in (ContentType.HTML, ContentType.MARKDOWN):
-        chunks = _apply_secondary_chunking(chunks)
+        chunks = _apply_secondary_chunking(chunks, p)
 
     # Filter out empty chunks
     chunks = [c.strip() for c in chunks if c and c.strip()]
@@ -480,13 +392,14 @@ def chunk_text(
     # vector elements for such inputs (which then crash response parsing).
     # Only filter when more than one chunk exists and at least one chunk
     # would survive — never return an empty list because of this filter.
-    if MIN_CHUNK_SIZE > 0 and len(chunks) > 1:
-        kept = [c for c in chunks if token_count(c) >= MIN_CHUNK_SIZE]
+    if p.min_chunk_size > 0 and len(chunks) > 1:
+        kept = [c for c in chunks if token_count(c) >= p.min_chunk_size]
         if kept:
             dropped = len(chunks) - len(kept)
             if dropped > 0:
                 logger.debug(
-                    f"Dropped {dropped} chunk(s) below MIN_CHUNK_SIZE={MIN_CHUNK_SIZE} tokens"
+                    f"Dropped {dropped} chunk(s) below "
+                    f"MIN_CHUNK_SIZE={p.min_chunk_size} tokens"
                 )
             chunks = kept
 

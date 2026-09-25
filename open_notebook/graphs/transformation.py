@@ -4,7 +4,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.ai.usage import record_llm_usage
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import DefaultPrompts, Transformation
 from open_notebook.exceptions import OpenNotebookError
@@ -27,6 +28,8 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
     assert source or content, "No content to transform"
     transformation: Transformation = state["transformation"]
 
+    prov = None
+    correlation_id = str(source.id) if source and source.id else None
     try:
         if not content:
             content = source.full_text
@@ -44,12 +47,13 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         )
         content_str = str(content) if content else ""
         payload = [SystemMessage(content=system_prompt), HumanMessage(content=content_str)]
-        chain = await provision_langchain_model(
+        prov = await provision_langchain_model_with_info(
             str(payload),
             config.get("configurable", {}).get("model_id"),
             "transformation",
             max_tokens=8192,
         )
+        chain = prov.langchain_model
 
         response = await chain.ainvoke(payload)
 
@@ -60,12 +64,35 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         if source:
             await source.add_insight(transformation.title, cleaned_content)
 
+        await record_llm_usage(
+            model=prov,
+            ai_message=response,
+            call_type="transformation",
+            correlation_id=correlation_id,
+        )
+
         return {
             "output": cleaned_content,
         }
-    except OpenNotebookError:
+    except OpenNotebookError as e:
+        await record_llm_usage(
+            model=prov,
+            ai_message=None,
+            call_type="transformation",
+            correlation_id=correlation_id,
+            success=False,
+            error=str(e),
+        )
         raise
     except Exception as e:
+        await record_llm_usage(
+            model=prov,
+            ai_message=None,
+            call_type="transformation",
+            correlation_id=correlation_id,
+            success=False,
+            error=str(e),
+        )
         error_class, user_message = classify_error(e)
         raise error_class(user_message) from e
 

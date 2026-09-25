@@ -45,3 +45,23 @@ class ContentSettings(RecordModel):
         ["en", "pt", "es", "de", "nl", "en-GB", "fr", "hi", "ja", "zh-CN", "zh-TW"],
         description="Preferred languages for YouTube transcripts",
     )
+    chunk_size: Optional[int] = Field(
+        None,
+        description="Maximum chunk size in tokens for embedding (None = env/default)",
+    )
+    chunk_overlap: Optional[int] = Field(
+        None,
+        description="Tokens shared between adjacent chunks (None = env/default)",
+    )
+    min_chunk_size: Optional[int] = Field(
+        None,
+        description="Chunks below this token count are dropped (None = env/default)",
+    )
+    embedding_batch_size: Optional[int] = Field(
+        None,
+        description="Texts per embedding API request (None = env/default)",
+    )
+    usage_tracking_enabled: bool = Field(
+        True,
+        description="Record local token usage per LLM/embedding call in model_usage",
+    )

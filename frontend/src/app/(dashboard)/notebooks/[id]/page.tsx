@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookHeader } from '../components/NotebookHeader'
+import { FoldersColumn } from '../components/FoldersColumn'
 import { SourcesColumn } from '../components/SourcesColumn'
 import { NotesColumn } from '../components/NotesColumn'
 import { ChatColumn } from '../components/ChatColumn'
 import { useNotebook } from '@/lib/hooks/use-notebooks'
-import { useNotebookSources } from '@/lib/hooks/use-sources'
+import { useNotebookSources, type NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
@@ -40,6 +41,7 @@ export default function NotebookPage() {
   const notebookId = params?.id ? decodeURIComponent(params.id as string) : ''
 
   const { data: notebook, isLoading: notebookLoading } = useNotebook(notebookId)
+  const [sourceGrouping, setSourceGrouping] = useState<NotebookSourceFilters>({})
   const {
     sources,
     isLoading: sourcesLoading,
@@ -47,11 +49,11 @@ export default function NotebookPage() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useNotebookSources(notebookId)
+  } = useNotebookSources(notebookId, sourceGrouping)
   const { data: notes, isLoading: notesLoading } = useNotes(notebookId)
 
   // Get collapse states for dynamic layout
-  const { sourcesCollapsed, notesCollapsed } = useNotebookColumnsStore()
+  const { foldersCollapsed, sourcesCollapsed, notesCollapsed } = useNotebookColumnsStore()
 
   // Detect desktop to avoid double-mounting ChatColumn
   const isDesktop = useIsDesktop()
@@ -193,6 +195,8 @@ export default function NotebookPage() {
                     contextSelections={contextSelections.sources}
                     onContextModeChange={handleSourceContextModeChange}
                     onBulkContextModeChange={handleBulkSourceContext}
+                    grouping={sourceGrouping}
+                    onGroupingChange={setSourceGrouping}
                     hasNextPage={hasNextPage}
                     isFetchingNextPage={isFetchingNextPage}
                     fetchNextPage={fetchNextPage}
@@ -222,13 +226,24 @@ export default function NotebookPage() {
 
           {/* Desktop: Collapsible columns layout */}
           <div className={cn(
-            'hidden lg:flex h-full min-h-0 gap-6 transition-all duration-150',
+            'hidden lg:flex h-full min-h-0 gap-4 transition-all duration-150',
             'flex-row'
           )}>
+            {/* Folders Column */}
+            <div className={cn(
+              'transition-all duration-150',
+              foldersCollapsed ? 'w-12 flex-shrink-0' : 'w-60 flex-shrink-0'
+            )}>
+              <FoldersColumn
+                grouping={sourceGrouping}
+                onGroupingChange={setSourceGrouping}
+              />
+            </div>
+
             {/* Sources Column */}
             <div className={cn(
               'transition-all duration-150',
-              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-1/3'
+              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-1 min-w-[320px] max-w-[420px]'
             )}>
               <SourcesColumn
                 sources={sources}
@@ -239,6 +254,8 @@ export default function NotebookPage() {
                 contextSelections={contextSelections.sources}
                 onContextModeChange={handleSourceContextModeChange}
                 onBulkContextModeChange={handleBulkSourceContext}
+                grouping={sourceGrouping}
+                onGroupingChange={setSourceGrouping}
                 hasNextPage={hasNextPage}
                 isFetchingNextPage={isFetchingNextPage}
                 fetchNextPage={fetchNextPage}

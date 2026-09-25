@@ -119,4 +119,63 @@ describe('SourceInsightDialog', () => {
     expect(screen.getByText('Fetched insight content')).toBeInTheDocument()
     expect(screen.queryByTestId('content-unavailable')).not.toBeInTheDocument()
   })
+
+  it('shows a preset insight_type through the localized transformation title', () => {
+    mockUseInsight.mockReturnValue(
+      asResult({
+        data: {
+          id: 'insight-1',
+          source_id: 'source:1',
+          insight_type: 'Dense Summary',
+          content: 'Insight body',
+          created: null,
+          updated: null,
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+      })
+    )
+
+    render(
+      <SourceInsightDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        insight={{ id: 'insight-1', insight_type: '', content: '' }}
+      />
+    )
+
+    // t() returns the key in tests, so the badge text proves the type went
+    // through displayTransformationTitle instead of rendering the raw string.
+    expect(screen.getByText('sources.transformationTitleDenseSummary')).toBeInTheDocument()
+    expect(screen.queryByText('Dense Summary')).not.toBeInTheDocument()
+  })
+
+  it('renders a non-preset insight_type verbatim', () => {
+    mockUseInsight.mockReturnValue(
+      asResult({
+        data: {
+          id: 'insight-1',
+          source_id: 'source:1',
+          insight_type: 'my-custom-type',
+          content: 'Insight body',
+          created: null,
+          updated: null,
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+      })
+    )
+
+    render(
+      <SourceInsightDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        insight={{ id: 'insight-1', insight_type: '', content: '' }}
+      />
+    )
+
+    expect(screen.getByText('my-custom-type')).toBeInTheDocument()
+  })
 })

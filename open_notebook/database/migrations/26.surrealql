@@ -1,0 +1,3 @@
+-- Migration 26: vector params on content_settings (SCHEMALESS, no DEFINE FIELD needed).
+-- Deliberately NOT backfilled: absent values keep falling back to OPEN_NOTEBOOK_* env vars.
+DEFINE TABLE IF NOT EXISTS open_notebook SCHEMALESS;

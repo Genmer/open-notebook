@@ -11,6 +11,7 @@ import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { ContentUnavailable } from '@/components/common/ContentUnavailable'
 import { isNotFoundError } from '@/lib/utils/error-handler'
+import { displayTransformationTitle } from '@/lib/utils/transformation-display'
 
 interface SourceInsightDialogProps {
   open: boolean
@@ -81,7 +82,7 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
               {displayInsight?.insight_type && (
                 <Badge variant="outline" className="gap-1.5 text-xs uppercase">
                   <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden="true" />
-                  {displayInsight.insight_type}
+                  {displayTransformationTitle(displayInsight.insight_type, t)}
                 </Badge>
               )}
               {sourceId && (

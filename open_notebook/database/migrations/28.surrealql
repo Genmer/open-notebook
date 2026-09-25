@@ -1,0 +1,3 @@
+-- Migration 28: local token usage tracking (privacy: data never leaves the DB).
+DEFINE TABLE IF NOT EXISTS model_usage SCHEMALESS;
+DEFINE INDEX IF NOT EXISTS idx_model_usage_day ON TABLE model_usage FIELDS day;

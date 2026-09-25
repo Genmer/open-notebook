@@ -407,6 +407,7 @@ async def get_provider_availability():
             "ollama": "OLLAMA_API_BASE",
             "omlx": "OMLX_API_BASE",
             "dashscope": "DASHSCOPE_API_KEY",
+            "zhipu": "ZHIPU_API_KEY",
             "minimax": "MINIMAX_API_KEY",
             "novita": "NOVITA_API_KEY",
             "ppq": "PPQ_API_KEY",

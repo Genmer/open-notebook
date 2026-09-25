@@ -18,10 +18,15 @@ import { WizardContainer, WizardStep } from '@/components/ui/wizard-container'
 import { SourceTypeStep, parseAndValidateUrls } from './steps/SourceTypeStep'
 import { NotebooksStep } from './steps/NotebooksStep'
 import { ProcessingStep } from './steps/ProcessingStep'
+import { FolderTargetSection, type FolderTargetValue } from './FolderTargetSection'
+import { chunkIds } from './BulkActionBar'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { useTransformations } from '@/lib/hooks/use-transformations'
 import { useCreateSource } from '@/lib/hooks/use-sources'
 import { useSettings } from '@/lib/hooks/use-settings'
+import { sourceViewsApi } from '@/lib/api/source-views'
+import { useInvalidateGrouping } from '@/lib/hooks/use-source-views'
+import { FILE_TYPE_VIEW_ID } from '@/lib/stores/source-view-store'
 import { CreateSourceRequest } from '@/lib/types/api'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
@@ -71,6 +76,10 @@ interface AddSourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultNotebookId?: string
+  /** View to preselect in the "save to folder" section (sources page). */
+  defaultViewId?: string
+  /** Folder from the browsing context; combined with defaultViewId it pre-files new sources. */
+  defaultGroupId?: string
 }
 
 interface ProcessingState {
@@ -85,16 +94,18 @@ interface BatchProgress {
   currentItem?: string
 }
 
-export function AddSourceDialog({ 
-  open, 
-  onOpenChange, 
-  defaultNotebookId 
+export function AddSourceDialog({
+  open,
+  onOpenChange,
+  defaultNotebookId,
+  defaultViewId,
+  defaultGroupId
 }: AddSourceDialogProps) {
   const { t } = useTranslation()
 
   const WIZARD_STEPS: readonly WizardStep[] = [
     { number: 1, title: t('sources.addSource'), description: t('sources.processDescription') },
-    { number: 2, title: t('navigation.notebooks'), description: t('notebooks.searchPlaceholder') },
+    { number: 2, title: t('sources.grouping.stepNotebooksAndFoldersTitle'), description: t('sources.grouping.stepNotebooksAndFoldersDesc') },
     { number: 3, title: t('navigation.process'), description: t('sources.processDescription') },
   ]
 
@@ -106,6 +117,8 @@ export function AddSourceDialog({
     defaultNotebookId ? [defaultNotebookId] : []
   )
   const [selectedTransformations, setSelectedTransformations] = useState<string[]>([])
+  // Optional folder (view + group) to file newly created sources into
+  const [targetFolder, setTargetFolder] = useState<FolderTargetValue | null>(null)
 
   // Batch-specific state
   const [urlValidationErrors, setUrlValidationErrors] = useState<{ url: string; line: number }[]>([])
@@ -116,6 +129,7 @@ export function AddSourceDialog({
 
   // API hooks
   const createSource = useCreateSource()
+  const invalidateGrouping = useInvalidateGrouping()
   const { data: notebooks = [], isLoading: notebooksLoading } = useNotebooks()
   const { data: transformations = [], isLoading: transformationsLoading } = useTransformations()
   const { data: settings } = useSettings()
@@ -169,6 +183,17 @@ export function AddSourceDialog({
       }
     }
   }, [])
+
+  // Opened from a folder context: pre-file new sources there; closing drops any pick
+  useEffect(() => {
+    if (!open) {
+      setTargetFolder(null)
+      return
+    }
+    if (defaultGroupId && defaultViewId && defaultViewId !== FILE_TYPE_VIEW_ID) {
+      setTargetFolder({ viewId: defaultViewId, groupId: defaultGroupId })
+    }
+  }, [open, defaultGroupId, defaultViewId])
 
   const selectedType = watch('type')
   const watchedUrl = watch('url')
@@ -316,12 +341,38 @@ export function AddSourceDialog({
       requestWithFile.file = file
     }
 
-    await createSource.mutateAsync(createRequest)
+    // The async path persists the source before queuing, so the id is usable now
+    const created = await createSource.mutateAsync(createRequest)
+    await assignToFolder([created.id])
+  }
+
+  // Best-effort filing into the target folder; the sources are already created,
+  // so a failure only warns instead of failing the whole flow.
+  const assignToFolder = async (createdIds: string[]): Promise<void> => {
+    if (!targetFolder || createdIds.length === 0) return
+    let failed = 0
+    let movedAny = false
+    for (const ids of chunkIds(createdIds)) {
+      try {
+        await sourceViewsApi.moveMembers(targetFolder.groupId, ids)
+        movedAny = true
+      } catch (error) {
+        console.error('Failed to file source(s) into folder:', error)
+        failed += ids.length
+      }
+    }
+    // Bare api call skips the mutation hooks, so grouping caches (source_count
+    // badges) must be invalidated here the same way move/ungroup mutations do.
+    if (movedAny) invalidateGrouping()
+    if (failed > 0) {
+      toast.warning(t('sources.grouping.folderAssignFailed', { count: failed }))
+    }
   }
 
   // Batch submission
   const submitBatch = async (data: CreateSourceFormData): Promise<{ success: number; failed: number }> => {
     const results = { success: 0, failed: 0 }
+    const createdIds: string[] = []
     const items: { type: 'url' | 'file'; value: string | File }[] = []
 
     // Collect items to process
@@ -365,7 +416,8 @@ export function AddSourceDialog({
           requestWithFile.file = item.value as File
         }
 
-        await createSource.mutateAsync(createRequest)
+        const created = await createSource.mutateAsync(createRequest)
+        createdIds.push(created.id)
         results.success++
       } catch (error) {
         console.error(`Error creating source for ${itemLabel}:`, error)
@@ -378,6 +430,8 @@ export function AddSourceDialog({
         failed: results.failed,
       } : null)
     }
+
+    await assignToFolder(createdIds)
 
     return results
   }
@@ -434,6 +488,7 @@ export function AddSourceDialog({
     setProcessing(false)
     setProcessingStatus(null)
     setSelectedNotebooks(defaultNotebookId ? [defaultNotebookId] : [])
+    setTargetFolder(null)
     setUrlValidationErrors([])
     setBatchProgress(null)
 
@@ -550,25 +605,40 @@ export function AddSourceDialog({
             className="border-0"
           >
             {currentStep === 1 && (
-              <SourceTypeStep
-                // @ts-expect-error - Type inference issue with zod schema
-                control={control}
-                register={register}
-                setValue={setValue}
-                // @ts-expect-error - Type inference issue with zod schema
-                errors={errors}
-                urlValidationErrors={urlValidationErrors}
-                onClearUrlErrors={handleClearUrlErrors}
-              />
+              <div className="space-y-4">
+                <SourceTypeStep
+                  // @ts-expect-error - Type inference issue with zod schema
+                  control={control}
+                  register={register}
+                  setValue={setValue}
+                  // @ts-expect-error - Type inference issue with zod schema
+                  errors={errors}
+                  urlValidationErrors={urlValidationErrors}
+                  onClearUrlErrors={handleClearUrlErrors}
+                />
+                <FolderTargetSection
+                  value={targetFolder}
+                  onChange={setTargetFolder}
+                  defaultViewId={defaultViewId}
+                  collapsible={true}
+                />
+              </div>
             )}
             
             {currentStep === 2 && (
-              <NotebooksStep
-                notebooks={notebooks}
-                selectedNotebooks={selectedNotebooks}
-                onToggleNotebook={handleNotebookToggle}
-                loading={notebooksLoading}
-              />
+              <div className="space-y-4">
+                <NotebooksStep
+                  notebooks={notebooks}
+                  selectedNotebooks={selectedNotebooks}
+                  onToggleNotebook={handleNotebookToggle}
+                  loading={notebooksLoading}
+                />
+                <FolderTargetSection
+                  value={targetFolder}
+                  onChange={setTargetFolder}
+                  defaultViewId={defaultViewId}
+                />
+              </div>
             )}
             
             {currentStep === 3 && (

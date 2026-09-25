@@ -28,6 +28,7 @@ from api.routers import (
     chat,
     config,
     credentials,
+    data_transfer,
     embedding,
     embedding_rebuild,
     episode_profiles,
@@ -41,9 +42,11 @@ from api.routers import (
     search,
     settings,
     source_chat,
+    source_groups,
     sources,
     speaker_profiles,
     transformations,
+    usage,
 )
 from api.routers import commands as commands_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
@@ -58,6 +61,7 @@ from open_notebook.exceptions import (
     RateLimitError,
     UnsupportedTypeException,
 )
+from open_notebook.utils.embedding_config import refresh_embedding_params
 from open_notebook.utils.encryption import get_secret_from_env
 
 
@@ -178,6 +182,9 @@ async def _run_database_migrations() -> None:
         )
     else:
         logger.info("Database is already at the latest version. No migrations needed.")
+
+    # Load vectorization params (DB > env > default) into the runtime snapshot.
+    await refresh_embedding_params()
 
 
 @asynccontextmanager
@@ -393,6 +400,9 @@ app.include_router(
 )
 app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
+app.include_router(
+    source_groups.router, prefix="/api", tags=["source-groups"]
+)
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
@@ -404,6 +414,8 @@ app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+app.include_router(usage.router, prefix="/api", tags=["usage"])
+app.include_router(data_transfer.router, prefix="/api", tags=["data-transfer"])
 
 
 @app.get("/")

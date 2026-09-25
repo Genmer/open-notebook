@@ -103,6 +103,150 @@ class TestCredentialModelDiscovery:
     """Tests for credential-backed model discovery."""
 
     @pytest.mark.asyncio
+    async def test_non_openai_provider_discovery_respects_base_url(
+        self, monkeypatch
+    ):
+        """T2.2: any registry provider (not just openai) with a credential
+        base_url must discover against that base_url — e.g. DashScope
+        dedicated endpoints — while keeping the DNS-pinned request path."""
+        from open_notebook.utils.url_validation import PinnedHttpTarget
+
+        requests = []
+        pinned_calls = []
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def get(self, url, headers=None, timeout=None, extensions=None):
+                requests.append(url)
+                return httpx.Response(
+                    200,
+                    json={"data": [{"id": "qwen-plus"}]},
+                    request=httpx.Request("GET", url, headers=headers or {}),
+                )
+
+        async def fake_prepare_pinned(url, provider):
+            pinned_calls.append((url, provider))
+            return PinnedHttpTarget(url=url)
+
+        monkeypatch.setattr(credentials_service.httpx, "AsyncClient", FakeAsyncClient)
+        monkeypatch.setattr(
+            credentials_service, "prepare_pinned_http_target", fake_prepare_pinned
+        )
+
+        models = await credentials_service.discover_with_config(
+            "dashscope",
+            {
+                "api_key": "sk-test",
+                "base_url": "https://dashscope-dedicated.example.com/compatible-mode/v1",
+            },
+        )
+
+        assert [m["name"] for m in models] == ["qwen-plus"]
+        assert requests == [
+            "https://dashscope-dedicated.example.com/compatible-mode/v1/models"
+        ]
+        # User-supplied URL must go through the DNS-pin guard.
+        assert pinned_calls == [
+            (
+                "https://dashscope-dedicated.example.com/compatible-mode/v1/models",
+                "dashscope",
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_zhipu_coding_base_url_used_for_discovery(self, monkeypatch):
+        """A Zhipu credential pointed at the Coding Plan endpoint discovers
+        models there instead of the registry's default paas/v4 URL."""
+        from open_notebook.utils.url_validation import PinnedHttpTarget
+
+        requests = []
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def get(self, url, headers=None, timeout=None, extensions=None):
+                requests.append(url)
+                return httpx.Response(
+                    200,
+                    json={"data": [{"id": "glm-4.6"}]},
+                    request=httpx.Request("GET", url, headers=headers or {}),
+                )
+
+        async def fake_prepare_pinned(url, provider):
+            return PinnedHttpTarget(url=url)
+
+        monkeypatch.setattr(credentials_service.httpx, "AsyncClient", FakeAsyncClient)
+        monkeypatch.setattr(
+            credentials_service, "prepare_pinned_http_target", fake_prepare_pinned
+        )
+
+        models = await credentials_service.discover_with_config(
+            "zhipu",
+            {
+                "api_key": "zp-test",
+                "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
+            },
+        )
+
+        assert [m["name"] for m in models] == ["glm-4.6"]
+        assert all(m["provider"] == "zhipu" for m in models)
+        assert requests == ["https://open.bigmodel.cn/api/coding/paas/v4/models"]
+
+    @pytest.mark.asyncio
+    async def test_dashscope_without_base_url_uses_registry_url(self, monkeypatch):
+        """Without a credential base_url the registry discovery URL is kept."""
+        from open_notebook.utils.url_validation import PinnedHttpTarget
+
+        requests = []
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def get(self, url, headers=None, timeout=None, extensions=None):
+                requests.append(url)
+                return httpx.Response(
+                    200,
+                    json={"data": [{"id": "qwen-max"}]},
+                    request=httpx.Request("GET", url, headers=headers or {}),
+                )
+
+        async def fake_prepare_pinned(url, provider):
+            return PinnedHttpTarget(url=url)
+
+        monkeypatch.setattr(credentials_service.httpx, "AsyncClient", FakeAsyncClient)
+        monkeypatch.setattr(
+            credentials_service, "prepare_pinned_http_target", fake_prepare_pinned
+        )
+
+        await credentials_service.discover_with_config(
+            "dashscope", {"api_key": "sk-test"}
+        )
+
+        assert requests == ["https://dashscope.aliyuncs.com/compatible-mode/v1/models"]
+
+    @pytest.mark.asyncio
     async def test_openai_discovery_respects_base_url(self, monkeypatch):
         """OpenAI model discovery should call the configured API base URL."""
         from open_notebook.utils.url_validation import PinnedHttpTarget

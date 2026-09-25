@@ -35,6 +35,10 @@ export const ERROR_MAP: Record<string, string> = {
   "Answer model": "apiErrors.answerModelNotFound",
   "Final answer model": "apiErrors.finalAnswerModelNotFound",
   "No answer generated": "apiErrors.noAnswerGenerated",
+  // Stable string raised by both create_group and update_group (api/source_group_service.py)
+  "A group with this name already exists at this level": "apiErrors.groupDuplicateName",
+  // Prefix match: the trailing number comes from MAX_GROUP_DEPTH
+  "Group nesting exceeds the maximum depth of": "apiErrors.groupDepthExceeded",
 };
 
 /**

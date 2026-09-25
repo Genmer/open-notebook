@@ -73,6 +73,9 @@ PROVIDER_CONFIG = {
     "dashscope": {
         "env_var": "DASHSCOPE_API_KEY",
     },
+    "zhipu": {
+        "env_var": "ZHIPU_API_KEY",
+    },
     "minimax": {
         "env_var": "MINIMAX_API_KEY",
     },

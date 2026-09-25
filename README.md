@@ -394,3 +394,57 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 [LangChain-url]: https://www.langchain.com/
 [SurrealDB]: https://img.shields.io/badge/SurrealDB-FF5E00?style=for-the-badge&logo=databricks&logoColor=white
 [SurrealDB-url]: https://surrealdb.com/
+
+---
+
+## 本地定制记录
+
+> 本节为本地 fork 的定制改动记录，合并上游时请保留本节。每批改动完成后在此追加一条。
+
+### 2026-09-22：向量化参数设置页
+设置页"嵌入与搜索"新增 4 个向量化参数（分块大小/重叠/最小块/批量），DB>环境变量>默认值动态生效，改后免重启。涉及：open_notebook/utils/embedding_config.py、api/routers/settings.py、SettingsForm.tsx。
+
+### 2026-09-22：智谱 provider 与 DashScope 域名支持
+新增智谱（Zhipu BigModel）供应商（国内版，credential base_url 可切 Coding Plan 域名）；DashScope 百炼专属域名文档与 credential 模型发现修复。涉及：open_notebook/ai/provider_registry.py、open_notebook/ai/__init__.py、api/credentials_service.py。
+
+### 2026-09-22：嵌入进度与 Token 统计
+source 嵌入改为按批落库，详情页实时进度（x/y 块）+失败可见；新增全模型 token 用量统计（设置页 Usage 子页，LLM 全计+embedding 估算，可关闭可清空）。涉及：commands/embedding_commands.py、open_notebook/ai/usage.py、SourceEmbeddingProgress.tsx、settings/usage/。
+
+### 2026-09-22：处理管道分步可视化
+源详情页新增 4 步处理管道 stepper（提取/嵌入/洞察转换/完成），各步独立状态与进度，失败步可就地重试。涉及：api/routers/sources.py、api/models.py、SourceProcessingSteps.tsx。
+
+### 2026-09-22：外观主题切换
+设置页新增外观卡片，支持主题切换（会话前已有的本地定制，补记录）。涉及：AppearanceCard.tsx、theme-store.ts、theme-script.ts、ThemeProvider.tsx。
+
+### 2026-09-22：Token 用量页仪表盘化
+设置页 Usage 子页改为仪表盘风格（参考 Claude 用量页）：引入 recharts，新增按模型分色的每日趋势折线、模型占比环形图（中心总量+百分比图例）、近半年 GitHub 风格热力图、大数字汇总卡（智能单位）、7/30/90 天范围切换；后端 summary 接口新增日×模型聚合。涉及：api/usage_service.py、frontend/src/components/usage/、settings/usage/page.tsx。
+
+### 2026-09-22：对话回车发送开关与嵌入未完成提醒
+对话输入区新增「回车发送」持久化开关（默认关；开启后 Enter 发送、Shift+Enter 换行，含中文输入法/Safari 选词防误发），关闭时维持 Cmd/Ctrl+Enter 发送且页面写明；笔记来源卡片在嵌入失败/部分/未嵌入时右侧显示红色提醒，点击跳转详情页重新嵌入。涉及：ChatPanel.tsx、chat-preferences-store.ts、SourceCard.tsx。
+
+### 2026-09-22：转换规则双语显示与聊天引用显示标题
+6 条预置转换规则显示为「英文（中文）」（如 Dense Summary（稠密摘要），自建规则原样）；AI 回复底部引用列表由 source:id 改为显示来源标题（无标题回退文件名），新增 GET /api/sources/titles 批量查询端点。涉及：transformation-display.ts、source-references.tsx、api/routers/sources.py。
+
+### 2026-09-23：一键重新嵌入与来源多视图分组
+来源页新增「一键嵌入全部未完成」（missing 模式原子认领防重复提交，下方实时排队进度，可捞回卡死状态）；来源新增多视图分组体系（迁移 29）：文件类型（按文件后缀分组 PDF/DOCX/EXCEL 等，固定只读）/ AI 内容分类（向量聚类+一次 LLM 命名，约 2k token）/ AI 文件名分类 / 自定义四个独立视图，分组可嵌套（深度 5），支持多选批量移动/复制（深拷贝含向量零 token）/级联删除，笔记本来源列同步分组导航。涉及：embedding_commands.py、classification_commands.py、clustering.py、source_group_service.py、SourceViewTabs/GroupTree/BulkActionBar。
+
+### 2026-09-23：数据导出/导入
+新增整库打包导出与导入（`/settings/data` 入口）：笔记本/来源/笔记/洞察/转换规则/视图分组/向量/上传文件导出为单个 zip（manifest 严格校验+sha256，凭据与 command 表物理排除），导入按 id 整条跳过实现幂等（同包连导两次零写入，绝不覆盖已有数据），文件流式解压+哈希校验后重写 asset 路径，进度走 data_transfer_state 表（迁移 30）实时轮询。注意：新增命令模块 data_transfer_commands.py 需重启 surreal-commands-worker 才会注册。涉及：commands/data_transfer_commands.py、api/data_transfer_service.py、api/routers/data_transfer.py。
+
+### 2026-09-23：来源文件夹操作补全与术语更名、笔记本新增来源可选目标文件夹
+来源页补全文件管理器操作全集：行内重命名/移动/复制/移出/删除菜单、批量规则重命名（前缀/后缀/查找替换）与批量删除、当前位置面包屑、行拖拽入夹与文件夹拖拽调层级、Shift 范围勾选；「分组」术语统一更名「文件夹」（14 语言）；添加来源对话框新增可选目标文件夹（创建后两步入组，非原子由前端警示兜底）。后端经逐一对照零改动：所需端点与深度/环/重名校验均已存在（无迁移、无新命令、无需重启 worker）。涉及：frontend/src/app/(dashboard)/sources/page.tsx、frontend/src/components/sources/、frontend/src/lib/locales/。
+
+### 2026-09-24：来源/文件夹右键菜单（重命名、新建文件夹、移动到文件夹）
+笔记本详情页来源卡片、/sources 页表格行、GroupTree 文件夹节点三处新增右键菜单（打开/重命名/移动到文件夹/新建文件夹等，一套内容组件复用）；移动弹窗 GroupPickerDialog 支持内联即时新建文件夹并自动选中（顺带修复零文件夹时确认键永久禁用的死局）；SourceCard ⋮ 菜单同步补齐三项防两入口能力漂移；引入 @radix-ui/react-context-menu。后端零改动：所需端点（PUT /sources/{id}、views/groups CRUD、POST /groups/{gid}/members|copy、POST /views/{vid}/ungroup）均已存在且测试覆盖，source.title 的 BM25 索引随写入自动维护。涉及：frontend/src/components/ui/context-menu.tsx、frontend/src/components/sources/、frontend/src/app/(dashboard)/notebooks/components/SourcesColumn.tsx、frontend/src/lib/locales/。
+
+### 2026-09-24：来源视图家族化与笔记本页文件夹条目区（文件浏览器范式统一）
+「视图」术语从用户可见文案退场：/sources 页标签区改三段家族（我的文件夹/✨AI 自动分类/按文件类型，段下常驻解释 hint，AI 段前置"重新分类会覆盖手动调整"警示）；笔记本页来源列「视图+文件夹」双下拉简化为单下拉「整理方式」（选项按家族分组），选定后卡片列表上方新增文件夹条目区 FolderRail（空文件夹也显示、计数徽章含 0，位于滚动容器外不影响分页/无限滚动）+ 面包屑，与 /sources 页共享 GroupTree 数据层、右键菜单、弹窗状态机（use-group-dialogs）；新建文件夹弹窗显示落点路径与同级夹列表、重名即时禁用；未选视图时新建自动落 custom 视图并切入高亮（修复此前静默落进 AI Content、Re-classify 一跑即被覆盖）；同级重名的后端英文报错映射为中文提示；AI 视图显示名改「按内容/按文件名」（走 displayViewName i18n 间接层，DB 名不动）。后端零改动（本批逐一复核）：views/groups CRUD、move/copy/ungroup、classify 与防环/深度≤5/重名校验均已存在，重名错误串在 create/update 两处一致（api/source_group_service.py:234,266），group_id 筛选为直接成员精确匹配（api/routers/sources.py:582-586）；无迁移、无新命令、无需重启 worker。涉及：frontend/src/app/(dashboard)/notebooks/components/SourcesColumn.tsx、frontend/src/app/(dashboard)/sources/page.tsx、frontend/src/components/sources/（FolderRail/GroupBadge/use-group-dialogs/SourceViewTabs/GroupTree/GroupNameDialog）、frontend/src/lib/utils/error-handler.ts、frontend/src/lib/locales/。
+
+### 2026-09-23：Token 用量页改版（后端口径修正）
+用量汇总接口按请求时区切日：summary 新增 tz_offset 参数（分钟，JS 符号，UTC+8 传 480），day 桶与窗口边界从 UTC 日改为本地日（写入侧 day 字段仍按 UTC，明细展示用 created 本地化，两种日界自此统一）；新增 previous_totals 上一等长周期聚合（环比）与 totals/by_model 的 estimated_tokens（embedding 估算量在聚合位可见）；WHERE 条件由 day 字符串比较改为 created 时间戳阈值。写入侧、明细与清空接口、worker 均无改动。涉及：api/usage_service.py、api/routers/usage.py、api/models.py、tests/test_usage_api.py。
+
+### 2026-09-24：字体自托管（构建离线化）
+next build 生产构建需联网拉 Google Fonts，本机直连不通导致构建失败（门禁无代理环境必挂）。5 个字体（Instrument Sans/Bricolage Grotesque/Spline Sans Mono/Geist/Geist Mono）改为本地 latin variable woff2 自托管，layout.tsx 从 next/font/google 切到 next/font/local，variable 名与权重范围保持不变（视觉零变化，display 补显式 swap 与原默认一致），构建从此离线可跑。涉及：frontend/src/app/layout.tsx、frontend/src/app/fonts/。
+
+### 2026-09-24：文件夹体验第 1 轮评审修复（两页范式对齐）
+修复评审发现：命名弹窗 onConfirm 现真正返回 Promise（后端拒绝时保持打开可重试，两页建夹/重命名改 mutateAsync）；右键内联新建子夹成功后有落点 toast（「已在『父夹』内创建…」）；笔记本页浏览中的视图/文件夹被他页删除时自动回退根层/全部视图（不再卡幽灵位置）；深度上限前端三道防线（建夹入口限深禁用、移动弹窗按"目标深度+子树高>5"预置灰、后端 400 映射中文）+ MAX_GROUP_DEPTH 前端常量统一到 group-tree.ts；/sources 新建文件夹落点改为当前浏览文件夹（与笔记本页文件浏览器语义一致，弹窗落点提示/同级列表同步）；笔记本来源列表加 keepPreviousData（进出文件夹不再整列闪 loading）；移动弹窗空文件夹也显示 0 计数；无自定义视图的全新用户右键建夹自动先创建「我的文件夹」视图（绝不落进会被 AI 重分类覆盖的视图）；高亮计时改为新夹渲染出来后才开始；zh-CN/zh-TW/en-US 清掉 aiOverwriteHint 与重分类确认里的「视图」措辞（改「文件夹集」）。后端零改动。涉及：frontend/src/components/sources/（GroupDialogs/FolderRail/GroupTree/GroupPickerDialog/folder-parity.test）、frontend/src/app/(dashboard)/notebooks/components/SourcesColumn.tsx、frontend/src/app/(dashboard)/sources/page.tsx、frontend/src/lib/（hooks/use-sources.ts、utils/group-tree.ts、utils/error-handler.ts、locales/×14）。

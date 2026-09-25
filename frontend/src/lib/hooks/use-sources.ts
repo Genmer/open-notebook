@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { sourcesApi } from '@/lib/api/sources'
 import { QUERY_KEYS } from '@/lib/api/query-client'
@@ -25,15 +25,24 @@ export function useSources(notebookId?: string) {
   })
 }
 
+export interface NotebookSourceFilters {
+  viewId?: string
+  /** 'all' | 'ungrouped' | a group id — applied within viewId. */
+  group?: 'all' | 'ungrouped' | string
+}
+
 /**
  * Hook for fetching notebook sources with infinite scroll pagination.
  * Returns flattened sources array and pagination controls.
  */
-export function useNotebookSources(notebookId: string) {
+export function useNotebookSources(notebookId: string, filters?: NotebookSourceFilters) {
   const queryClient = useQueryClient()
+  const viewId = filters?.viewId
+  const group = filters?.group ?? 'all'
+  const hasGrouping = !!viewId && viewId !== 'file_type'
 
   const query = useInfiniteQuery({
-    queryKey: QUERY_KEYS.sourcesInfinite(notebookId),
+    queryKey: ['sources', 'infinite', notebookId, viewId ?? null, group],
     queryFn: async ({ pageParam = 0 }) => {
       const data = await sourcesApi.list({
         notebook_id: notebookId,
@@ -41,6 +50,9 @@ export function useNotebookSources(notebookId: string) {
         offset: pageParam,
         sort_by: 'updated',
         sort_order: 'desc',
+        ...(hasGrouping ? { view_id: viewId } : {}),
+        ...(hasGrouping && group === 'ungrouped' ? { ungrouped: true } : {}),
+        ...(hasGrouping && group !== 'all' && group !== 'ungrouped' ? { group_id: group } : {}),
       })
       return {
         sources: data,
@@ -52,6 +64,8 @@ export function useNotebookSources(notebookId: string) {
     enabled: !!notebookId,
     staleTime: 5 * 1000,
     refetchOnWindowFocus: true,
+    // 进出文件夹/切换视图时保留上一屏内容，避免整列闪加载态
+    placeholderData: keepPreviousData,
   })
 
   // Flatten all pages into a single array (memoized to prevent infinite re-renders)
@@ -62,7 +76,7 @@ export function useNotebookSources(notebookId: string) {
 
   // Refetch function that resets to first page
   const refetch = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
+    queryClient.invalidateQueries({ queryKey: ['sources', 'infinite', notebookId] })
   }, [queryClient, notebookId])
 
   return {
@@ -83,6 +97,18 @@ export function useSource(id: string) {
     enabled: !!id,
     staleTime: 30 * 1000, // 30 seconds - shorter stale time for more responsive updates
     refetchOnWindowFocus: true, // Refetch when user comes back to the tab
+  })
+}
+
+// Source titles rarely change, so a 5-minute staleTime lets messages that cite
+// the same sources share one request instead of refetching per message.
+export function useSourceTitles(ids: string[]) {
+  const canonicalIds = [...new Set(ids)].sort()
+  return useQuery({
+    queryKey: ['sources', 'titles', canonicalIds],
+    queryFn: () => sourcesApi.titles(canonicalIds),
+    enabled: ids.length > 0,
+    staleTime: 5 * 60 * 1000,
   })
 }
 
@@ -241,6 +267,10 @@ export function useSourceStatus(sourceId: string, enabled = true) {
       // The query.state.data contains the SourceStatusResponse
       const data = query.state.data as SourceStatusResponse | undefined
       if (data?.status === 'running' || data?.status === 'queued' || data?.status === 'new') {
+        return 2000
+      }
+      // Embedding progress also advances in the background — keep polling
+      if (data?.embedding?.status === 'running' || data?.embedding?.status === 'queued') {
         return 2000
       }
       // No auto-refresh if completed, failed, or unknown

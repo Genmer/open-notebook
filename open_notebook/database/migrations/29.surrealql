@@ -1,0 +1,22 @@
+-- Migration 29: source grouping foundation (views + hierarchical groups + membership).
+-- The EVENT removes memberships when their source is deleted (no dangling edges).
+DEFINE TABLE IF NOT EXISTS source_view SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE source_view TYPE string;
+DEFINE FIELD IF NOT EXISTS view_type ON TABLE source_view TYPE string;
+DEFINE FIELD IF NOT EXISTS last_classified_at ON TABLE source_view TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS classify_progress ON TABLE source_view FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS created ON source_view DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON source_view DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS source_group SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS source_view ON TABLE source_group TYPE record<source_view>;
+DEFINE FIELD IF NOT EXISTS name ON TABLE source_group TYPE string;
+DEFINE FIELD IF NOT EXISTS parent ON TABLE source_group TYPE option<record<source_group>>;
+DEFINE FIELD IF NOT EXISTS created ON source_group DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON source_group DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_source_group_view ON TABLE source_group FIELDS source_view;
+
+DEFINE TABLE IF NOT EXISTS source_group_member TYPE RELATION FROM source TO source_group;
+DEFINE FIELD IF NOT EXISTS created ON source_group_member DEFAULT time::now() VALUE $before OR time::now();
+
+DEFINE EVENT IF NOT EXISTS source_membership_cleanup ON TABLE source WHEN ($after == NONE) THEN { delete source_group_member where in == $before.id; };

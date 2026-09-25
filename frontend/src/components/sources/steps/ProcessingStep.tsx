@@ -7,6 +7,7 @@ import { CheckboxList } from "@/components/ui/checkbox-list"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Transformation } from "@/lib/types/transformations"
 import { SettingsResponse } from "@/lib/types/api"
+import { displayTransformationTitle } from "@/lib/utils/transformation-display"
 
 interface CreateSourceFormData {
   type: 'link' | 'upload' | 'text'
@@ -40,7 +41,7 @@ export function ProcessingStep({
   const { t } = useTranslation()
   const transformationItems = transformations.map((transformation) => ({
     id: transformation.id,
-    title: transformation.title,
+    title: displayTransformationTitle(transformation.title, t) ?? transformation.title,
     description: transformation.description
   }))
 

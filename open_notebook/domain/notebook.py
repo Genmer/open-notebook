@@ -16,6 +16,20 @@ from open_notebook.exceptions import (
     NotFoundError,
 )
 
+# Sentinel for set_embedding_state(error=...): unset means "don't touch the
+# stored error", explicit None means "clear it".
+_UNSET: Any = object()
+
+# Denormalized embedding progress on source - owned exclusively by
+# set_embedding_state (worker/API targeted updates), never by save().
+_EMBEDDING_PROGRESS_FIELDS = (
+    "embedding_status",
+    "embedding_command",
+    "embedding_error",
+    "total_chunks",
+    "embedded_chunks",
+)
+
 
 class Notebook(ObjectModel):
     table_name: ClassVar[str] = "notebook"
@@ -415,11 +429,24 @@ class Source(ObjectModel):
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands processing job"
     )
+    # Denormalized embedding progress (written by the embed_source command)
+    embedding_status: Optional[str] = None
+    embedding_command: Optional[Union[str, RecordID]] = None
+    embedding_error: Optional[str] = None
+    total_chunks: Optional[int] = None
+    embedded_chunks: Optional[int] = None
 
     @field_validator("command", mode="before")
     @classmethod
     def parse_command(cls, value):
         """Parse command field to ensure RecordID format"""
+        if isinstance(value, str) and value:
+            return ensure_record_id(value)
+        return value
+
+    @field_validator("embedding_command", mode="before")
+    @classmethod
+    def parse_embedding_command(cls, value):
         if isinstance(value, str) and value:
             return ensure_record_id(value)
         return value
@@ -533,6 +560,49 @@ class Source(ObjectModel):
         await Notebook.get(notebook_id)  # raises NotFoundError if invalid/missing
         return await self.relate("reference", notebook_id)
 
+    async def set_embedding_state(
+        self,
+        *,
+        status: str,
+        embedded_chunks: Optional[int] = None,
+        total_chunks: Optional[int] = None,
+        error: Union[Optional[str], object] = _UNSET,
+        command_id: Optional[str] = None,
+        best_effort: bool = False,
+    ) -> None:
+        """Write the denormalized embedding progress fields via a targeted UPDATE.
+
+        Uses repo_query instead of save() so concurrent writers (command worker
+        vs API) don't overwrite each other's whole-object changes. Only the
+        fields explicitly passed are touched; error=None (as opposed to leaving
+        it unset) actively clears a previous error.
+        """
+        data: Dict[str, Any] = {"embedding_status": status}
+        if embedded_chunks is not None:
+            data["embedded_chunks"] = embedded_chunks
+        if total_chunks is not None:
+            data["total_chunks"] = total_chunks
+        if error is not _UNSET:
+            data["embedding_error"] = None if error is None else str(error)[:500]
+        if command_id and command_id != "unknown":
+            data["embedding_command"] = ensure_record_id(command_id)
+
+        try:
+            await repo_query(
+                "UPDATE $source_id MERGE $data",
+                {
+                    "source_id": ensure_record_id(self.id),
+                    "data": data,
+                },
+            )
+        except Exception as e:
+            if best_effort:
+                logger.warning(
+                    f"Failed to update embedding state for source {self.id}: {e}"
+                )
+            else:
+                raise
+
     async def vectorize(self) -> str:
         """
         Submit vectorization as a background job using the embed_source command.
@@ -568,6 +638,13 @@ class Source(ObjectModel):
             logger.info(
                 f"Embed source job submitted for source {self.id}: "
                 f"command_id={command_id_str}"
+            )
+
+            await self.set_embedding_state(
+                status="queued",
+                command_id=command_id_str,
+                error=None,
+                best_effort=True,
             )
 
             return command_id_str
@@ -634,12 +711,18 @@ class Source(ObjectModel):
             raise DatabaseOperationError(e)
 
     def _prepare_save_data(self) -> dict:
-        """Override to ensure command field is always RecordID format for database"""
+        """Override to ensure command fields are always RecordID format for database"""
         data = super()._prepare_save_data()
 
-        # Ensure command field is RecordID format if not None
+        # Ensure command fields are RecordID format if not None
         if data.get("command") is not None:
             data["command"] = ensure_record_id(data["command"])
+
+        # Embedding progress is written exclusively via set_embedding_state's
+        # targeted UPDATE; a generic save() carries a stale in-memory copy that
+        # would clobber fresher worker state between load and save.
+        for field in _EMBEDDING_PROGRESS_FIELDS:
+            data.pop(field, None)
 
         return data
 

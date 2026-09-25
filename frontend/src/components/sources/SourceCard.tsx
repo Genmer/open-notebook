@@ -1,9 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, memo } from 'react'
+import { useRouter } from 'next/navigation'
 import { SourceListResponse } from '@/lib/types/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,8 +24,13 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
-  Unlink
+  Unlink,
+  Pencil,
+  FolderInput,
+  FolderPlus
 } from 'lucide-react'
+import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { SourceContextMenuContent } from '@/components/sources/SourceContextMenu'
 import { useSourceStatus } from '@/lib/hooks/use-sources'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { TFunction } from 'i18next'
@@ -43,6 +50,18 @@ interface SourceCardProps {
   showRemoveFromNotebook?: boolean
   contextMode?: ContextMode
   onContextModeChange?: (mode: ContextMode) => void
+  // 右键菜单/⋮ 菜单共用的组织入口；四个都未传时不包 ContextMenu（保持旧调用方零变化）
+  onOpenSource?: (sourceId: string) => void
+  onRename?: (sourceId: string) => void
+  onMoveToFolder?: (sourceId: string) => void
+  onNewFolder?: () => void
+  onUngroupFromFolder?: (sourceId: string) => void
+  // 组织入口闭包捕获的 view/group 上下文快照，变化时必须重渲染（见 areEqual）
+  menuContextKey?: string
+  // 批量选择：悬停显示勾选框（选中后常显），点击勾选不触发卡片点击
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (sourceId: string) => void
 }
 
 const SOURCE_TYPE_ICONS = {
@@ -50,6 +69,9 @@ const SOURCE_TYPE_ICONS = {
   upload: Upload,
   text: FileText,
 } as const
+
+// 红色徽章只覆盖"需要人处理"的嵌入终态；queued/running 已有 teal 进行中提示
+const EMBEDDING_INCOMPLETE_STATUSES = new Set(['failed', 'partial', 'not_embedded'])
 
 const getStatusConfig = (t: TFunction) => ({
   new: {
@@ -118,9 +140,18 @@ function SourceCardImpl({
   className,
   showRemoveFromNotebook = false,
   contextMode,
-  onContextModeChange
+  onContextModeChange,
+  onOpenSource,
+  onRename,
+  onMoveToFolder,
+  onNewFolder,
+  onUngroupFromFolder,
+  selectable,
+  selected = false,
+  onToggleSelect
 }: SourceCardProps) {
   const { t } = useTranslation()
+  const router = useRouter()
   const statusConfigMap = getStatusConfig(t)
   
   // Only fetch status for sources that might have async processing
@@ -218,15 +249,36 @@ function SourceCardImpl({
   const isProcessing: boolean = currentStatus === 'new' || currentStatus === 'running' || currentStatus === 'queued'
   const isFailed: boolean = currentStatus === 'failed'
   const isCompleted: boolean = currentStatus === 'completed'
+  // null/undefined（极旧数据）不算未完成，避免误报
+  const hasIncompleteEmbedding: boolean = !!source.embedding_status && EMBEDDING_INCOMPLETE_STATUSES.has(source.embedding_status)
 
-  return (
+  const hasMenuActions = !!(onOpenSource || onRename || onMoveToFolder || onNewFolder)
+
+  const card = (
     <Card
       className={cn(
         'transition-colors duration-150 shadow-none hover:border-sage/50 group relative cursor-pointer border',
+        selectable && selected && 'border-sage/70 ring-1 ring-sage/40',
         className
       )}
       onClick={handleCardClick}
     >
+      {selectable && onToggleSelect && (
+        <span
+          className={cn(
+            'absolute left-1.5 top-1.5 z-10 rounded-md bg-background/80 p-0.5 backdrop-blur-sm transition-opacity',
+            selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+          )}
+          onClick={e => e.stopPropagation()}
+        >
+          <Checkbox
+            checked={selected}
+            onCheckedChange={() => onToggleSelect(source.id)}
+            aria-label={title}
+            data-testid={`source-select-${source.id}`}
+          />
+        </span>
+      )}
       <CardContent className="px-3 py-1">
         {/* Header with status indicator */}
         <div className="flex items-start justify-between gap-3 mb-1">
@@ -284,6 +336,15 @@ function SourceCardImpl({
                   <span>{t('sources.insightsCount', { count: source.insights_count })}</span>
                 </>
               )}
+              {(source.embedding_status === 'running' || source.embedding_status === 'queued') && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="inline-flex items-center gap-1 text-teal">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t('sources.embeddingInProgress')}
+                  </span>
+                </>
+              )}
               {source.topics && source.topics.length > 0 && isCompleted && (
                 <>
                   <span aria-hidden>·</span>
@@ -298,6 +359,22 @@ function SourceCardImpl({
 
           {/* Context toggle and actions */}
           <div className="flex items-center gap-1">
+            {/* 嵌入未完成提醒：stopPropagation 防止同时触发卡片 onClick 的 openModal 双跳 */}
+            {hasIncompleteEmbedding && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium bg-destructive-tint text-destructive hover:bg-destructive-tint/80 transition-colors cursor-pointer flex-shrink-0"
+                title={t('sources.embeddingIncompleteHint')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  router.push(`/sources/${source.id}`)
+                }}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                {t('sources.embeddingIncomplete')}
+              </button>
+            )}
+
             {/* Context toggle - only show if handler provided */}
             {onContextModeChange && contextMode && (
               <ContextToggle
@@ -320,6 +397,39 @@ function SourceCardImpl({
                 </Button>
               </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {onRename && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRename(source.id)
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  {t('sources.grouping.renameSource')}
+                </DropdownMenuItem>
+              )}
+              {onMoveToFolder && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMoveToFolder(source.id)
+                  }}
+                >
+                  <FolderInput className="h-4 w-4 mr-2" />
+                  {t('sources.grouping.moveToFolder')}
+                </DropdownMenuItem>
+              )}
+              {onNewFolder && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onNewFolder()
+                  }}
+                >
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  {t('sources.grouping.newFolder')}
+                </DropdownMenuItem>
+              )}
               {showRemoveFromNotebook && (
                 <>
                   <DropdownMenuItem
@@ -422,6 +532,25 @@ function SourceCardImpl({
       </CardContent>
     </Card>
   )
+
+  if (!hasMenuActions) return card
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+      <SourceContextMenuContent
+        onOpen={onOpenSource ? () => onOpenSource(source.id) : undefined}
+        onRename={onRename ? () => onRename(source.id) : undefined}
+        onMove={onMoveToFolder ? () => onMoveToFolder(source.id) : undefined}
+        onNewFolder={onNewFolder}
+        onUngroup={onUngroupFromFolder ? () => onUngroupFromFolder(source.id) : undefined}
+        onRemoveFromNotebook={
+          showRemoveFromNotebook && onRemoveFromNotebook ? handleRemoveFromNotebook : undefined
+        }
+        onDelete={onDelete ? handleDelete : undefined}
+      />
+    </ContextMenu>
+  )
 }
 
 /**
@@ -430,9 +559,9 @@ function SourceCardImpl({
  * every card, causing UI jank that scaled with the number of sources (#503).
  *
  * We compare only the props that affect this card's rendered output. Handler identity
- * is intentionally ignored: callers often pass inline closures, and those closures
- * capture the source id, so a stale closure stays correct as long as the source data
- * below is unchanged.
+ * is intentionally ignored for id-capturing closures, but the organization handlers
+ * (rename/move/new-folder/ungroup) capture view/group context, so their presence and
+ * menuContextKey must be compared or the menu goes stale after a filter switch.
  */
 function topicsEqual(a?: string[], b?: string[]): boolean {
   if (a === b) return true
@@ -454,13 +583,23 @@ function areEqual(prev: SourceCardProps, next: SourceCardProps): boolean {
     p.status === n.status &&
     p.command_id === n.command_id &&
     p.embedded === n.embedded &&
+    p.embedding_status === n.embedding_status &&
     p.insights_count === n.insights_count &&
     p.asset?.url === n.asset?.url &&
     p.asset?.file_path === n.asset?.file_path &&
     topicsEqual(p.topics, n.topics) &&
     prev.contextMode === next.contextMode &&
     prev.showRemoveFromNotebook === next.showRemoveFromNotebook &&
-    prev.className === next.className
+    prev.className === next.className &&
+    prev.menuContextKey === next.menuContextKey &&
+    // 组织入口的存在性与捕获的上下文随 views 加载/分组筛选翻转，漏比会固化旧菜单
+    Boolean(prev.onOpenSource) === Boolean(next.onOpenSource) &&
+    Boolean(prev.onRename) === Boolean(next.onRename) &&
+    Boolean(prev.onMoveToFolder) === Boolean(next.onMoveToFolder) &&
+    Boolean(prev.onNewFolder) === Boolean(next.onNewFolder) &&
+    Boolean(prev.onUngroupFromFolder) === Boolean(next.onUngroupFromFolder) &&
+    prev.selected === next.selected &&
+    Boolean(prev.onToggleSelect) === Boolean(next.onToggleSelect)
   )
 }
 

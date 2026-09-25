@@ -8,6 +8,7 @@ from typing import (
     Literal,
     Optional,
     Tuple,
+    TypedDict,
 )
 
 from loguru import logger
@@ -18,7 +19,11 @@ from open_notebook.database.repository import ensure_record_id, repo_insert, rep
 from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError, ContextLengthExceededError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
-from open_notebook.utils.embedding import generate_embedding, generate_embeddings
+from open_notebook.utils.embedding import (
+    generate_embedding,
+    iter_embedding_batches,
+)
+from open_notebook.utils.embedding_config import refresh_embedding_params
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -43,6 +48,52 @@ def get_command_id(input_data: CommandInput) -> str:
     if input_data.execution_context:
         return str(input_data.execution_context.command_id)
     return "unknown"
+
+
+_TERMINAL_COMMAND_STATUSES = {"failed", "canceled", "completed"}
+
+
+async def _owning_command_is_stale(command_id: str) -> bool:
+    """Stale running is judged by the owning command's real status: a terminal
+    or vanished command can never finish its run. A transient lookup failure
+    counts as alive so we never double-embed."""
+    try:
+        rows = await repo_query(
+            "SELECT status FROM type::thing($command_id)",
+            {"command_id": command_id},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to look up owning command {command_id}: {e}")
+        return False
+    return not rows or str(rows[0].get("status")) in _TERMINAL_COMMAND_STATUSES
+
+
+async def _collect_stale_running_sources() -> Dict[str, str]:
+    """Sources stuck in 'running' whose owning command is terminal or gone are
+    unrecoverable; map them to their stale command id for an optimistic-lock
+    claim during a missing-mode rebuild."""
+    rows = await repo_query(
+        """
+        SELECT id, embedding_command FROM source
+        WHERE embedding_status = 'running'
+        AND full_text != NONE AND string::trim(full_text) != ''
+        """
+    )
+    stale: Dict[str, str] = {}
+    for row in rows or []:
+        owner = str(row.get("embedding_command") or "")
+        if owner and not await _owning_command_is_stale(owner):
+            continue
+        stale[str(row["id"])] = owner
+    return stale
+
+
+class RebuildItems(TypedDict):
+    sources: List[str]
+    notes: List[str]
+    insights: List[str]
+    # source id -> owning command id ('' when the source has none)
+    stale_sources: Dict[str, str]
 
 
 async def _embed_record(
@@ -70,6 +121,9 @@ async def _embed_record(
         can handle them.
     """
     start_time = time.time()
+
+    # Pick up current DB/env vectorization params before any embedding work.
+    await refresh_embedding_params()
 
     try:
         logger.info(f"Starting embedding for {kind}: {record_id}")
@@ -136,7 +190,7 @@ async def _embed_markdown_record(
 
 
 class RebuildEmbeddingsInput(CommandInput):
-    mode: Literal["existing", "all"]
+    mode: Literal["existing", "all", "missing"]
     include_sources: bool = True
     include_notes: bool = True
     include_insights: bool = True
@@ -215,6 +269,8 @@ class EmbedSourceOutput(CommandOutput):
     chunks_created: int
     processing_time: float
     error_message: Optional[str] = None
+    embedding_status: Optional[str] = None
+    embedded_chunks: int = 0
 
 
 @command("embed_note", app="open_notebook", retry=EMBED_RETRY_CONFIG)
@@ -306,22 +362,25 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
     """
     Generate and store embeddings for a source document.
 
-    Creates multiple chunk embeddings stored in the source_embedding table.
-    Uses content-type aware chunking based on file extension or content heuristics.
-
-    Flow:
-    1. Load Source by ID
-    2. DELETE existing source_embedding records for this source
-    3. Detect content type from file path or content
-    4. Chunk text using appropriate splitter
-    5. Generate embeddings for all chunks in batches
-    6. Bulk INSERT source_embedding records
+    Creates multiple chunk embeddings stored in the source_embedding table,
+    inserted batch by batch so the source's denormalized progress fields
+    (embedding_status/embedded_chunks/...) reflect real progress.
 
     Retry Strategy:
     - Retries up to 5 times for transient failures (network, timeout, etc.)
     - Uses exponential-jitter backoff (1-60s)
-    - Does NOT retry permanent failures (ValueError for validation errors)
+    - Does NOT retry permanent failures (ValueError for validation errors);
+      embedding batches whose own retries are exhausted raise ValueError
+      so the command lands in a terminal partial/failed state instead of
+      re-running from scratch.
     """
+
+    async def _mark_state(
+        source: Source, status: str, error: Optional[str] = None, **kwargs: Any
+    ) -> None:
+        await source.set_embedding_state(
+            status=status, error=error, command_id=cmd_id, best_effort=True, **kwargs
+        )
 
     async def embed() -> Tuple[Dict[str, Any], str]:
         # 1. Load source
@@ -329,7 +388,36 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         if not source:
             raise ValueError(f"Source '{input_data.source_id}' not found")
 
+        # A live command owning this source (running or queued) must not be
+        # double-run: touching the source here would delete embeddings the
+        # owner is writing. Same-command retries carry the same id and are not
+        # skipped; a stale owner is taken over instead of blocking forever.
+        if (
+            source.embedding_status in ("running", "queued")
+            and source.embedding_command
+            and str(source.embedding_command) != cmd_id
+        ):
+            owner = str(source.embedding_command)
+            if not await _owning_command_is_stale(owner):
+                logger.info(
+                    f"Skipping embed_source for {input_data.source_id}: "
+                    f"owned by active command {owner} ({source.embedding_status})"
+                )
+                return (
+                    {
+                        "chunks_created": 0,
+                        "embedding_status": source.embedding_status,
+                        "embedded_chunks": 0,
+                    },
+                    ": skipped (owned by another command)",
+                )
+            logger.info(
+                f"Taking over embed_source for {input_data.source_id}: "
+                f"owning command {owner} is stale"
+            )
+
         if not source.full_text or not source.full_text.strip():
+            await _mark_state(source, "failed", "Source has no text to embed")
             raise ValueError(f"Source '{input_data.source_id}' has no text to embed")
 
         # 2. DELETE existing embeddings (idempotency)
@@ -358,36 +446,88 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         )
 
         if total_chunks == 0:
+            await _mark_state(source, "failed", "No chunks created after splitting text")
             raise ValueError("No chunks created after splitting text")
 
-        # 5. Generate embeddings for all chunks in batches
-        cmd_id = get_command_id(input_data)
-        logger.debug(f"Generating embeddings for {total_chunks} chunks")
-        embeddings = await generate_embeddings(chunks, command_id=cmd_id)
+        # 5. Reset progress before the first batch
+        await _mark_state(
+            source, "running", error=None, total_chunks=total_chunks, embedded_chunks=0
+        )
 
-        # Verify we got embeddings for all chunks
-        if len(embeddings) != len(chunks):
+        # 6. Embed batch by batch, inserting each batch so progress is real
+        embedded_so_far = 0
+        try:
+            async for batch_embeddings in iter_embedding_batches(
+                chunks, command_id=cmd_id
+            ):
+                start_index = embedded_so_far
+                batch_chunks = chunks[start_index : start_index + len(batch_embeddings)]
+                if len(batch_embeddings) != len(batch_chunks):
+                    raise ValueError(
+                        f"Embedding count mismatch: got {len(batch_embeddings)} "
+                        f"embeddings for {len(batch_chunks)} chunks"
+                    )
+
+                records = [
+                    {
+                        "source": ensure_record_id(input_data.source_id),
+                        "order": start_index + idx,
+                        "content": chunk,
+                        "embedding": embedding,
+                    }
+                    for idx, (chunk, embedding) in enumerate(
+                        zip(batch_chunks, batch_embeddings)
+                    )
+                ]
+                logger.debug(f"Inserting {len(records)} source_embedding records")
+                await repo_insert("source_embedding", records)
+                embedded_so_far += len(records)
+
+                await _mark_state(
+                    source, "running", embedded_chunks=embedded_so_far
+                )
+        except ValueError as e:
+            # Permanent (bad input / missing config) - terminal state; retrying
+            # cannot fix it (stop_on includes ValueError anyway).
+            status = "partial" if embedded_so_far > 0 else "failed"
+            await _mark_state(source, status, error=str(e))
+            raise
+        except RuntimeError as e:
+            # Batch retries exhausted inside the embedding pipeline - permanent,
+            # don't burn the command-level retry budget re-running everything.
+            status = "partial" if embedded_so_far > 0 else "failed"
+            await _mark_state(source, status, error=str(e))
             raise ValueError(
-                f"Embedding count mismatch: got {len(embeddings)} embeddings "
-                f"for {len(chunks)} chunks"
-            )
+                f"Embedding failed permanently for source {input_data.source_id}: {e}"
+            ) from e
+        except Exception as e:
+            # Transient - the command-level retry re-runs embed(), which resets
+            # progress. Keep status=running so the UI keeps polling instead of
+            # freezing on a fake "failed" during the retry backoff (and users
+            # aren't tempted into a concurrent manual retry). Accepted edge: if
+            # the retry budget is exhausted the command ends success=False while
+            # the source stays running - a manual retry rescues it.
+            await _mark_state(source, "running", error=str(e))
+            raise
 
-        # 6. Bulk INSERT source_embedding records
-        records = [
+        await _mark_state(
+            source,
+            "completed",
+            error=None,
+            embedded_chunks=embedded_so_far,
+            total_chunks=total_chunks,
+        )
+
+        return (
             {
-                "source": ensure_record_id(input_data.source_id),
-                "order": idx,
-                "content": chunk,
-                "embedding": embedding,
-            }
-            for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings))
-        ]
+                "chunks_created": embedded_so_far,
+                "embedding_status": "completed",
+                "embedded_chunks": embedded_so_far,
+            },
+            f": {embedded_so_far} chunks",
+        )
 
-        logger.debug(f"Inserting {len(records)} source_embedding records")
-        await repo_insert("source_embedding", records)
-
-        return {"chunks_created": total_chunks}, f": {total_chunks} chunks"
-
+    cmd_id = get_command_id(input_data)
     extra_fields, processing_time, error_message = await _embed_record(
         input_data,
         kind="source",
@@ -395,12 +535,15 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         embed=embed,
     )
 
+    fields = extra_fields or {}
     return EmbedSourceOutput(
         success=error_message is None,
         source_id=input_data.source_id,
-        chunks_created=(extra_fields or {}).get("chunks_created", 0),
+        chunks_created=fields.get("chunks_created", 0),
         processing_time=processing_time,
         error_message=error_message,
+        embedding_status=fields.get("embedding_status"),
+        embedded_chunks=fields.get("embedded_chunks", 0),
     )
 
 
@@ -504,17 +647,38 @@ async def collect_items_for_rebuild(
     include_sources: bool,
     include_notes: bool,
     include_insights: bool,
-) -> Dict[str, List[str]]:
+) -> RebuildItems:
     """
     Collect items to rebuild based on mode and include flags.
 
     Returns:
-        Dict with keys: 'sources', 'notes', 'insights' containing lists of item IDs
+        RebuildItems with 'sources', 'notes', 'insights' lists plus
+        'stale_sources' (missing mode only): running sources whose owning
+        command is terminal/gone, mapped to that stale command id.
     """
-    items: Dict[str, List[str]] = {"sources": [], "notes": [], "insights": []}
+    items: RebuildItems = {
+        "sources": [],
+        "notes": [],
+        "insights": [],
+        "stale_sources": {},
+    }
 
     if include_sources:
-        if mode == "existing":
+        if mode == "missing":
+            # Only sources missing an embedding (or whose last attempt failed)
+            result = await repo_query(
+                """
+                SELECT VALUE id FROM source
+                WHERE full_text != NONE AND string::trim(full_text) != ''
+                AND (embedding_status IS NONE OR embedding_status IN ['not_embedded', 'failed', 'partial'])
+                """
+            )
+            items["sources"] = [str(item) for item in result] if result else []
+            # Stuck-in-running sources under a dead command would otherwise be
+            # unreachable from missing mode forever
+            items["stale_sources"] = await _collect_stale_running_sources()
+            items["sources"].extend(items["stale_sources"])
+        elif mode == "existing":
             # Query sources with embeddings (via source_embedding table)
             result = await repo_query(
                 """
@@ -539,7 +703,7 @@ async def collect_items_for_rebuild(
 
         logger.info(f"Collected {len(items['sources'])} sources for rebuild")
 
-    if include_notes:
+    if include_notes and mode != "missing":
         if mode == "existing":
             # Query notes with embeddings
             result = await repo_query(
@@ -554,7 +718,7 @@ async def collect_items_for_rebuild(
         items["notes"] = [str(item["id"]) for item in result] if result else []
         logger.info(f"Collected {len(items['notes'])} notes for rebuild")
 
-    if include_insights:
+    if include_insights and mode != "missing":
         if mode == "existing":
             # Query insights with embeddings
             result = await repo_query(
@@ -598,6 +762,112 @@ def _submit_embedding_jobs(
 
         except Exception as e:
             logger.error(f"Failed to submit {command_name} for {item_id}: {e}")
+            failed += 1
+
+    return submitted, failed
+
+
+async def _claim_and_submit_sources(
+    source_ids: List[str],
+    coordinator_id: str,
+    stale_running: Optional[Dict[str, str]] = None,
+) -> Tuple[int, int]:
+    """
+    Atomically claim pending sources then submit one embed_source per claim.
+
+    The conditional UPDATE doubles as the claim: a concurrent or duplicate
+    rebuild can't re-claim sources already queued by this path (double-click
+    protection). Only ids returned by the UPDATE are submitted. The claim
+    stamps the coordinator's command id so a manual trigger during the
+    queued->running window can't start a second concurrent embed.
+
+    stale_running maps sources stuck in 'running' under a dead command to that
+    stale command id; they are claimed with an optimistic lock (the owner must
+    still match) so a live owner is never stolen.
+
+    Returns:
+        (submitted_count, failed_count)
+    """
+    if not source_ids:
+        return 0, 0
+
+    # 'unknown' (no execution context) must not be stored as a command id
+    command_set = (
+        ", embedding_command = $coordinator_id"
+        if coordinator_id != "unknown"
+        else ""
+    )
+    params: Dict[str, Any] = {
+        "ids": [ensure_record_id(source_id) for source_id in source_ids]
+    }
+    if coordinator_id != "unknown":
+        params["coordinator_id"] = ensure_record_id(coordinator_id)
+
+    claimed = await repo_query(
+        f"""
+        UPDATE source SET embedding_status = 'queued'{command_set}, embedding_error = NONE
+        WHERE id IN $ids
+        AND (embedding_status IS NONE OR embedding_status IN ['not_embedded', 'failed', 'partial'])
+        RETURN id
+        """,
+        params,
+    )
+    claimed_ids = [str(row["id"]) for row in claimed or []]
+
+    # Group by expected stale owner so one parameterized UPDATE covers each set
+    grouped: Dict[str, List[str]] = {}
+    for source_id, owner in (stale_running or {}).items():
+        grouped.setdefault(owner, []).append(source_id)
+
+    for owner, group_ids in grouped.items():
+        # Optimistic lock: claim only while the source still points at the
+        # exact stale command we verified during collection
+        owner_clause = (
+            "AND embedding_command = $owner"
+            if owner
+            else "AND embedding_command IS NONE"
+        )
+        group_params: Dict[str, Any] = {
+            "ids": [ensure_record_id(source_id) for source_id in group_ids]
+        }
+        if coordinator_id != "unknown":
+            group_params["coordinator_id"] = ensure_record_id(coordinator_id)
+        if owner:
+            group_params["owner"] = ensure_record_id(owner)
+        rows = await repo_query(
+            f"""
+            UPDATE source SET embedding_status = 'queued'{command_set}, embedding_error = NONE
+            WHERE id IN $ids AND embedding_status = 'running' {owner_clause}
+            RETURN id
+            """,
+            group_params,
+        )
+        claimed_ids.extend(str(row["id"]) for row in rows or [])
+
+    logger.info(
+        f"Claimed {len(claimed_ids)}/{len(source_ids)} sources for embedding"
+    )
+
+    submitted = 0
+    failed = 0
+    for source_id in claimed_ids:
+        try:
+            submit_command(
+                "open_notebook",
+                "embed_source",
+                {"source_id": source_id},
+            )
+            submitted += 1
+        except Exception as e:
+            # Otherwise the source would sit in 'queued' with no job behind it.
+            logger.error(f"Failed to submit embed_source for {source_id}: {e}")
+            await repo_query(
+                "UPDATE $source_id SET embedding_status = 'failed', embedding_error = $error",
+                {
+                    "source_id": ensure_record_id(source_id),
+                    "error": str(e)[:500],
+                },
+            )
             failed += 1
 
     return submitted, failed
@@ -666,9 +936,14 @@ async def rebuild_embeddings_command(
             )
 
         # Submit one embedding command per item, per kind
-        sources_submitted, sources_failed = _submit_embedding_jobs(
-            "source", "embed_source", "source_id", items["sources"]
-        )
+        if input_data.mode == "missing":
+            sources_submitted, sources_failed = await _claim_and_submit_sources(
+                items["sources"], get_command_id(input_data), items["stale_sources"]
+            )
+        else:
+            sources_submitted, sources_failed = _submit_embedding_jobs(
+                "source", "embed_source", "source_id", items["sources"]
+            )
         notes_submitted, notes_failed = _submit_embedding_jobs(
             "note", "embed_note", "note_id", items["notes"]
         )

@@ -11,38 +11,15 @@ to ensure consistent behavior and proper handling of large content.
 """
 
 import asyncio
-import os
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
 
 import numpy as np
 from loguru import logger
 
-from .chunking import CHUNK_SIZE, ContentType, chunk_text
+from .chunking import ContentType, chunk_text
+from .embedding_config import EmbeddingParams, get_embedding_params
 from .token_utils import token_count
 
-
-def _get_embedding_batch_size() -> int:
-    """
-    Read the embedding batch size from the environment.
-
-    This is intentionally configurable because provider limits vary widely, and
-    CPU-only local embedding endpoints often need smaller batches than cloud APIs.
-    """
-    raw = os.getenv("OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE", "50").strip()
-    try:
-        value = int(raw)
-        if value < 1:
-            raise ValueError
-        return value
-    except ValueError:
-        logger.warning(
-            "Invalid OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE='{}'; falling back to 50",
-            raw,
-        )
-        return 50
-
-
-EMBEDDING_BATCH_SIZE = _get_embedding_batch_size()
 EMBEDDING_MAX_RETRIES = 3
 EMBEDDING_RETRY_DELAY = 2  # seconds
 
@@ -103,29 +80,30 @@ async def mean_pool_embeddings(embeddings: List[List[float]]) -> List[float]:
     return mean.tolist()
 
 
-async def generate_embeddings(
-    texts: List[str], command_id: Optional[str] = None
-) -> List[List[float]]:
+async def iter_embedding_batches(
+    texts: List[str],
+    command_id: Optional[str] = None,
+    batch_size: Optional[int] = None,
+) -> AsyncIterator[List[List[float]]]:
     """
-    Generate embeddings for multiple texts with automatic batching and retry.
+    Yield embeddings batch by batch so callers can persist progress per batch.
 
-    Texts are split into batches of EMBEDDING_BATCH_SIZE to avoid exceeding
-    provider payload limits. Each batch is retried up to EMBEDDING_MAX_RETRIES
-    times on transient failures.
-
-    Args:
-        texts: List of text strings to embed
-        command_id: Optional command ID for error logging context
-
-    Returns:
-        List of embedding vectors, one per input text
+    Texts are split into batches (default: the configured embedding batch size)
+    to avoid exceeding provider payload limits. Each batch is retried up to
+    EMBEDDING_MAX_RETRIES times on transient failures; exhausted retries raise
+    RuntimeError. Every generated batch is recorded via record_embedding_usage
+    (single point covering all embedding paths).
 
     Raises:
         ValueError: If no embedding model is configured
         RuntimeError: If embedding generation fails
     """
     if not texts:
-        return []
+        return
+
+    effective_batch_size = (
+        batch_size or get_embedding_params().embedding_batch_size
+    )
 
     # Lazy import to avoid circular dependency
     from open_notebook.ai.models import model_manager
@@ -137,6 +115,8 @@ async def generate_embeddings(
         )
 
     model_name = getattr(embedding_model, "model_name", "unknown")
+
+    from open_notebook.ai.usage import record_embedding_usage
 
     # Log text sizes for debugging
     metrics: tuple[int, int, int, int] | None = None
@@ -163,18 +143,17 @@ async def generate_embeddings(
         lambda: _get_size_metrics()[3],
     )
 
-    all_embeddings: List[List[float]] = []
-    total_batches = (len(texts) + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE
+    total_batches = (len(texts) + effective_batch_size - 1) // effective_batch_size
 
     for batch_idx in range(total_batches):
-        start = batch_idx * EMBEDDING_BATCH_SIZE
-        end = start + EMBEDDING_BATCH_SIZE
+        start = batch_idx * effective_batch_size
+        end = start + effective_batch_size
         batch = texts[start:end]
 
+        batch_embeddings: List[List[float]] | None = None
         for attempt in range(1, EMBEDDING_MAX_RETRIES + 1):
             try:
                 batch_embeddings = await embedding_model.aembed(batch)
-                all_embeddings.extend(batch_embeddings)
                 break
             except Exception as e:
                 cmd_context = f" (command: {command_id})" if command_id else ""
@@ -191,13 +170,47 @@ async def generate_embeddings(
                         f"failed after {EMBEDDING_MAX_RETRIES} attempts "
                         f"using model '{model_name}'{cmd_context}: {e}"
                     )
+                    await record_embedding_usage(
+                        model=embedding_model,
+                        texts=batch,
+                        success=False,
+                        error=str(e),
+                    )
                     raise RuntimeError(
                         f"Failed to generate embeddings using model '{model_name}' "
                         f"(batch {batch_idx + 1}/{total_batches}, "
                         f"{len(batch)} texts): {e}"
                     ) from e
 
-    logger.debug(f"Generated {len(all_embeddings)} embeddings in {total_batches} batch(es)")
+        assert batch_embeddings is not None  # for type checkers; loop above guarantees it
+
+        await record_embedding_usage(model=embedding_model, texts=batch)
+
+        yield batch_embeddings
+
+
+async def generate_embeddings(
+    texts: List[str],
+    command_id: Optional[str] = None,
+    batch_size: Optional[int] = None,
+) -> List[List[float]]:
+    """
+    Generate embeddings for multiple texts with automatic batching and retry.
+
+    Consumes iter_embedding_batches(); see it for batching/retry semantics.
+
+    Returns:
+        List of embedding vectors, one per input text
+    """
+    all_embeddings: List[List[float]] = []
+    batches = 0
+    async for batch_embeddings in iter_embedding_batches(
+        texts, command_id=command_id, batch_size=batch_size
+    ):
+        all_embeddings.extend(batch_embeddings)
+        batches += 1
+
+    logger.debug(f"Generated {len(all_embeddings)} embeddings in {batches} batch(es)")
     return all_embeddings
 
 
@@ -206,14 +219,15 @@ async def generate_embedding(
     content_type: Optional[ContentType] = None,
     file_path: Optional[str] = None,
     command_id: Optional[str] = None,
+    params: Optional[EmbeddingParams] = None,
 ) -> List[float]:
     """
     Generate a single embedding for text, handling large content via chunking and mean pooling.
 
-    For short text (<= CHUNK_SIZE tokens):
+    For short text (<= chunk_size tokens):
         - Embeds directly and returns the embedding
 
-    For long text (> CHUNK_SIZE tokens):
+    For long text (> chunk_size tokens):
         - Chunks the text using appropriate splitter for content type
         - Embeds all chunks in batches
         - Combines embeddings via mean pooling
@@ -223,6 +237,7 @@ async def generate_embedding(
         content_type: Optional explicit content type for chunking
         file_path: Optional file path for content type detection
         command_id: Optional command ID for error logging context
+        params: Optional embedding params (defaults to the shared snapshot)
 
     Returns:
         Single embedding vector (list of floats)
@@ -234,11 +249,13 @@ async def generate_embedding(
     if not text or not text.strip():
         raise ValueError("Cannot generate embedding for empty text")
 
+    p = params or get_embedding_params()
+
     text = text.strip()
     text_tokens = token_count(text)
 
     # Check if chunking is needed
-    if text_tokens <= CHUNK_SIZE:
+    if text_tokens <= p.chunk_size:
         # Short text - embed directly
         logger.debug(f"Embedding short text ({text_tokens} tokens) directly")
         embeddings = await generate_embeddings([text], command_id=command_id)
@@ -247,7 +264,9 @@ async def generate_embedding(
     # Long text - chunk and mean pool
     logger.debug(f"Text exceeds chunk size ({text_tokens} tokens), chunking...")
 
-    chunks = chunk_text(text, content_type=content_type, file_path=file_path)
+    chunks = chunk_text(
+        text, content_type=content_type, file_path=file_path, params=p
+    )
 
     if not chunks:
         raise ValueError("Text chunking produced no chunks")

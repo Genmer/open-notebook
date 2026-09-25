@@ -304,6 +304,61 @@ Heavy use: Depends on models chosen
 - "Invalid API key" → Check the key in the DashScope console
 - "Model not available" → Re-discover models from the credential
 
+#### Dedicated (Swift) Endpoints
+
+Alibaba Cloud Model Studio also offers **dedicated endpoints** with a
+region-specific domain of the form
+`{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1`. If you use one,
+models discovered/invoked through the default `dashscope.aliyuncs.com` domain
+won't exist on your endpoint. Two ways to point Open Notebook at it:
+
+1. **Credential base_url (recommended):** set the *Base URL* field on the
+   DashScope credential. Model discovery automatically uses that URL.
+2. **Environment variable:** set `DASHSCOPE_BASE_URL` before starting the app.
+
+> The old `dashscope.aliyuncs.com` compatible-mode domain remains available;
+> Alibaba's maintenance notices have referenced a 2026-09-30 transition for
+> some dedicated-instance access — check the
+> [Model Studio console](https://dashscope.console.aliyun.com/) for endpoint
+> status relevant to your account.
+
+---
+
+### Zhipu (BigModel / GLM)
+
+**Cost:** Varies by model; `glm-4-flash` is free tier friendly
+
+**Get Your API Key:**
+1. Go to https://bigmodel.cn/ (or https://open.bigmodel.cn/)
+2. Create an account and open the API Keys page
+3. Create a new API key
+
+**Two domains — pick the one that matches your key:**
+
+| Domain | Base URL | Use with |
+|---|---|---|
+| Standard (default) | `https://open.bigmodel.cn/api/paas/v4` | Normal API keys. Language **and** embedding models (`embedding-2`, `embedding-3`) |
+| Coding Plan | `https://open.bigmodel.cn/api/coding/paas/v4` | **Coding Plan keys only**. Chat models (GLM-4.x) only — **no embedding models** |
+
+**Configure in Open Notebook:**
+1. Go to **Manage** → **Models**
+2. Click **Add Credential**
+3. Select provider: **Zhipu (BigModel)**
+4. Paste your API key
+   - Normal key: leave Base URL empty — the standard domain is used
+   - Coding Plan key: set Base URL to the coding domain above (embedding
+     models won't be available on this credential)
+5. Click **Save**, then **Test Connection**
+6. Click **Discover Models** → **Register Models**
+
+You can also override the base URL with the `ZHIPU_API_BASE` environment
+variable.
+
+**Available Models:**
+- `glm-4.6` / `glm-4.5` — flagship chat models
+- `glm-4-flash` — fast and cheap (connection test model)
+- `embedding-3` / `embedding-2` — embeddings (standard domain only)
+
 ---
 
 ### MiniMax

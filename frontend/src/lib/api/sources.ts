@@ -6,6 +6,8 @@ import {
   SourceDetailResponse, 
   SourceResponse,
   SourceStatusResponse,
+  SourceTitleResponse,
+  SourceTypeGroupResponse,
   CreateSourceRequest, 
   UpdateSourceRequest 
 } from '@/lib/types/api'
@@ -19,8 +21,18 @@ export const sourcesApi = {
     offset?: number
     sort_by?: SourceSortField
     sort_order?: 'asc' | 'desc'
+    view_id?: string
+    group_id?: string
+    ungrouped?: boolean
+    source_type?: 'file' | 'link' | 'text'
+    file_ext?: string
   }) => {
     const response = await apiClient.get<SourceListResponse[]>('/sources', { params })
+    return response.data
+  },
+
+  typeGroups: async () => {
+    const response = await apiClient.get<SourceTypeGroupResponse[]>('/sources/type-groups')
     return response.data
   },
 
@@ -79,6 +91,13 @@ export const sourcesApi = {
 
   status: async (id: string) => {
     const response = await apiClient.get<SourceStatusResponse>(`/sources/${id}/status`)
+    return response.data
+  },
+
+  titles: async (ids: string[]) => {
+    const response = await apiClient.get<SourceTitleResponse[]>('/sources/titles', {
+      params: { ids: ids.join(',') },
+    })
     return response.data
   },
 

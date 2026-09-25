@@ -25,6 +25,7 @@ export const QUERY_KEYS = {
   sources: (notebookId?: string) => ['sources', notebookId] as const,
   sourcesInfinite: (notebookId: string) => ['sources', 'infinite', notebookId] as const,
   source: (id: string) => ['sources', id] as const,
+  sourceTypeGroups: ['sources', 'type-groups'] as const,
   settings: ['settings'] as const,
   sourceChatSessions: (sourceId: string) => ['source-chat', sourceId, 'sessions'] as const,
   sourceChatSession: (sourceId: string, sessionId: string) => ['source-chat', sourceId, 'sessions', sessionId] as const,
@@ -35,4 +36,12 @@ export const QUERY_KEYS = {
   episodeProfiles: ['podcasts', 'episode-profiles'] as const,
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
+  embeddingStatus: ['embeddings', 'status'] as const,
+  sourceViews: ['source-views'] as const,
+  sourceViewGroups: (viewId: string) => ['source-views', 'groups', viewId] as const,
+  usageSummary: (days: number, callType?: string) =>
+    ['usage', 'summary', days, callType ?? null] as const,
+  usageRecords: ['usage', 'records'] as const,
+  dataTransferExport: ['data-transfer', 'export'] as const,
+  dataTransferImport: ['data-transfer', 'import'] as const,
 }

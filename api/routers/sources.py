@@ -1,7 +1,8 @@
 import asyncio
 import os
+import re
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from content_core import check_file_support
 from fastapi import (
@@ -25,10 +26,14 @@ from api.models import (
     CreateSourceInsightRequest,
     InsightCreationResponse,
     SourceCreate,
+    SourceEmbeddingStatus,
     SourceInsightResponse,
     SourceListResponse,
+    SourceProcessingStep,
     SourceResponse,
     SourceStatusResponse,
+    SourceTitleResponse,
+    SourceTypeGroupResponse,
     SourceUpdate,
 )
 from commands.source_commands import SourceProcessingInput
@@ -100,6 +105,246 @@ SOURCE_TYPE_EXPRESSION = (
     "IF asset.file_path != NONE THEN 'file' "
     "ELSE IF asset.url != NONE THEN 'link' ELSE 'text' END"
 )
+
+FILE_EXT_PATTERN = re.compile(r"[a-z0-9]{1,10}")
+
+# Reserved bucket/filter key for file sources without a usable extension;
+# never matches a literal ".other" file.
+OTHER_EXT_KEY = "other"
+
+
+def _normalize_file_ext(ext: str) -> str:
+    normalized = ext.strip().lstrip(".").lower()
+    if normalized != OTHER_EXT_KEY and not FILE_EXT_PATTERN.fullmatch(normalized):
+        raise InvalidInputError(
+            "file_ext must be 1-10 alphanumeric characters (optionally led by a dot)"
+        )
+    return normalized
+
+EMBEDDING_STATUSES = {
+    "not_embedded",
+    "queued",
+    "running",
+    "completed",
+    "partial",
+    "failed",
+}
+
+
+async def _build_embedding_status(source: Source) -> SourceEmbeddingStatus:
+    """Derive the embedding progress payload from the source's denormalized fields.
+
+    Sources predating migration 27 have no embedding_status - derive 'completed'
+    from a non-zero chunk counter, everything unknown maps to 'not_embedded'.
+    Rows marked completed by an early backfill without counters (both empty)
+    get one count() so the payload doesn't contradict the top-level totals.
+    """
+    status = source.embedding_status
+    if status is None:
+        status = "completed" if (source.embedded_chunks or 0) > 0 else "not_embedded"
+    elif status not in EMBEDDING_STATUSES:
+        status = "not_embedded"
+
+    embedded_chunks = source.embedded_chunks
+    if status == "completed" and not embedded_chunks and source.total_chunks is None:
+        embedded_chunks = await _resolve_embedded_chunks(source)
+
+    return SourceEmbeddingStatus(
+        status=status,
+        embedded_chunks=embedded_chunks or 0,
+        total_chunks=source.total_chunks,
+        error=_truncate_error(source.embedding_error, 200),
+        command_id=str(source.embedding_command) if source.embedding_command else None,
+    )
+
+
+async def _resolve_embedded_chunks(source: Source) -> int:
+    """Prefer the denormalized chunk counter; count() only for legacy rows."""
+    if source.embedded_chunks is not None:
+        return source.embedded_chunks
+    return await source.get_embedded_chunks()
+
+
+async def _fetch_command_row(command_id: str) -> Optional[dict]:
+    """Fetch the raw command row backing a source's processing job."""
+    rows = await repo_query(
+        "SELECT id, status, args, error_message, result FROM $command_id",
+        {"command_id": ensure_record_id(command_id)},
+    )
+    return rows[0] if rows else None
+
+
+def _processing_info_from_row(row: dict) -> dict:
+    """Same output shape as Source.get_processing_progress - keep in sync."""
+    result = row.get("result")
+    execution_metadata = (
+        result.get("execution_metadata", {}) if isinstance(result, dict) else {}
+    )
+    return {
+        "status": row.get("status"),
+        "started_at": execution_metadata.get("started_at"),
+        "completed_at": execution_metadata.get("completed_at"),
+        "error": row.get("error_message"),
+        "result": result,
+    }
+
+
+def _compute_processing_steps(
+    cmd_status: Optional[str],
+    cmd_error: Optional[str],
+    args: Optional[dict],
+    full_text: Optional[str],
+    embedding: SourceEmbeddingStatus,
+    n_transformations: Optional[int],
+    m_insights: Optional[int],
+) -> List[SourceProcessingStep]:
+    """Derive per-step pipeline status; pure so the judgment table is unit-testable."""
+    active = cmd_status in ("new", "queued", "running")
+
+    # Extraction
+    if full_text:
+        extraction = "done"
+    elif active:
+        extraction = "in_progress"
+    elif cmd_status == "failed":
+        extraction = "failed"
+    else:
+        extraction = "unknown"
+
+    # Embedding: m/N are bound to the current command's args (retry resubmits
+    # with embed=True, transformations=[]), so an embed=False command wins over
+    # the source's denormalized embedding fields.
+    if not isinstance(args, dict) or "embed" not in args:
+        embedding_step = "unknown"
+    elif args["embed"] is False:
+        embedding_step = "skipped"
+    elif embedding.status == "completed":
+        embedding_step = "done"
+    elif embedding.status in ("queued", "running"):
+        embedding_step = "in_progress"
+    elif active:
+        # A failed/partial value here is stale from a previous round (an embed
+        # failure never fails the main command): the pipeline's own vectorize()
+        # hasn't re-run yet — show pending instead of a retryable failure,
+        # whose embed_source would race the pipeline and duplicate chunks.
+        embedding_step = "pending"
+    elif embedding.status in ("failed", "partial"):
+        # partial counts as failed, matching SourceEmbeddingProgress semantics
+        embedding_step = "failed"
+    else:
+        embedding_step = "unknown"
+
+    # Transformation
+    if not isinstance(args, dict) or "transformations" not in args:
+        transformation = "unknown"
+    else:
+        n = n_transformations or 0
+        m = m_insights or 0
+        if n == 0:
+            transformation = "skipped"
+        elif not full_text:
+            transformation = "pending"
+        elif cmd_status == "failed":
+            transformation = "failed"
+        elif active:
+            transformation = "in_progress"
+        elif cmd_status == "completed" and m >= n:
+            transformation = "done"
+        else:
+            # completed with missing insights (or canceled/None): can't tell
+            transformation = "unknown"
+
+    # Completion
+    if (
+        cmd_status == "completed"
+        and embedding_step in ("done", "skipped")
+        and transformation in ("done", "skipped")
+    ):
+        completion = "done"
+    else:
+        # earlier failures surface on their own step, not here
+        completion = "pending"
+
+    trunc = _truncate_error(cmd_error)
+    return [
+        SourceProcessingStep(key="extraction", status=extraction, error=trunc if extraction == "failed" else None),
+        SourceProcessingStep(
+            key="embedding",
+            status=embedding_step,
+            current=embedding.embedded_chunks if embedding_step == "in_progress" else None,
+            total=embedding.total_chunks if embedding_step == "in_progress" else None,
+            error=embedding.error if embedding_step == "failed" else None,
+        ),
+        SourceProcessingStep(
+            key="transformation",
+            status=transformation,
+            # failed keeps the residual x/N so users see how far it got;
+            # embedding failed deliberately stays empty (full re-embed)
+            current=min(m, n) if transformation in ("in_progress", "failed") else None,
+            total=n if transformation in ("in_progress", "failed") else None,
+            error=trunc if transformation == "failed" else None,
+        ),
+        SourceProcessingStep(key="completion", status=completion),
+    ]
+
+
+async def _derive_processing_steps(
+    source: Source,
+    row: dict,
+    embedding: SourceEmbeddingStatus,
+) -> List[SourceProcessingStep]:
+    """IO shell around _compute_processing_steps: resolve the current command's
+    transformation titles (insight_type stores transformation.title) and the
+    distinct insight count for exactly those titles."""
+    args = row.get("args")
+    trans_ids: List[str] = []
+    if isinstance(args, dict) and isinstance(args.get("transformations"), list):
+        trans_ids = [t for t in args["transformations"] if isinstance(t, str) and t]
+
+    if trans_ids:
+        title_rows = await repo_query(
+            "SELECT VALUE title FROM transformation WHERE id IN $ids",
+            {"ids": [ensure_record_id(t) for t in trans_ids]},
+        )
+        titles: List[str] = []
+        for title in title_rows:
+            if isinstance(title, str) and title and title not in titles:
+                titles.append(title)
+        n_transformations = len(titles)
+
+        # count(array::distinct(field)) fails on this SurrealDB version (the
+        # aggregate receives a scalar, not an array). Counting a GROUP BY
+        # subquery needs the outer GROUP ALL — without it SurrealDB yields one
+        # row per group ([1, 1, …]) instead of an aggregate.
+        count_rows: list = []
+        if source.id:
+            count_rows = await repo_query(
+                "SELECT VALUE count() FROM (SELECT insight_type FROM source_insight "
+                "WHERE source = $source_id AND insight_type IN $titles "
+                "GROUP BY insight_type) GROUP ALL",
+                {
+                    "source_id": ensure_record_id(source.id),
+                    "titles": titles,
+                },
+            )
+        first = count_rows[0] if count_rows else None
+        # Strict: the GROUP ALL aggregate is always [{'count': N}]. Anything
+        # else is a SurrealDB shape change — degrade to m=0, never guess.
+        m_insights = int(first.get("count") or 0) if isinstance(first, dict) else 0
+    else:
+        n_transformations = 0
+        m_insights = 0
+
+    cmd_args = args if isinstance(args, dict) else None
+    return _compute_processing_steps(
+        cmd_status=row.get("status"),
+        cmd_error=row.get("error_message"),
+        args=cmd_args,
+        full_text=source.full_text,
+        embedding=embedding,
+        n_transformations=n_transformations,
+        m_insights=m_insights,
+    )
 
 
 async def _stamp_source_view(source_id: str) -> None:
@@ -266,6 +511,21 @@ async def get_sources(
         description="Field to sort by (type, title, created, updated, insights_count, or embedded)",
     ),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
+    view_id: Optional[str] = Query(None, description="Source view to scope filters to"),
+    group_id: Optional[str] = Query(None, description="Only sources in this group"),
+    ungrouped: bool = Query(
+        False, description="Only sources not in any group of the view"
+    ),
+    source_type: Optional[Literal["file", "link", "text"]] = Query(
+        None, description="Filter by source type"
+    ),
+    file_ext: Optional[str] = Query(
+        None,
+        description=(
+            "Filter to file sources with this extension, e.g. pdf "
+            "(case-insensitive, leading dot optional)"
+        ),
+    ),
 ):
     """Get sources with pagination and sorting support."""
     try:
@@ -281,6 +541,20 @@ async def get_sources(
         if sort_order.lower() not in ["asc", "desc"]:
             raise HTTPException(
                 status_code=400, detail="sort_order must be 'asc' or 'desc'"
+            )
+
+        scoped_view_id = ""
+        if group_id or ungrouped:
+            if not view_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="view_id is required when using group_id or ungrouped",
+                )
+            scoped_view_id = view_id
+        if group_id and ungrouped:
+            raise HTTPException(
+                status_code=400,
+                detail="group_id and ungrouped=true are mutually exclusive",
             )
 
         # Build ORDER BY clause
@@ -302,14 +576,48 @@ async def get_sources(
         else:
             from_clause = "source"
 
+        # Grouping filters run as WHERE subqueries so the per-row projection
+        # stays identical to the unfiltered query.
+        where_clauses: List[str] = []
+        if group_id:
+            where_clauses.append(
+                "id IN (SELECT VALUE in FROM source_group_member WHERE out = $group_id)"
+            )
+            params["group_id"] = ensure_record_id(group_id)
+        elif ungrouped:
+            where_clauses.append(
+                "id NOT IN (SELECT VALUE in FROM source_group_member WHERE out IN "
+                "(SELECT VALUE id FROM source_group WHERE source_view = $view_id))"
+            )
+            params["view_id"] = ensure_record_id(scoped_view_id)
+        if source_type:
+            where_clauses.append(f"({SOURCE_TYPE_EXPRESSION}) = $source_type")
+            params["source_type"] = source_type
+        if file_ext:
+            ext = _normalize_file_ext(file_ext)
+            if ext == OTHER_EXT_KEY:
+                # 'other' means extension-less files, not a literal ".other" suffix
+                where_clauses.append(
+                    "asset.file_path != NONE AND NOT (string::contains(asset.file_path, '.'))"
+                )
+            else:
+                # string::ends_with, not END WITH — this SurrealDB version can't
+                # parse the operator (function results or not)
+                where_clauses.append(
+                    "asset.file_path != NONE AND string::ends_with(string::lowercase(asset.file_path), $file_ext_suffix)"
+                )
+                params["file_ext_suffix"] = "." + ext
+        where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
         # Query sources - include command field with FETCH
         query = f"""
-            SELECT id, asset, created, title, updated, topics, command,
+            SELECT id, asset, created, title, updated, topics, command, embedding_status,
             string::lowercase(title OR '') AS title_sort,
             ({SOURCE_TYPE_EXPRESSION}) AS type,
             (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
             (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
             FROM {from_clause}
+            {where_clause}
             {order_clause}
             LIMIT $limit START $offset
             FETCH command
@@ -368,6 +676,7 @@ async def get_sources(
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
+                    embedding_status=row.get("embedding_status"),
                 )
             )
 
@@ -379,6 +688,106 @@ async def get_sources(
     except Exception as e:
         logger.error(f"Error fetching sources: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching sources")
+
+
+def _source_type_group_key(asset: Any) -> str:
+    """Bucket an asset for the file-type view, file_path-first to match the
+    list page's SOURCE_TYPE_EXPRESSION."""
+    if not isinstance(asset, dict):
+        return "text"
+    file_path = asset.get("file_path")
+    if file_path:
+        ext = os.path.splitext(str(file_path))[1].strip(".").lower()
+        # Unusable keys (timestamp suffixes etc.) would 400 when the group is
+        # clicked — merge them into the 'other' bucket instead
+        return ext if FILE_EXT_PATTERN.fullmatch(ext) else OTHER_EXT_KEY
+    if asset.get("url"):
+        return "link"
+    return "text"
+
+
+@router.get("/sources/type-groups", response_model=List[SourceTypeGroupResponse])
+async def get_source_type_groups():
+    """Count sources per file-type category (link / text / one bucket per extension).
+
+    Must stay registered before /sources/{source_id} or FastAPI matches
+    "type-groups" as a source_id.
+    """
+    try:
+        # asset is a small embedded dict, so `SELECT VALUE asset` stays cheap;
+        # no WHERE — asset-less rows must count as text like the list expression
+        rows = await repo_query("SELECT VALUE asset FROM source")
+
+        counts: dict[str, int] = {}
+        for asset in rows:
+            key = _source_type_group_key(asset)
+            counts[key] = counts.get(key, 0) + 1
+
+        groups = [
+            SourceTypeGroupResponse(key=key, count=counts.pop(key))
+            for key in ("link", "text")
+            if key in counts
+        ]
+        # Extension buckets: most common first, ties broken alphabetically
+        groups.extend(
+            SourceTypeGroupResponse(key=key, count=count)
+            for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        )
+        return groups
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error computing source type groups: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error computing source type groups")
+
+
+@router.get("/sources/titles", response_model=List[SourceTitleResponse])
+async def get_source_titles(
+    ids: str = Query(..., description="Comma-separated source IDs (1-50)"),
+):
+    """Resolve display titles for sources referenced in chat messages.
+
+    Must stay registered before /sources/{source_id} or FastAPI matches
+    "titles" as a source_id.
+    """
+    raw_ids = [part.strip() for part in ids.split(",") if part.strip()]
+    if not raw_ids or len(raw_ids) > 50:
+        raise InvalidInputError("ids must contain between 1 and 50 source IDs")
+
+    # Chat references carry bare ids (the part after "source:"); validate the
+    # shape before RecordID.parse, which raises a bare ValueError on colons etc.
+    SOURCE_ID_PATTERN = re.compile(r"^(source:)?[A-Za-z0-9_-]+$")
+    if any(not SOURCE_ID_PATTERN.match(raw) for raw in raw_ids):
+        raise InvalidInputError(
+            "ids must be source IDs like abc123 or source:abc123"
+        )
+
+    record_ids = [
+        ensure_record_id(raw if raw.startswith("source:") else f"source:{raw}")
+        for raw in raw_ids
+    ]
+
+    try:
+        rows = await repo_query(
+            "SELECT id, title, asset FROM source WHERE id IN $ids",
+            {"ids": record_ids},
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching source titles: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching source titles")
+
+    results = []
+    for row in rows:
+        title = row.get("title")
+        if not title:
+            # Untitled uploads fall back to the asset filename
+            asset = row.get("asset")
+            file_path = asset.get("file_path") if isinstance(asset, dict) else None
+            title = os.path.basename(file_path) if file_path else None
+        results.append(SourceTitleResponse(id=str(row["id"]), title=title or None))
+    return results
 
 
 def _source_to_response(
@@ -626,9 +1035,13 @@ async def _create_source_sync_path(
         if not processed_source:
             raise HTTPException(status_code=500, detail="Processed source not found")
 
-        embedded_chunks = await processed_source.get_embedded_chunks()
+        embedded_chunks = await _resolve_embedded_chunks(processed_source)
         # No command_id or status for sync processing (legacy behavior)
-        return _source_to_response(processed_source, embedded_chunks=embedded_chunks)
+        return _source_to_response(
+            processed_source,
+            embedded_chunks=embedded_chunks,
+            embedding=await _build_embedding_status(processed_source),
+        )
 
     except Exception as e:
         logger.error(f"Sync processing failed: {e}")
@@ -773,7 +1186,7 @@ async def get_source(source_id: str):
                 logger.warning(f"Failed to get status for source {source_id}: {e}")
                 status = "unknown"
 
-        embedded_chunks = await source.get_embedded_chunks()
+        embedded_chunks = await _resolve_embedded_chunks(source)
 
         # Get associated notebooks
         notebooks_query = await repo_query(
@@ -792,6 +1205,7 @@ async def get_source(source_id: str):
             command_id=str(source.command) if source.command else None,
             status=status,
             processing_info=processing_info,
+            embedding=await _build_embedding_status(source),
             # Notebook associations
             notebooks=notebook_ids,
         )
@@ -856,12 +1270,27 @@ async def get_source_status(source_id: str):
                 message="Legacy source (completed before async processing)",
                 processing_info=None,
                 command_id=None,
+                embedding=await _build_embedding_status(source),
             )
 
-        # Get command status and processing info
+        embedding = await _build_embedding_status(source)
+
+        # Get command status and processing info (single row fetch)
         try:
-            status = await source.get_status()
-            processing_info = await source.get_processing_progress()
+            row = await _fetch_command_row(str(source.command))
+            if row is None:
+                return SourceStatusResponse(
+                    status="unknown",
+                    message="Source processing status unknown",
+                    processing_info=None,
+                    command_id=str(source.command),
+                    embedding=embedding,
+                    steps=None,
+                )
+
+            status = row.get("status")
+            processing_info = _processing_info_from_row(row)
+            steps = await _derive_processing_steps(source, row, embedding)
 
             # Generate descriptive message based on status
             if status == "completed":
@@ -882,6 +1311,8 @@ async def get_source_status(source_id: str):
                 message=message,
                 processing_info=processing_info,
                 command_id=str(source.command) if source.command else None,
+                embedding=embedding,
+                steps=steps,
             )
 
         except Exception as e:
@@ -891,6 +1322,8 @@ async def get_source_status(source_id: str):
                 message="Failed to retrieve processing status",
                 processing_info=None,
                 command_id=str(source.command) if source.command else None,
+                embedding=embedding,
+                steps=None,
             )
 
     except HTTPException:
@@ -918,8 +1351,12 @@ async def update_source(source_id: str, source_update: SourceUpdate):
 
         await source.save()
 
-        embedded_chunks = await source.get_embedded_chunks()
-        return _source_to_response(source, embedded_chunks=embedded_chunks)
+        embedded_chunks = await _resolve_embedded_chunks(source)
+        return _source_to_response(
+            source,
+            embedded_chunks=embedded_chunks,
+            embedding=await _build_embedding_status(source),
+        )
     except HTTPException:
         raise
     except InvalidInputError as e:
@@ -1024,7 +1461,7 @@ async def retry_source_processing(source_id: str):
             await source.save()
 
             # Get current embedded chunks count
-            embedded_chunks = await source.get_embedded_chunks()
+            embedded_chunks = await _resolve_embedded_chunks(source)
 
             # Return updated source response
             return _source_to_response(
@@ -1033,6 +1470,7 @@ async def retry_source_processing(source_id: str):
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
+                embedding=await _build_embedding_status(source),
             )
 
         except Exception as e:

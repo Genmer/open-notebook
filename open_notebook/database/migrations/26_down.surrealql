@@ -1,0 +1,1 @@
+UPDATE open_notebook:content_settings SET chunk_size = NONE, chunk_overlap = NONE, min_chunk_size = NONE, embedding_batch_size = NONE;

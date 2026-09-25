@@ -1,20 +1,23 @@
 'use client'
 
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSettings, useUpdateSettings } from '@/lib/hooks/use-settings'
 import { useCapabilities } from '@/lib/hooks/use-capabilities'
+import { useToast } from '@/lib/hooks/use-toast'
 import { useEffect, useState } from 'react'
-import { ChevronDownIcon } from 'lucide-react'
+import { ChevronDownIcon, HelpCircleIcon } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 const settingsSchema = z.object({
@@ -25,15 +28,90 @@ const settingsSchema = z.object({
   docling_ocr: z.boolean().optional(),
   docling_formulas: z.boolean().optional(),
   docling_vision: z.boolean().optional(),
+  usage_tracking_enabled: z.boolean().optional(),
+  chunk_size: z.number().int().min(100).optional(),
+  chunk_overlap: z.number().int().min(0).optional(),
+  min_chunk_size: z.number().int().min(0).optional(),
+  embedding_batch_size: z.number().int().min(1).optional(),
+}).superRefine((data, ctx) => {
+  if (
+    data.chunk_overlap !== undefined &&
+    data.chunk_size !== undefined &&
+    data.chunk_overlap >= data.chunk_size
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['chunk_overlap'],
+      message: 'chunk_overlap must be less than chunk_size',
+    })
+  }
 })
 
 type SettingsFormData = z.infer<typeof settingsSchema>
+
+type VectorParamFieldProps = {
+  id: string
+  name: 'chunk_size' | 'chunk_overlap' | 'min_chunk_size' | 'embedding_batch_size'
+  label: string
+  help: string
+  min: number
+  placeholder: string
+  control: Control<SettingsFormData>
+  disabled?: boolean
+}
+
+function VectorParamField({ id, name, label, help, min, placeholder, control, disabled }: VectorParamFieldProps) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={label}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+            >
+              <HelpCircleIcon className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <p>{help}</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <Controller
+        name={name}
+        control={control}
+        render={({ field }) => (
+          <Input
+            id={id}
+            type="number"
+            min={min}
+            placeholder={placeholder}
+            value={field.value ?? ''}
+            onChange={(e) => {
+              const raw = e.target.value
+              field.onChange(raw === '' ? undefined : Number(raw))
+            }}
+            onBlur={field.onBlur}
+            disabled={disabled}
+            className="max-w-40"
+          />
+        )}
+      />
+    </div>
+  )
+}
+
+const VECTOR_PARAM_FIELDS = ['chunk_size', 'chunk_overlap', 'min_chunk_size', 'embedding_batch_size'] as const
 
 export function SettingsForm() {
   const { t } = useTranslation()
   const { data: settings, isLoading, error } = useSettings()
   const { data: capabilities, isError: capabilitiesError } = useCapabilities()
   const updateSettings = useUpdateSettings()
+  const { toast } = useToast()
   // Opt-in heavy runtimes are installed on demand at container startup, so an
   // engine is only offered when the backend probe confirms it's actually
   // available. While the probe is still loading, default to available to avoid a
@@ -55,7 +133,7 @@ export function SettingsForm() {
     control,
     handleSubmit,
     reset,
-    formState: { isDirty }
+    formState: { isDirty, dirtyFields }
   } = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
@@ -66,6 +144,11 @@ export function SettingsForm() {
       docling_ocr: undefined,
       docling_formulas: undefined,
       docling_vision: undefined,
+      usage_tracking_enabled: undefined,
+      chunk_size: undefined,
+      chunk_overlap: undefined,
+      min_chunk_size: undefined,
+      embedding_batch_size: undefined,
     }
   })
 
@@ -84,6 +167,12 @@ export function SettingsForm() {
         docling_ocr: settings.docling_ocr ?? true,
         docling_formulas: settings.docling_formulas ?? false,
         docling_vision: settings.docling_vision ?? false,
+        usage_tracking_enabled: settings.usage_tracking_enabled ?? true,
+        // Raw DB values: empty input = follow env/default.
+        chunk_size: settings.chunk_size ?? undefined,
+        chunk_overlap: settings.chunk_overlap ?? undefined,
+        min_chunk_size: settings.min_chunk_size ?? undefined,
+        embedding_batch_size: settings.embedding_batch_size ?? undefined,
       }
       reset(formData)
       setHasResetForm(true)
@@ -91,7 +180,18 @@ export function SettingsForm() {
   }, [hasResetForm, reset, settings])
 
   const onSubmit = async (data: SettingsFormData) => {
-    await updateSettings.mutateAsync(data)
+    // Only vector params explicitly touched by the user are submitted —
+    // sending resolved values back would freeze env vars into the DB.
+    const payload: SettingsFormData = { ...data }
+    for (const field of VECTOR_PARAM_FIELDS) {
+      if (!dirtyFields[field]) {
+        delete payload[field]
+      }
+    }
+    await updateSettings.mutateAsync(payload)
+    if (dirtyFields.chunk_size || dirtyFields.chunk_overlap || dirtyFields.min_chunk_size) {
+      toast({ description: t('settings.chunkParamsChangedToast') })
+    }
   }
 
   if (isLoading) {
@@ -218,6 +318,25 @@ export function SettingsForm() {
             <p className="text-sm text-muted-foreground">{t('settings.visionHelp')}</p>
           </div>
 
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Controller
+                name="usage_tracking_enabled"
+                control={control}
+                render={({ field }) => (
+                  <Checkbox
+                    id="usage_tracking_enabled"
+                    checked={field.value ?? true}
+                    onCheckedChange={field.onChange}
+                    disabled={field.disabled || isLoading}
+                  />
+                )}
+              />
+              <Label htmlFor="usage_tracking_enabled">{t('usage.trackingEnabled')}</Label>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('usage.privacyDesc')}</p>
+          </div>
+
           <div className="space-y-3">
             <Label htmlFor="url_engine">{t('settings.urlEngine')}</Label>
             <Controller
@@ -301,6 +420,49 @@ export function SettingsForm() {
                 <p>{t('settings.embeddingHelp')}</p>
               </CollapsibleContent>
             </Collapsible>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <VectorParamField
+              id="chunk_size"
+              name="chunk_size"
+              label={t('settings.chunkSize')}
+              help={t('settings.chunkSizeHelp')}
+              min={100}
+              placeholder={String(settings?.effective_chunk_size ?? '')}
+              control={control}
+              disabled={isLoading}
+            />
+            <VectorParamField
+              id="chunk_overlap"
+              name="chunk_overlap"
+              label={t('settings.chunkOverlap')}
+              help={t('settings.chunkOverlapHelp')}
+              min={0}
+              placeholder={String(settings?.effective_chunk_overlap ?? '')}
+              control={control}
+              disabled={isLoading}
+            />
+            <VectorParamField
+              id="min_chunk_size"
+              name="min_chunk_size"
+              label={t('settings.minChunkSize')}
+              help={t('settings.minChunkSizeHelp')}
+              min={0}
+              placeholder={String(settings?.effective_min_chunk_size ?? '')}
+              control={control}
+              disabled={isLoading}
+            />
+            <VectorParamField
+              id="embedding_batch_size"
+              name="embedding_batch_size"
+              label={t('settings.embeddingBatchSize')}
+              help={t('settings.embeddingBatchSizeHelp')}
+              min={1}
+              placeholder={String(settings?.effective_embedding_batch_size ?? '')}
+              control={control}
+              disabled={isLoading}
+            />
           </div>
         </CardContent>
       </Card>

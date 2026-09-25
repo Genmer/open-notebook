@@ -13,7 +13,7 @@ export OPEN_NOTEBOOK_CHUNK_SIZE=1500
 export OPEN_NOTEBOOK_CHUNK_OVERLAP=150
 ```
 
-`OPEN_NOTEBOOK_CHUNK_OVERLAP` defaults to 15% of chunk size. Both are **token-based** (not characters), minimum chunk size 100, and require an app restart to take effect.
+`OPEN_NOTEBOOK_CHUNK_OVERLAP` defaults to 60 tokens. Both are **token-based** (not characters), minimum chunk size 100. All four vectorization knobs (`chunk_size`, `chunk_overlap`, `min_chunk_size`, `embedding_batch_size`) resolve as **settings DB value > env var > built-in default** — values set on the Settings page take priority over the environment and apply without a restart (they are refreshed at API startup, on settings save, and before each embedding command).
 
 ## Embedding (`utils/embedding.py`)
 

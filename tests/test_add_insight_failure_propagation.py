@@ -11,6 +11,7 @@ DatabaseOperationError so they propagate to the job-level retry/failure
 handling that already exists in commands/source_commands.py.
 """
 
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -90,8 +91,12 @@ class TestTransformationGraphPropagatesFailure:
                 "open_notebook.graphs.transformation.Prompter"
             ) as mock_prompter_cls,
             patch(
-                "open_notebook.graphs.transformation.provision_langchain_model",
-                new=AsyncMock(return_value=fake_chain),
+                "open_notebook.graphs.transformation.provision_langchain_model_with_info",
+                new=AsyncMock(return_value=SimpleNamespace(langchain_model=fake_chain)),
+            ),
+            patch(
+                "open_notebook.graphs.transformation.record_llm_usage",
+                new=AsyncMock(),
             ),
             patch.object(
                 Source,
@@ -134,8 +139,12 @@ class TestTransformationGraphPropagatesFailure:
                 "open_notebook.graphs.transformation.Prompter"
             ) as mock_prompter_cls,
             patch(
-                "open_notebook.graphs.transformation.provision_langchain_model",
-                new=AsyncMock(return_value=fake_chain),
+                "open_notebook.graphs.transformation.provision_langchain_model_with_info",
+                new=AsyncMock(return_value=SimpleNamespace(langchain_model=fake_chain)),
+            ),
+            patch(
+                "open_notebook.graphs.transformation.record_llm_usage",
+                new=AsyncMock(),
             ),
             patch.object(
                 Source, "add_insight", new=AsyncMock(return_value="command:ok")

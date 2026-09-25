@@ -1,6 +1,7 @@
 'use client'
 
 import { AppShell } from '@/components/layout/AppShell'
+import { AppearanceCard } from './components/AppearanceCard'
 import { SettingsForm } from './components/SettingsForm'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,10 @@ export default function SettingsPage() {
               </Button>
             </div>
 
-            <SettingsForm />
+            <div className="space-y-6">
+              <AppearanceCard />
+              <SettingsForm />
+            </div>
           </div>
         </div>
       </div>

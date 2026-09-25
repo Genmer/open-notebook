@@ -150,6 +150,16 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
             openai_compat_discovery_url="https://dashscope.aliyuncs.com/compatible-mode/v1/models",
         ),
         ProviderSpec(
+            name="zhipu",
+            display_name="Zhipu (BigModel)",
+            modalities=("language", "embedding"),
+            required_env=("ZHIPU_API_KEY",),
+            optional_env=("ZHIPU_API_BASE",),
+            test_model="glm-4-flash",
+            docs_url="https://docs.bigmodel.cn/",
+            openai_compat_discovery_url="https://open.bigmodel.cn/api/paas/v4/models",
+        ),
+        ProviderSpec(
             name="minimax",
             display_name="MiniMax",
             modalities=_LANGUAGE_ONLY,
