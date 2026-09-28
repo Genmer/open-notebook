@@ -2,6 +2,21 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string).
+// These tests need to see interpolation, so override with a t that renders
+// warning keys as `localized:key|params` and passes everything else through.
+vi.mock('@/lib/hooks/use-translation', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/lib/hooks/use-translation')>()
+  return {
+    ...mod,
+    useTranslation: () => ({
+      t: (key: string, options?: Record<string, unknown>) =>
+        key.startsWith('dataManagement.warnings.')
+          ? `localized:${key}|${JSON.stringify(options ?? {})}`
+          : key,
+      i18n: { language: 'en-US' },
+    }),
+  }
+})
 
 const mockUseImportStatus = vi.fn()
 const mockUploadImport = vi.fn()
@@ -65,12 +80,12 @@ describe('ImportCard', () => {
     expect(uploadSpy).toHaveBeenCalledWith(file)
   })
 
-  it('keeps the upload disabled for packages over the 100 MB limit', () => {
+  it('keeps the upload disabled for packages over the 1 GB limit', () => {
     mockStatus({ status: 'none' })
     render(<ImportCard />)
 
-    selectFile('huge.zip', 101 * 1024 * 1024)
-    expect(screen.getByText('huge.zip (101 MB)')).toBeInTheDocument()
+    selectFile('huge.zip', 1024 * 1024 * 1024 + 1)
+    expect(screen.getByText('huge.zip (1.0 GB)')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'dataManagement.import.upload' })
     ).toBeDisabled()
@@ -122,6 +137,42 @@ describe('ImportCard', () => {
       screen.getByText('embedding model differs: model:a != model:b')
     ).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.summary.warnings')).toBeInTheDocument()
+  })
+
+  it('localizes legacy plain-English warnings from imports made before warning codes', () => {
+    mockStatus({
+      status: 'completed',
+      progress: { stage: 'done', percent: 100, message: 'Import complete' },
+      summary: {
+        imported: { source: 1 },
+        skipped: {},
+        warnings: [
+          'No default embedding model configured here; imported vectors may not match newly generated ones',
+          'Skipped source_group_member edge source:82umf2l3ougn1xhda -> source_group:7c17dc6c094b4ee9bc4abbacecf014f0: in endpoint was not imported this run',
+          'totally unknown legacy warning',
+        ],
+      },
+    })
+    render(<ImportCard />)
+
+    expect(
+      screen.getByText(
+        'localized:dataManagement.warnings.noDefaultEmbeddingModel|{}'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'localized:dataManagement.warnings.edgeEndpointNotImported|{"edge":"source_group_member","source":"source:82umf2l3ougn1xhda","target":"source_group:7c17dc6c094b4ee9bc4abbacecf014f0"}'
+      )
+    ).toBeInTheDocument()
+    // Unmatched legacy text still renders rather than disappearing
+    expect(screen.getByText('totally unknown legacy warning')).toBeInTheDocument()
+    // None of the raw English templates survive
+    expect(
+      screen.queryByText(
+        'No default embedding model configured here; imported vectors may not match newly generated ones'
+      )
+    ).not.toBeInTheDocument()
   })
 
   it('renders the failed state with the backend error passed through', () => {

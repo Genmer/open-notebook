@@ -19,10 +19,16 @@ export interface ExportSummary {
   exported_at?: string | null
 }
 
+export interface TransferWarning {
+  code: string
+  params?: Record<string, string | number>
+}
+
 export interface ImportSummary {
   imported: Record<string, number>
   skipped: Record<string, number>
   warnings: string[]
+  warning_codes?: TransferWarning[]
   embedding_model_id?: string | null
   embedding_dimension?: number | null
 }

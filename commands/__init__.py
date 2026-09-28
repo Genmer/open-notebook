@@ -8,6 +8,7 @@ from open_notebook.utils.proxy import ensure_internal_no_proxy
 
 ensure_internal_no_proxy()
 
+from .artifact_commands import generate_artifact_command
 from .classification_commands import classify_sources_command
 from .data_transfer_commands import (
     export_data_command,
@@ -34,6 +35,7 @@ __all__ = [
     "export_data_command",
     "import_data_command",
     # Other commands
+    "generate_artifact_command",
     "generate_podcast_command",
     "process_source_command",
 ]

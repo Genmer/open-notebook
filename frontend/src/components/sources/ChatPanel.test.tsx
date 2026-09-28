@@ -12,6 +12,7 @@ vi.mock('@/lib/hooks/use-modal-manager', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useSourceTitles: vi.fn(),
 }))
 
@@ -49,7 +50,9 @@ describe('ChatPanel composer', () => {
     const textarea = getTextarea()
     fireEvent.change(textarea, { target: { value: '  hello world  ' } })
 
-    const sendButton = screen.getByRole('button')
+    // The header fullscreen toggle also renders as a button; the send button
+    // is the icon-only one without an accessible name.
+    const sendButton = screen.getByRole('button', { name: '' })
     fireEvent.click(sendButton)
 
     expect(onSendMessage).toHaveBeenCalledTimes(1)
@@ -334,5 +337,67 @@ describe('ChatPanel AI message reference titles', () => {
 
     expect(mockUseSourceTitles).toHaveBeenCalledWith([])
     expect(screen.queryByText('References:')).not.toBeInTheDocument()
+  })
+})
+
+describe('ChatPanel fullscreen toggle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  const renderForFullscreen = () =>
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+  const getCard = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-slot="card"]')!
+
+  it('enters fullscreen on toggle and exits on Escape', () => {
+    const { container } = renderForFullscreen()
+    const card = getCard(container)
+
+    // Normal mode is anchored by the flex parent (h-full flex-1).
+    expect(card.className).toContain('h-full flex-1')
+    expect(card.className).not.toContain('fixed')
+
+    fireEvent.click(screen.getByRole('button', { name: 'chat.enterFullscreen' }))
+
+    expect(card.className).toContain('fixed inset-0 z-50 h-screen w-screen rounded-none')
+    expect(card.className).not.toContain('h-full flex-1')
+    expect(screen.getByRole('button', { name: 'chat.exitFullscreen' })).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(card.className).toContain('h-full flex-1')
+    expect(card.className).not.toContain('fixed inset-0')
+    expect(screen.getByRole('button', { name: 'chat.enterFullscreen' })).toBeInTheDocument()
+  })
+
+  it('returns to the flex-anchored width when the toggle is clicked again', () => {
+    const { container } = renderForFullscreen()
+    const card = getCard(container)
+
+    fireEvent.click(screen.getByRole('button', { name: 'chat.enterFullscreen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'chat.exitFullscreen' }))
+
+    expect(card.className).toContain('h-full flex-1')
+    expect(card.className).not.toContain('w-screen')
+  })
+
+  it('ignores Escape while not fullscreen', () => {
+    const { container } = renderForFullscreen()
+    const card = getCard(container)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(card.className).toContain('h-full flex-1')
+    expect(card.className).not.toContain('fixed')
   })
 })

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 from surreal_commands import registry
 
 from api.command_service import CommandService
+from api.models import TaskListResponse
+from api.task_service import list_tasks
 from open_notebook.exceptions import OpenNotebookError
 
 router = APIRouter()
@@ -96,18 +98,20 @@ async def get_command_job_status(job_id: str):
         )
 
 
-@router.get("/commands/jobs", response_model=List[Dict[str, Any]])
+@router.get("/commands/jobs", response_model=TaskListResponse)
 async def list_command_jobs(
-    command_filter: Optional[str] = Query(None, description="Filter by command name"),
-    status_filter: Optional[str] = Query(None, description="Filter by status"),
-    limit: int = Query(50, description="Maximum number of jobs to return"),
+    name: Optional[str] = Query(None, description="Filter by command name"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    type: Optional[str] = Query(None, description="Filter by task type bucket"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of tasks"),
+    offset: int = Query(0, ge=0, description="Skip the first N tasks"),
 ):
-    """List command jobs with optional filtering"""
+    """List background tasks (aggregated command table) for the Task Center."""
     try:
-        jobs = await CommandService.list_command_jobs(
-            command_filter=command_filter, status_filter=status_filter, limit=limit
+        summary = await list_tasks(
+            name=name, status=status, task_type=type, limit=limit, offset=offset
         )
-        return jobs
+        return TaskListResponse(**summary)
 
     except HTTPException:
         raise

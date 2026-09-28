@@ -14,6 +14,7 @@ import {
   Check,
   X,
   Bot,
+  CircleDollarSign,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeleteModel, useTestModel } from '@/lib/hooks/use-models'
@@ -31,6 +32,7 @@ import { ModelTestResultDialog } from './ModelTestResultDialog'
 import { CredentialFormDialog } from './CredentialFormDialog'
 import { DeleteCredentialDialog } from './DeleteCredentialDialog'
 import { DiscoverModelsDialog } from './DiscoverModelsDialog'
+import { ModelPriceDialog } from './ModelPriceDialog'
 
 interface CredentialItemProps {
   credential: Credential
@@ -52,6 +54,7 @@ export function CredentialItem({
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [priceModel, setPriceModel] = useState<Model | null>(null)
   // Full credential data needed for edit form
   const { data: fullCredential } = useCredential(editOpen ? credential.id : '')
 
@@ -167,6 +170,10 @@ export function CredentialItem({
                   <div className="flex flex-wrap gap-1">
                     {linkedModels.filter(m => m.type === type).map(model => {
                       const defaultSlot = defaultSlots[model.id]
+                      const hasPrice =
+                        model.price_input_per_m != null || model.price_output_per_m != null
+                      // Compact CNY-per-1M display; values are rounded server-side.
+                      const fmt = (v: number) => Number(v.toFixed(4)).toString()
                       return (
                         <Badge
                           key={model.id}
@@ -175,6 +182,21 @@ export function CredentialItem({
                         >
                           {model.name}
                           {defaultSlot && <span className="ml-0.5 opacity-75">({defaultSlot})</span>}
+                          {hasPrice && (
+                            <span
+                              className="ml-0.5 opacity-75"
+                              title={t('models.priceTitle')}
+                            >
+                              ¥{fmt(model.price_input_per_m ?? 0)}/¥{fmt(model.price_output_per_m ?? 0)}
+                            </span>
+                          )}
+                          <button
+                            className="ml-0.5 opacity-0 group-hover/model:opacity-60 hover:!opacity-100 transition-opacity"
+                            onClick={() => setPriceModel(model)}
+                            title={t('models.priceTitle')}
+                          >
+                            <CircleDollarSign className="h-3 w-3" />
+                          </button>
                           <button
                             className="ml-0.5 opacity-0 group-hover/model:opacity-60 hover:!opacity-100 transition-opacity"
                             onClick={() => testModel(model.id, model.name)}
@@ -241,6 +263,15 @@ export function CredentialItem({
         result={modelTestResult}
         modelName={testedModelName}
       />
+
+      {/* Model price dialog (fetch from public DB or manual entry) */}
+      {priceModel && (
+        <ModelPriceDialog
+          open={priceModel !== null}
+          onOpenChange={(open) => { if (!open) setPriceModel(null) }}
+          model={priceModel}
+        />
+      )}
     </>
   )
 }

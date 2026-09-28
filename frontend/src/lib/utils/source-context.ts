@@ -1,4 +1,8 @@
-import type { ContextMode, NoteContextMode } from '@/lib/types/notebook-context'
+import type {
+  ContextMode,
+  ContextSelections,
+  NoteContextMode,
+} from '@/lib/types/notebook-context'
 
 /**
  * Bulk context actions for sources:
@@ -86,6 +90,34 @@ export function applyBulkSourceContext(
   return next
 }
 
+/**
+ * Compute folder-scoped chat-context selections: sources inside the folder
+ * default to full inclusion, sources outside the folder stay out of context,
+ * and saved per-source preferences override both defaults.
+ *
+ * The result is rebuilt from scratch (no existing choices carried over): the
+ * scope defines the whole context, so selections from a previously browsed
+ * folder must not leak. Sources are the full loaded list; `folderSourceIds`
+ * marks membership in the browsed folder. `folderDefault` lets a session-level
+ * bulk action govern in-folder sources that have no saved preference yet
+ * (pagination loaded after a bulk action, cf. #915).
+ */
+export function scopedFolderSelections(
+  sources: SourceLike[],
+  folderSourceIds: Set<string>,
+  prefs: Record<string, ContextMode>,
+  folderDefault: SourceContextDefault = 'full',
+): Record<string, ContextMode> {
+  const next: Record<string, ContextMode> = {}
+  for (const source of sources) {
+    const saved = prefs[source.id]
+    next[source.id] = saved ?? (folderSourceIds.has(source.id)
+      ? bulkModeForSource(folderDefault, source.insights_count)
+      : 'off')
+  }
+  return next
+}
+
 // ---------------------------------------------------------------------------
 // Notes
 //
@@ -134,4 +166,48 @@ export function applyBulkNoteContext(
     next[note.id] = bulkModeForNote(action)
   }
   return next
+}
+
+/** The per-id mode payload the chat buildContext API expects. */
+export interface ChatContextConfig {
+  sources: Record<string, string>
+  notes: Record<string, string>
+}
+
+/**
+ * Chat request payload from the selection maps.
+ *
+ * Iterates the selections (not a loaded source list) so the context picker can
+ * include sources that paginated listings have not loaded yet; ids that are
+ * loaded but absent from the map default to "not in" — matching the payload
+ * shape produced before the picker existed.
+ */
+export function buildChatContextConfig(
+  selections: ContextSelections,
+  loadedSourceIds: string[] = [],
+  loadedNoteIds: string[] = [],
+): ChatContextConfig {
+  const sources: Record<string, string> = {}
+  for (const id of loadedSourceIds) {
+    sources[id] = 'not in'
+  }
+  for (const [id, mode] of Object.entries(selections.sources)) {
+    if (mode === 'insights') {
+      sources[id] = 'insights'
+    } else if (mode === 'full') {
+      sources[id] = 'full content'
+    } else {
+      sources[id] = 'not in'
+    }
+  }
+
+  const notes: Record<string, string> = {}
+  for (const id of loadedNoteIds) {
+    notes[id] = 'not in'
+  }
+  for (const [id, mode] of Object.entries(selections.notes)) {
+    notes[id] = mode === 'full' ? 'full content' : 'not in'
+  }
+
+  return { sources, notes }
 }

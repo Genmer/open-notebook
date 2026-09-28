@@ -1,9 +1,10 @@
 'use client'
 
-import { FileText, Lightbulb, StickyNote } from 'lucide-react'
+import { FileText, Lightbulb, SlidersHorizontal, StickyNote } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ContextIndicatorProps {
   sourcesInsights: number
@@ -12,6 +13,8 @@ interface ContextIndicatorProps {
   tokenCount?: number
   charCount?: number
   className?: string
+  /** When set, the whole row becomes a button that opens the context picker. */
+  onOpenPicker?: () => void
 }
 
 // Helper function to format large numbers with K/M suffixes
@@ -31,86 +34,121 @@ export function ContextIndicator({
   notesCount,
   tokenCount,
   charCount,
-  className
+  className,
+  onOpenPicker,
 }: ContextIndicatorProps) {
+  const { t } = useTranslation()
   const hasContext = (sourcesInsights + sourcesFull) > 0 || notesCount > 0
 
-  if (!hasContext) {
+  const badges = hasContext && (
+    <div className="flex items-center gap-1.5">
+      {sourcesInsights > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-insights border-ctx-insights/50 cursor-default">
+              <Lightbulb className="h-3 w-3" />
+              <span>{sourcesInsights}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('chat.contextInsightsTooltip', { count: sourcesInsights })}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {sourcesFull > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-full border-ctx-full/50 cursor-default">
+              <FileText className="h-3 w-3" />
+              <span>{sourcesFull}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('chat.contextFullTooltip', { count: sourcesFull })}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {notesCount > 0 && (
+        <>
+          {(sourcesInsights > 0 || sourcesFull > 0) && (
+            <span className="text-muted-foreground">•</span>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-full border-ctx-full/50 cursor-default">
+                <StickyNote className="h-3 w-3" />
+                <span>{notesCount}</span>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('chat.contextNotesTooltip', { count: notesCount })}</p>
+            </TooltipContent>
+          </Tooltip>
+        </>
+      )}
+    </div>
+  )
+
+  const tokenSummary =
+    (tokenCount !== undefined || charCount !== undefined) && (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {tokenCount !== undefined && tokenCount > 0 && (
+          <span>{t('chat.contextTokens', { value: formatNumber(tokenCount) })}</span>
+        )}
+        {tokenCount !== undefined && charCount !== undefined && tokenCount > 0 && charCount > 0 && (
+          <span>/</span>
+        )}
+        {charCount !== undefined && charCount > 0 && (
+          <span>{t('chat.contextChars', { value: formatNumber(charCount) })}</span>
+        )}
+      </div>
+    )
+
+  if (!onOpenPicker) {
+    // Read-only rendering (e.g. inside a single-source chat).
+    if (!hasContext) {
+      return (
+        <div className={cn('flex-shrink-0 text-xs text-muted-foreground py-2 px-3 border-t', className)}>
+          {t('chat.contextEmptyReadOnly')}
+        </div>
+      )
+    }
     return (
-      <div className={cn('flex-shrink-0 text-xs text-muted-foreground py-2 px-3 border-t', className)}>
-        No sources or notes included in context. Toggle icons on cards to include them.
+      <div className={cn('flex-shrink-0 flex items-center justify-between gap-2 py-2 px-3 border-t bg-muted/30', className)}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">{t('chat.contextLabel')}</span>
+          {badges}
+        </div>
+        {tokenSummary}
       </div>
     )
   }
 
+  // Clickable rendering: the row is a button that opens the context picker.
   return (
-    <div className={cn('flex-shrink-0 flex items-center justify-between gap-2 py-2 px-3 border-t bg-muted/30', className)}>
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">Context:</span>
-
-        <div className="flex items-center gap-1.5">
-          {sourcesInsights > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-insights border-ctx-insights/50 cursor-default">
-                  <Lightbulb className="h-3 w-3" />
-                  <span>{sourcesInsights}</span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Insights for {sourcesInsights} source{sourcesInsights !== 1 ? 's' : ''}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-
-          {sourcesFull > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-full border-ctx-full/50 cursor-default">
-                  <FileText className="h-3 w-3" />
-                  <span>{sourcesFull}</span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{sourcesFull} full source{sourcesFull !== 1 ? 's' : ''}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-
-        {notesCount > 0 && (
-          <>
-            {(sourcesInsights > 0 || sourcesFull > 0) && (
-              <span className="text-muted-foreground">•</span>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-ctx-full border-ctx-full/50 cursor-default">
-                  <StickyNote className="h-3 w-3" />
-                  <span>{notesCount}</span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{notesCount} full note{notesCount !== 1 ? 's' : ''}</p>
-              </TooltipContent>
-            </Tooltip>
-          </>
+    <button
+      type="button"
+      onClick={onOpenPicker}
+      title={t('chat.contextPickerOpen')}
+      className={cn(
+        'group flex w-full flex-shrink-0 items-center justify-between gap-2 border-t bg-muted/30 py-2 px-3 text-left transition-colors hover:bg-muted/60',
+        className
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex-shrink-0 text-xs font-medium text-muted-foreground">{t('chat.contextLabel')}</span>
+        {hasContext ? (
+          badges
+        ) : (
+          <span className="truncate text-xs text-muted-foreground">{t('chat.contextEmpty')}</span>
         )}
       </div>
-
-      {(tokenCount !== undefined || charCount !== undefined) && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {tokenCount !== undefined && tokenCount > 0 && (
-            <span>{formatNumber(tokenCount)} tokens</span>
-          )}
-          {tokenCount !== undefined && charCount !== undefined && tokenCount > 0 && charCount > 0 && (
-            <span>/</span>
-          )}
-          {charCount !== undefined && charCount > 0 && (
-            <span>{formatNumber(charCount)} chars</span>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="flex flex-shrink-0 items-center gap-2">
+        {hasContext && tokenSummary}
+        <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100" />
+      </div>
+    </button>
   )
 }

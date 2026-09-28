@@ -35,6 +35,7 @@ from api.routers import (
     insights,
     languages,
     models,
+    notebook_context_prefs,
     notebooks,
     notes,
     podcasts,
@@ -45,6 +46,7 @@ from api.routers import (
     source_groups,
     sources,
     speaker_profiles,
+    storage,
     transformations,
     usage,
 )
@@ -390,6 +392,11 @@ async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])
+app.include_router(
+    notebook_context_prefs.router,
+    prefix="/api",
+    tags=["notebook-context-prefs"],
+)
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(transformations.router, prefix="/api", tags=["transformations"])
@@ -415,6 +422,9 @@ app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
 app.include_router(usage.router, prefix="/api", tags=["usage"])
+app.include_router(
+    storage.router, prefix="/api", tags=["storage"]
+)
 app.include_router(data_transfer.router, prefix="/api", tags=["data-transfer"])
 
 

@@ -31,13 +31,11 @@ export const EXPORT_STAGES: readonly TransferStage[] = [
   { id: 'packaging', labelKey: 'dataManagement.export.stages.packaging' },
 ]
 
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  const value = bytes / 1024 ** exponent
-  return `${exponent === 0 || value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[exponent]}`
-}
+import { formatBytes } from '@/lib/utils/format'
+
+// Re-exported for backwards compatibility; the implementation lives in
+// utils/format so non-data components can share it.
+export { formatBytes } from '@/lib/utils/format'
 
 export function ExportCard() {
   const { t } = useTranslation()

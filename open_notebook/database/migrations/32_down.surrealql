@@ -1,0 +1,4 @@
+-- 回滚迁移 32：移除命令表的时间戳字段与状态索引。
+REMOVE INDEX IF NOT EXISTS idx_command_status ON command;
+REMOVE FIELD IF EXISTS created ON command;
+REMOVE FIELD IF EXISTS updated ON command;

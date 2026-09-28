@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { buildChatContextConfig } from '@/lib/utils/source-context'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { chatApi } from '@/lib/api/chat'
@@ -129,40 +130,19 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   })
 
-  // Build context from sources and notes based on user selections
+  // Build context from the selection maps (the context picker may include
+  // sources that paginated listings have not loaded yet)
   const buildContext = useCallback(async () => {
-    // Build context_config mapping IDs to selection modes
-    const context_config: { sources: Record<string, string>, notes: Record<string, string> } = {
-      sources: {},
-      notes: {}
-    }
-
-    // Map source selections
-    sources.forEach(source => {
-      const mode = contextSelections.sources[source.id]
-      if (mode === 'insights') {
-        context_config.sources[source.id] = 'insights'
-      } else if (mode === 'full') {
-        context_config.sources[source.id] = 'full content'
-      } else {
-        context_config.sources[source.id] = 'not in'
-      }
-    })
-
-    // Map note selections
-    notes.forEach(note => {
-      const mode = contextSelections.notes[note.id]
-      if (mode === 'full') {
-        context_config.notes[note.id] = 'full content'
-      } else {
-        context_config.notes[note.id] = 'not in'
-      }
-    })
+    const context_config = buildChatContextConfig(
+      contextSelections,
+      sources.map(source => source.id),
+      notes.map(note => note.id),
+    )
 
     // Call API to build context with actual content
     const response = await chatApi.buildContext({
       notebook_id: notebookId,
-      context_config
+      context_config,
     })
 
     // Store token and char counts

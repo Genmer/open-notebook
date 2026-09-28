@@ -10,11 +10,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, ListChecks, ChevronDown } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, ListChecks, ChevronDown, Sparkles, Eye } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { NoteEditorDialog } from './NoteEditorDialog'
+import { ArtifactViewDialog } from './ArtifactViewDialog'
+import { FlashcardViewer } from './FlashcardViewer'
+import { parseFlashcards } from '@/lib/utils/artifact-context'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { formatDistanceToNow } from 'date-fns'
 import { ContextToggle } from '@/components/common/ContextToggle'
@@ -33,6 +36,7 @@ interface NotesColumnProps {
   contextSelections?: Record<string, NoteContextMode>
   onContextModeChange?: (noteId: string, mode: NoteContextMode) => void
   onBulkContextModeChange?: (action: NoteContextDefault) => void
+  onGenerateArtifact?: () => void
 }
 
 export function NotesColumn({
@@ -41,13 +45,15 @@ export function NotesColumn({
   notebookId,
   contextSelections,
   onContextModeChange,
-  onBulkContextModeChange
+  onBulkContextModeChange,
+  onGenerateArtifact
 }: NotesColumnProps) {
   const { t, language } = useTranslation()
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingNote, setEditingNote] = useState<NoteResponse | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
+  const [viewingNote, setViewingNote] = useState<NoteResponse | null>(null)
 
   const deleteNote = useDeleteNote()
 
@@ -114,6 +120,17 @@ export function NotesColumn({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                )}
+                {onGenerateArtifact && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={onGenerateArtifact}
+                    title={t('artifacts.open')}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                  </Button>
                 )}
                 <Button size="sm" onClick={() => handleOpenEditor()}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -187,6 +204,17 @@ export function NotesColumn({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48">
+                            {note.content && (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setViewingNote(note)
+                                }}
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                {t('artifacts.readOnlyView')}
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -206,11 +234,23 @@ export function NotesColumn({
                       <h4 className="text-sm font-medium mb-2 break-all">{note.title}</h4>
                     )}
 
-                    {note.content && (
-                      <p className="text-sm text-muted-foreground line-clamp-3 break-all">
-                        {note.content}
-                      </p>
-                    )}
+                    {(() => {
+                      // Generated flashcard notes store a JSON payload — render
+                      // them as click-to-flip cards instead of raw JSON text.
+                      const cards = parseFlashcards(note.content)
+                      if (cards) {
+                        return (
+                          <div onClick={(event) => event.stopPropagation()}>
+                            <FlashcardViewer cards={cards} />
+                          </div>
+                        )
+                      }
+                      return note.content ? (
+                        <p className="text-sm text-muted-foreground line-clamp-3 break-all">
+                          {note.content}
+                        </p>
+                      ) : null
+                    })()}
                   </div>
                 ))}
               </div>
@@ -229,6 +269,14 @@ export function NotesColumn({
         }}
         notebookId={notebookId}
         note={editingNote}
+      />
+
+      <ArtifactViewDialog
+        open={!!viewingNote}
+        onOpenChange={(open) => {
+          if (!open) setViewingNote(null)
+        }}
+        note={viewingNote ?? undefined}
       />
 
       <ConfirmDialog

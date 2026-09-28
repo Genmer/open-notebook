@@ -154,3 +154,7 @@ docker-compose.override.yml
 # Local QA/debug artifacts
 screenshot-*.png
 history.txt
+
+# Local tooling artifacts
+.pytest-tmp/
+/node_modules/

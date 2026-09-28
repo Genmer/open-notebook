@@ -1,5 +1,10 @@
 # Model Context Protocol (MCP) Integration
 
+> **This fork ships a built-in stdio MCP server** (`open_notebook.mcp_server`,
+> Claude Code / Cursor ready, no extra install). See
+> [Built-in MCP Server](mcp-server.md). The rest of this page documents the
+> third-party HTTP-based community server.
+
 Open Notebook can be seamlessly integrated into your AI workflows using the **Model Context Protocol (MCP)**, enabling direct access to your notebooks, sources, and chat functionality from AI assistants like Claude Desktop and VS Code extensions.
 
 ## What is MCP?

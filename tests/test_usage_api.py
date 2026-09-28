@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 # repo_query call order inside get_usage_summary
 Q_TOTALS, Q_BY_MODEL, Q_BY_DAY, Q_PIVOT, Q_PREVIOUS, Q_EST_MODEL, Q_EST_TOTALS = range(7)
+Q_MODEL_PRICES = 7  # per-model CNY prices loaded after the token rollups
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def _seed_row(i: int, *, input_tokens=None, call_type="chat", model="gpt", day="
 
 
 def _empty_repo(*extra):
-    return AsyncMock(side_effect=[[], [], [], [], [], [], []])
+    return AsyncMock(side_effect=[[], [], [], [], [], [], [], []])
 
 
 class TestUsageSummary:
@@ -58,6 +59,7 @@ class TestUsageSummary:
             "output_tokens": 0,
             "total_tokens": 0,
             "estimated_tokens": 0,
+            "estimated_cost_cny": 0.0,
         }
         assert body["previous_totals"] == {
             "calls": 0,
@@ -65,10 +67,12 @@ class TestUsageSummary:
             "output_tokens": 0,
             "total_tokens": 0,
             "estimated_tokens": 0,
+            "estimated_cost_cny": None,
         }
         assert body["by_model"] == []
         assert body["by_day"] == []
         assert body["daily_by_model"] == []
+        assert body["unpriced_models"] == []
 
     def test_seed_rows_aggregate_with_null_tokens_as_zero(self, client):
         totals = {"calls": 3, "input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
@@ -93,7 +97,7 @@ class TestUsageSummary:
         ]
         by_day = [{"day": "2026-09-20", "calls": 3, "input_tokens": 100, "output_tokens": 50, "total_tokens": 150}]
         repo = AsyncMock(
-            side_effect=[[totals], by_model, by_day, [], [], [], []]
+            side_effect=[[totals], by_model, by_day, [], [], [], [], []]
         )
 
         with patch("api.usage_service.repo_query", repo):
@@ -133,7 +137,7 @@ class TestUsageSummary:
             {"day": "2026-09-20", "model_name": "gpt", "total_tokens": 50},
         ]
         repo = AsyncMock(
-            side_effect=[[totals], by_model, by_day, daily_by_model, [], [], []]
+            side_effect=[[totals], by_model, by_day, daily_by_model, [], [], [], []]
         )
 
         with patch("api.usage_service.repo_query", repo):
@@ -157,6 +161,8 @@ class TestUsageSummary:
         with patch("api.usage_service.repo_query", repo):
             client.get("/api/usage/summary?call_type=embedding")
         for call in repo.await_args_list:
+            if "FROM model_usage" not in call.args[0]:
+                continue  # price lookup reads the model table, not usage rows
             assert call.args[1]["call_type"] == "embedding"
             assert "call_type = $call_type" in call.args[0]
 
@@ -235,6 +241,8 @@ class TestTzOffset:
             response = client.get("/api/usage/summary?tz_offset=480&call_type=chat")
         assert response.status_code == 200
         for call in repo.await_args_list:
+            if "FROM model_usage" not in call.args[0]:
+                continue  # price lookup reads the model table, not usage rows
             assert call.args[1]["call_type"] == "chat"
             # Previous-window query bounds on $prev_from, everything else on $from_ts.
             assert "created >= $from_ts" in call.args[0] or (
@@ -249,7 +257,7 @@ class TestPreviousTotals:
         current = {"calls": 10, "input_tokens": 400, "output_tokens": 100, "total_tokens": 500}
         previous = {"calls": 4, "input_tokens": 150, "output_tokens": 50, "total_tokens": 200}
         repo = AsyncMock(
-            side_effect=[[current], [], [], [], [previous], [], []]
+            side_effect=[[current], [], [], [], [previous], [], [], []]
         )
 
         with patch("api.usage_service.repo_query", repo):
@@ -262,6 +270,7 @@ class TestPreviousTotals:
             "output_tokens": 50,
             "total_tokens": 200,
             "estimated_tokens": 0,
+            "estimated_cost_cny": None,
         }
 
         prev_sql = repo.await_args_list[Q_PREVIOUS].args[0]
@@ -289,7 +298,7 @@ class TestEstimatedTokens:
         ]
         est_totals = [{"estimated_tokens": 200}]
         repo = AsyncMock(
-            side_effect=[[totals], by_model, [], [], [], est_by_model, est_totals]
+            side_effect=[[totals], by_model, [], [], [], est_by_model, est_totals, []]
         )
 
         with patch("api.usage_service.repo_query", repo):
@@ -314,6 +323,51 @@ class TestEstimatedTokens:
             assert "created >= $from_ts" in call.args[0]
             assert "(is_estimated ?? false) = true" in call.args[0]
             assert "call_type = $call_type" in call.args[0]
+
+
+class TestCostEstimation:
+    def test_priced_models_get_costs_unpriced_listed(self, client):
+        totals = {"calls": 4, "input_tokens": 1_500_000, "output_tokens": 500_000, "total_tokens": 2_000_000}
+        by_model = [
+            {"model_name": "gpt", "provider": "openai", "calls": 3, "input_tokens": 1_000_000, "output_tokens": 500_000, "total_tokens": 1_500_000},
+            {"model_name": "local-model", "provider": "openai_compatible", "calls": 1, "input_tokens": 500_000, "output_tokens": 0, "total_tokens": 500_000},
+        ]
+        prices = [{"name": "gpt", "price_input_per_m": 2.0, "price_output_per_m": 8.0}]
+        repo = AsyncMock(
+            side_effect=[[totals], by_model, [], [], [], [], [], prices]
+        )
+
+        with patch("api.usage_service.repo_query", repo):
+            response = client.get("/api/usage/summary")
+        assert response.status_code == 200
+        body = response.json()
+        # gpt: 1M in * 2.0 + 0.5M out * 8.0 = 6.0 CNY; local-model has no price.
+        rows = {r["model_name"]: r for r in body["by_model"]}
+        assert rows["gpt"]["estimated_cost_cny"] == 6.0
+        assert rows["local-model"]["estimated_cost_cny"] is None
+        assert body["totals"]["estimated_cost_cny"] == 6.0
+        assert body["unpriced_models"] == ["local-model"]
+
+        price_sql = repo.await_args_list[Q_MODEL_PRICES].args[0]
+        assert "price_input_per_m" in price_sql
+        assert "FROM model" in price_sql
+
+    def test_cost_name_matching_is_case_insensitive(self, client):
+        totals = {"calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000}
+        by_model = [
+            {"model_name": "GPT", "provider": "openai", "calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000},
+        ]
+        prices = [{"name": "gpt", "price_input_per_m": 2.0, "price_output_per_m": 8.0}]
+        repo = AsyncMock(
+            side_effect=[[totals], by_model, [], [], [], [], [], prices]
+        )
+
+        with patch("api.usage_service.repo_query", repo):
+            response = client.get("/api/usage/summary")
+        body = response.json()
+        assert body["by_model"][0]["estimated_cost_cny"] == 2.0
+        assert body["totals"]["estimated_cost_cny"] == 2.0
+        assert body["unpriced_models"] == []
 
 
 class TestUsageRecords:

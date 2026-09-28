@@ -86,7 +86,7 @@ async def delete_export_package():
 async def upload_import_package(file: UploadFile = File(...)):
     """Upload a package zip and queue the import job.
 
-    The request body is capped by the 100MB upload middleware (see
+    The request body is capped by the 1 GB upload middleware by default (see
     tests/test_max_body_size_middleware.py); oversized uploads get a 413 there.
     """
     try:

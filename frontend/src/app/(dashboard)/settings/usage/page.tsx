@@ -290,7 +290,11 @@ export default function UsagePage() {
                       </TabsTrigger>
                     </TabsList>
                     <TabsContent value="by-model">
-                      <UsageByModelTable byModel={summary?.by_model ?? []} locale={language} />
+                      <UsageByModelTable
+                        byModel={summary?.by_model ?? []}
+                        locale={language}
+                        unpricedModels={summary?.unpriced_models ?? []}
+                      />
                     </TabsContent>
                     <TabsContent value="records">
                       <p className="mb-3 text-xs text-muted-foreground">

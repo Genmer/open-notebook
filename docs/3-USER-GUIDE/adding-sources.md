@@ -52,7 +52,7 @@ Sources are the raw materials of your research. This guide covers how to add dif
 - **HTML** (.html, .htm) — Web page files
 - **Images** (.png, .jpg, .jpeg, .tiff, .bmp) — Text read via OCR (**requires Docling enabled** — see below)
 
-**File size limits:** Up to ~100MB (varies by system)
+**File size limits:** Up to ~1 GB by default (varies by system; see `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB`)
 
 **Processing time:** 10 seconds - 2 minutes (depending on length and file type)
 
@@ -81,7 +81,7 @@ Sources are the raw materials of your research. This guide covers how to add dif
 - Paywalled content (WSJ, FT, etc.) — Can't extract
 - Password-protected PDFs — Can't open
 - Unsupported formats — Rejected immediately with a clear "unsupported file type" message (no long wait)
-- Very large files (>100MB) — Timeout
+- Very large files (>1 GB) — Timeout
 
 ---
 
@@ -369,7 +369,7 @@ Example: "Keep this in notebook but don't use in this conversation"
 - Solution: Convert to a supported format (PDF for documents, MP3 for audio), or enable Docling for images
 
 **"Processing timeout"**
-- Very large file (>100MB) or very long audio
+- Very large file (>1 GB) or very long audio
 - Solution: Split into smaller pieces or try uploading again
 
 **"Transcription failed"**
@@ -428,7 +428,7 @@ Once you've added sources, you can:
 Before adding sources, confirm:
 
 - [ ] File is in supported format
-- [ ] File is under 100MB (or splitting large ones)
+- [ ] File is under 1 GB (or splitting large ones)
 - [ ] Web links are full URLs (not shortened)
 - [ ] Audio files have clear speech (if transcription-dependent)
 - [ ] You've named source clearly

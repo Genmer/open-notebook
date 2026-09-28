@@ -2,7 +2,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
-from typing import Any, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from content_core import check_file_support
 from fastapi import (
@@ -172,6 +172,62 @@ async def _fetch_command_row(command_id: str) -> Optional[dict]:
         {"command_id": ensure_record_id(command_id)},
     )
     return rows[0] if rows else None
+
+
+async def _collect_insight_jobs(source_id: str, limit: int = 10) -> List[dict]:
+    """Recent run_transformation commands for a source.
+
+    Active (new/running) entries drive the in-progress UI; terminal failures
+    let the page show what went wrong after a reload. Titles are resolved in
+    the same pass so the frontend doesn't need a second lookup.
+    """
+    try:
+        rows = await repo_query(
+            "SELECT id, args, status, error_message FROM command "
+            "WHERE app = 'open_notebook' AND name = 'run_transformation' "
+            "AND args.source_id = $sid LIMIT $lim",
+            {"sid": source_id, "lim": limit},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to list insight jobs for {source_id}: {e}")
+        return []
+
+    jobs: List[dict] = []
+    transformation_ids = {
+        str((row.get("args") or {}).get("transformation_id"))
+        for row in rows or []
+        if (row.get("args") or {}).get("transformation_id")
+    }
+    titles: Dict[str, str] = {}
+    if transformation_ids:
+        try:
+            title_rows = await repo_query(
+                "SELECT id, title FROM transformation WHERE id IN $ids",
+                {"ids": [ensure_record_id(t) for t in transformation_ids]},
+            )
+            titles = {
+                str(r["id"]).split(":")[-1]: str(r["title"])
+                for r in title_rows or []
+                if r.get("title")
+            }
+        except Exception as e:
+            logger.warning(f"Failed to resolve transformation titles: {e}")
+
+    for row in rows or []:
+        args = row.get("args") or {}
+        tid = str(args.get("transformation_id") or "") or None
+        jobs.append(
+            {
+                "command_id": str(row["id"]),
+                "transformation_id": tid,
+                "transformation_title": titles.get(
+                    (tid or "").split(":")[-1]
+                ),
+                "status": str(row.get("status") or "unknown"),
+                "error_message": row.get("error_message"),
+            }
+        )
+    return jobs
 
 
 def _processing_info_from_row(row: dict) -> dict:
@@ -1271,9 +1327,11 @@ async def get_source_status(source_id: str):
                 processing_info=None,
                 command_id=None,
                 embedding=await _build_embedding_status(source),
+                insight_jobs=await _collect_insight_jobs(source_id),
             )
 
         embedding = await _build_embedding_status(source)
+        insight_jobs = await _collect_insight_jobs(source_id)
 
         # Get command status and processing info (single row fetch)
         try:
@@ -1313,6 +1371,7 @@ async def get_source_status(source_id: str):
                 command_id=str(source.command) if source.command else None,
                 embedding=embedding,
                 steps=steps,
+                insight_jobs=insight_jobs,
             )
 
         except Exception as e:
@@ -1324,6 +1383,7 @@ async def get_source_status(source_id: str):
                 command_id=str(source.command) if source.command else None,
                 embedding=embedding,
                 steps=None,
+                insight_jobs=insight_jobs,
             )
 
     except HTTPException:
@@ -1499,6 +1559,16 @@ async def delete_source(source_id: str):
             raise HTTPException(status_code=404, detail="Source not found")
 
         await source.delete()
+
+        # The record delete does not cascade; without this, folder memberships
+        # (and notebook references) outlive the source as dangling edges that
+        # later resurface as export/import skip warnings.
+        sid = ensure_record_id(source_id)
+        await repo_query("DELETE source_group_member WHERE in = $sid", {"sid": sid})
+        await repo_query("DELETE reference WHERE in = $sid", {"sid": sid})
+        await repo_query("DELETE source_embedding WHERE source = $sid", {"sid": sid})
+        await repo_query("DELETE source_insight WHERE source = $sid", {"sid": sid})
+        await repo_query("DELETE chat_context_pref WHERE source = $sid", {"sid": sid})
 
         return {"message": "Source deleted successfully"}
     except HTTPException:

@@ -1,0 +1,4 @@
+-- 迁移 31：笔记本对话上下文偏好（chat context preferences）。
+-- 以（笔记本, 文件夹, 来源）为键记住每个来源的上下文模式（off/insights/full），
+-- 供前端按文件夹恢复默认上下文选择；风格同迁移 30，SCHEMALESS 宽表。
+DEFINE TABLE IF NOT EXISTS chat_context_pref SCHEMALESS;

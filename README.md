@@ -455,6 +455,9 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 ### 2026-09-25：数据导出包包含系统设置与提示词配置
 完善数据备份与容灾：将通用系统设置 `open_notebook:content_settings`（处理引擎、向量化切块参数、Docling OCR/公式/视觉开关、Token 审计开关等）与全局自定义提示词 `open_notebook:default_prompts` 纳入数据导出与导入链路（分别生成 data/content_settings.ndjson 与 data/default_prompts.ndjson），导入时通过 UPSERT MERGE 安全还原合并，保持向后兼容老版本导出包，且物理隔离私有凭据。涉及：commands/data_transfer_commands.py、tests/test_data_transfer_commands.py。
 
+### 2026-09-26：内置 MCP 服务器（把本库暴露给编程代理）
+新增 `python -m open_notebook.mcp_server`（fastmcp 提为直接依赖，stdio 传输）：暴露 4 只读 + 1 写工具——list_notebooks / list_sources / search（复用 domain 层 text_search+vector_search 与作用域解析，文本失败自动向量回退）/ chat（单轮 Prompter+vector_search 组装上下文，复用 ask/query_process 模板与 tools 默认模型，不引入 langgraph 会话，用量计入 mcp_chat）/ add_note（Note 落库并入组，仅此一个写操作）。Claude Code 一行接入：`claude mcp add open-notebook -- uv run --directory /path/to/open-notebook python -m open_notebook.mcp_server`。配置片段与工具表见 docs/5-CONFIGURATION/mcp-server.md。涉及：open_notebook/mcp_server.py、pyproject.toml、uv.lock、docs/5-CONFIGURATION/mcp-server.md、docs/5-CONFIGURATION/mcp-integration.md、tests/test_mcp_server.py。
+
 ---
 
 ## 后续体验优化与新功能规划路线图 (Roadmap)

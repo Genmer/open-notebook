@@ -30,6 +30,7 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useDeleteSource: () => ({ mutateAsync: deleteMock, isPending: false }),
   useRetrySource: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
   useRemoveSourceFromNotebook: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),

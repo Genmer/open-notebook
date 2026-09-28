@@ -131,6 +131,32 @@ class TestCollectItemsMissingMode:
 
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
+    async def test_missing_mode_sweeps_queued_sources_without_owner(
+        self, repo_query
+    ):
+        """Regression: sources parked in 'queued' with no owning command (the
+        worker died between status flip and job submit) were unreachable from
+        missing mode forever; the sweep must cover 'queued' too."""
+        repo_query.side_effect = [
+            [],  # no regular missing sources
+            [
+                {"id": "source:q", "embedding_command": None},  # queued, no owner
+                {"id": "source:q2", "embedding_command": "command:dead"},  # queued under dead owner
+            ],
+            [{"status": "failed"}],  # owner of q2 is terminal
+        ]
+
+        items = await collect_items_for_rebuild("missing", True, False, False)
+
+        assert items["stale_sources"] == {
+            "source:q": "",
+            "source:q2": "command:dead",
+        }
+        assert "queued" in repo_query.await_args_list[1].args[0]
+        assert items["sources"] == ["source:q", "source:q2"]
+
+    @pytest.mark.asyncio
+    @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
     async def test_missing_mode_owner_lookup_failure_is_conservative(
         self, repo_query
     ):
@@ -257,7 +283,7 @@ class TestStaleRunningClaim:
         )
         stale_query = repo_query.await_args_list[1].args[0]
         stale_params = repo_query.await_args_list[1].args[1]
-        assert "embedding_status = 'running'" in stale_query
+        assert "embedding_status IN ['running', 'queued']" in stale_query
         assert "embedding_command = $owner" in stale_query
         assert str(stale_params["owner"]) == "command:dead"
         assert str(stale_params["coordinator_id"]) == "command:coord"

@@ -1,0 +1,2 @@
+-- 回滚迁移 31：移除对话上下文偏好表。
+REMOVE TABLE IF EXISTS chat_context_pref;

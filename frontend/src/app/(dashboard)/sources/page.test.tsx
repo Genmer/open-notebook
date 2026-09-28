@@ -39,6 +39,7 @@ vi.mock('sonner', () => ({
   },
 }))
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useUpdateSource: () => ({ mutateAsync: updateSourceMock, isPending: false }),
 }))
 vi.mock('@/lib/hooks/use-source-views', () => {

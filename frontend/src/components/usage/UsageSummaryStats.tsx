@@ -5,7 +5,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { UsageSummaryResponse } from '@/lib/types/api'
-import { formatCompact, todayLocal } from './chart-shared'
+import { formatCompact, formatCostCny, todayLocal } from './chart-shared'
 import { cn } from '@/lib/utils'
 
 interface UsageSummaryStatsProps {
@@ -41,12 +41,13 @@ export default function UsageSummaryStats({
     { key: 'usage.totalCalls', value: (totals.calls ?? 0).toLocaleString(locale) },
     { key: 'usage.inputTokens', value: formatCompact(totals.input_tokens ?? 0, locale) },
     { key: 'usage.outputTokens', value: formatCompact(totals.output_tokens ?? 0, locale) },
+    { key: 'usage.costEstimate', value: formatCostCny(totals.estimated_cost_cny, locale) },
   ]
 
   return (
     <Card>
       <CardContent
-        className={cn('grid gap-6 py-5 sm:grid-cols-2 lg:grid-cols-6', 'transition-opacity')}
+        className={cn('grid gap-6 py-5 sm:grid-cols-2 lg:grid-cols-7', 'transition-opacity')}
         aria-busy={isPlaceholder || undefined}
         data-placeholder={isPlaceholder || undefined}
       >

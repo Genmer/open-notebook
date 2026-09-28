@@ -93,10 +93,10 @@ class CollectingSend:
 
 
 class TestConfig:
-    def test_default_is_100mb(self, monkeypatch):
+    def test_default_is_1gb(self, monkeypatch):
         monkeypatch.delenv("OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB", raising=False)
-        assert DEFAULT_MAX_UPLOAD_SIZE_MB == 100
-        assert get_max_upload_size_bytes() == 100 * 1024 * 1024
+        assert DEFAULT_MAX_UPLOAD_SIZE_MB == 1024
+        assert get_max_upload_size_bytes() == 1024 * 1024 * 1024
 
     def test_reads_env_override(self, monkeypatch):
         monkeypatch.setenv("OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB", "5")
@@ -104,14 +104,14 @@ class TestConfig:
 
     def test_malformed_env_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB", "not-a-number")
-        assert get_max_upload_size_bytes() == 100 * 1024 * 1024
+        assert get_max_upload_size_bytes() == 1024 * 1024 * 1024
 
     def test_non_positive_env_falls_back_to_default(self, monkeypatch):
         # A zero/negative limit would 413 every request that has a body.
         monkeypatch.setenv("OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB", "0")
-        assert get_max_upload_size_bytes() == 100 * 1024 * 1024
+        assert get_max_upload_size_bytes() == 1024 * 1024 * 1024
         monkeypatch.setenv("OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB", "-5")
-        assert get_max_upload_size_bytes() == 100 * 1024 * 1024
+        assert get_max_upload_size_bytes() == 1024 * 1024 * 1024
 
 
 class TestMiddlewareAsgiLevel:

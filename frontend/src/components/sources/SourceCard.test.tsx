@@ -12,6 +12,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/hooks/use-sources', () => ({
   useSourceStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
+  hasActiveInsightJobs: vi.fn(() => false),
 }))
 
 const baseSource: SourceListResponse = {

@@ -116,9 +116,18 @@ class TestResolveContainedAudioPath:
         )
         outside = tmp_path / "outside.mp3"
         outside.write_bytes(b"secret")
-        (root / "link.mp3").symlink_to(outside)
+        link = root / "link.mp3"
+        link.symlink_to(outside)
 
-        assert resolve_contained_audio_path("link.mp3") is None
+        try:
+            assert resolve_contained_audio_path("link.mp3") is None
+        finally:
+            # Remove the symlink before tmp_path teardown: pytest's rm_rf hits
+            # "directory not empty" (WinError 145) on Windows when a session
+            # dir still holds one, leaving undeletable garbage-* dirs that
+            # warn on every subsequent run.
+            if link.is_symlink():
+                link.unlink()
 
     def test_empty_and_none_are_rejected(self):
         assert resolve_contained_audio_path(None) is None

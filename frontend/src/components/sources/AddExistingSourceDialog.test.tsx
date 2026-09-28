@@ -18,6 +18,7 @@ vi.mock('@/lib/api/sources', () => ({
 
 const mutateAsync = vi.fn()
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useSources: () => ({ data: [] }),
   useAddSourcesToNotebook: () => ({ mutateAsync, isPending: false }),
 }))

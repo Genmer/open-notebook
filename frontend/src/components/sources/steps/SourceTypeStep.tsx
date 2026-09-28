@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Controller } from "react-hook-form"
+import { cn } from "@/lib/utils"
 
 interface CreateSourceFormData {
   type: 'link' | 'upload' | 'text'
@@ -106,6 +107,21 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
 
   // Track if HTML content was pasted
   const [hasHtmlContent, setHasHtmlContent] = useState(false)
+  const [fileDragging, setFileDragging] = useState(false)
+
+  // react-hook-form owns the (sr-only) input; a drop assigns the dropped files
+  // onto it and re-fires change so register('file') sees them.
+  const handleFileDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault()
+    setFileDragging(false)
+    const dropped = event.dataTransfer.files
+    if (!dropped || dropped.length === 0) return
+    const input = event.currentTarget.querySelector<HTMLInputElement>('input[type="file"]')
+    if (input) {
+      input.files = dropped
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  }
 
   // Handle paste event to check for HTML content in clipboard
   const handleTextPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -245,13 +261,36 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
                           </Badge>
                         )}
                       </div>
-                      <Input
-                        id="file"
-                        type="file"
-                        multiple
-                        {...register('file')}
-                        accept=".pdf,.doc,.docx,.pptx,.ppt,.xlsx,.xls,.txt,.md,.epub,.mp4,.avi,.mov,.wmv,.mp3,.wav,.m4a,.aac,.jpg,.jpeg,.png,.tiff,.zip,.tar,.gz,.html"
-                      />
+                      <label
+                        className={cn(
+                          'mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed p-6 text-center transition-colors',
+                          fileDragging
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:bg-muted/50'
+                        )}
+                        onDragOver={(event) => {
+                          event.preventDefault()
+                          setFileDragging(true)
+                        }}
+                        onDragLeave={() => setFileDragging(false)}
+                        onDrop={handleFileDrop}
+                      >
+                        <FileIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+                        <span className="text-sm font-medium">
+                          {t('sources.chooseFileButton')}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('sources.dropzoneHint')}
+                        </span>
+                        <Input
+                          id="file"
+                          type="file"
+                          multiple
+                          {...register('file')}
+                          accept=".pdf,.doc,.docx,.pptx,.ppt,.xlsx,.xls,.txt,.md,.epub,.mp4,.avi,.mov,.wmv,.mp3,.wav,.m4a,.aac,.jpg,.jpeg,.png,.tiff,.zip,.tar,.gz,.html"
+                          className="sr-only"
+                        />
+                      </label>
                       <p className="text-xs text-muted-foreground mt-1">
                         {t('sources.selectMultipleFilesHint')}
                       </p>

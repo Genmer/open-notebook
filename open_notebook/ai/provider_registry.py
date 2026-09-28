@@ -143,7 +143,10 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
         ProviderSpec(
             name="dashscope",
             display_name="DashScope (Qwen)",
-            modalities=_LANGUAGE_ONLY,
+            # DashScope's compatible-mode serves text-embedding-v1..v4 on the
+            # OpenAI embeddings endpoint, so embedding models are first-class
+            # here (the esperanto profile is widened to match — see ai/__init__).
+            modalities=("language", "embedding"),
             required_env=("DASHSCOPE_API_KEY",),
             test_model="qwen-plus",
             docs_url="https://help.aliyun.com/zh/model-studio/getting-started/",
@@ -167,6 +170,28 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
             test_model="MiniMax-M2.5",
             docs_url="https://platform.minimaxi.com/document/Guides",
             openai_compat_discovery_url="https://api.minimax.io/v1/models",
+        ),
+        # Xiaomi MiMo ships one OpenAI-compatible API behind two endpoints and
+        # key types: pay-as-you-go keys (sk-…) hit api.xiaomimimo.com, Token
+        # Plan subscription keys (tp-/ttp-…) hit token-plan-cn.xiaomimimo.com.
+        # The two key types are not interchangeable, hence two providers.
+        ProviderSpec(
+            name="xiaomi_mimo",
+            display_name="Xiaomi MiMo",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("MIMO_API_KEY",),
+            test_model="mimo-v2.6-flash",
+            docs_url="https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go",
+            openai_compat_discovery_url="https://api.xiaomimimo.com/v1/models",
+        ),
+        ProviderSpec(
+            name="xiaomi_mimo_token_plan",
+            display_name="Xiaomi MiMo Token Plan",
+            modalities=_LANGUAGE_ONLY,
+            required_env=("MIMO_TOKEN_PLAN_API_KEY",),
+            test_model="mimo-v2.6-flash",
+            docs_url="https://mimo.mi.com/docs/zh-CN/price/token-plan",
+            openai_compat_discovery_url="https://token-plan-cn.xiaomimimo.com/v1/models",
         ),
         ProviderSpec(
             name="novita",

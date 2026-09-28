@@ -4,9 +4,10 @@ from loguru import logger
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-# Matches the file-size guidance already documented in
-# docs/3-USER-GUIDE/adding-sources.md ("Very large files (>100MB) - Timeout").
-DEFAULT_MAX_UPLOAD_SIZE_MB = 100
+# Local/self-hosted default: data-management import packages are routinely
+# far bigger than the old 100MB limit. Still env-overridable via
+# OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB.
+DEFAULT_MAX_UPLOAD_SIZE_MB = 1024
 
 
 def get_max_upload_size_bytes() -> int:

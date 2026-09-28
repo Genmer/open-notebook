@@ -102,7 +102,7 @@ docker compose restart
 # ✓ URLs/web links
 
 # ✗ Pure images (.jpg without OCR)
-# ✗ Files > 100MB
+# ✗ Files > 1 GB (default upload cap)
 
 # Try these:
 # - Convert to PDF if possible

@@ -31,7 +31,7 @@ import {
 } from 'lucide-react'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { SourceContextMenuContent } from '@/components/sources/SourceContextMenu'
-import { useSourceStatus } from '@/lib/hooks/use-sources'
+import { useSourceStatus, hasActiveInsightJobs } from '@/lib/hooks/use-sources'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { TFunction } from 'i18next'
 import { cn } from '@/lib/utils'
@@ -159,6 +159,9 @@ function SourceCardImpl({
 
   // Track processing state to continue polling until we detect completion
   const [wasProcessing, setWasProcessing] = useState(false)
+  // Latched "we saw an in-flight insight job": keeps status polling on and is
+  // safe to reference in shouldFetchStatus below (declared before statusData).
+  const [insightJobsSeen, setInsightJobsSeen] = useState(false)
 
   // Only poll status while the source is actually being processed (or just finished
   // and we still need one more poll to catch completion). The list endpoint already
@@ -174,7 +177,8 @@ function SourceCardImpl({
     sourceWithStatus.status === 'queued' ||
     sourceWithStatus.status === 'running' ||
     (!!sourceWithStatus.command_id && !sourceWithStatus.status) ||
-    wasProcessing // Keep polling if we were processing to catch the completion
+    wasProcessing || // Keep polling if we were processing to catch the completion
+    insightJobsSeen // Insight generation runs while the source itself is idle
 
   const { data: statusData, isLoading: statusLoading } = useSourceStatus(
     source.id,
@@ -208,6 +212,20 @@ function SourceCardImpl({
       }
     }
   }, [statusData, sourceWithStatus.status, wasProcessing, onRefresh, source.id])
+
+  // Insight-generation jobs run while the source status itself is idle; once
+  // the last one finishes, refresh the card so insights_count catches up.
+  const activeInsightJobs = hasActiveInsightJobs(statusData?.insight_jobs)
+  useEffect(() => {
+    if (activeInsightJobs) {
+      setInsightJobsSeen(true)
+    } else if (insightJobsSeen) {
+      setInsightJobsSeen(false)
+      if (onRefresh) {
+        setTimeout(() => onRefresh(), 500)
+      }
+    }
+  }, [activeInsightJobs, insightJobsSeen, onRefresh])
   
   const statusConfig = statusConfigMap[currentStatus] || statusConfigMap.completed
   const StatusIcon = statusConfig.icon
@@ -342,6 +360,15 @@ function SourceCardImpl({
                   <span className="inline-flex items-center gap-1 text-teal">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {t('sources.embeddingInProgress')}
+                  </span>
+                </>
+              )}
+              {activeInsightJobs && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="inline-flex items-center gap-1 text-teal">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t('sources.insightInProgress')}
                   </span>
                 </>
               )}

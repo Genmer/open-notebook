@@ -4,7 +4,12 @@ import { modelsApi } from '@/lib/api/models'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
-import { CreateModelRequest, ModelDefaults, ModelTestResult } from '@/lib/types/models'
+import {
+  CreateModelRequest,
+  ModelDefaults,
+  ModelPriceResult,
+  ModelTestResult,
+} from '@/lib/types/models'
 
 export const MODEL_QUERY_KEYS = {
   models: ['models'] as const,
@@ -149,6 +154,68 @@ export function useAutoAssignDefaults() {
           description: t('models.autoAssignAlreadySet'),
         })
       }
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorKey(error, t('common.error')),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useRefreshModelPrice() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (modelId: string) => modelsApi.refreshPrice(modelId),
+    onSuccess: (result: ModelPriceResult) => {
+      queryClient.invalidateQueries({ queryKey: MODEL_QUERY_KEYS.models })
+      if (result.found) {
+        toast({
+          title: t('common.success'),
+          description: t('models.priceFetchSuccess', { key: result.price_matched_key }),
+        })
+      } else {
+        toast({
+          title: t('common.warning'),
+          description: t('models.priceFetchNotFound'),
+          variant: 'destructive',
+        })
+      }
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorKey(error, t('common.error')),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useSaveModelPrice() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({
+      modelId,
+      data,
+    }: {
+      modelId: string
+      data: { price_input_per_m: number; price_output_per_m: number }
+    }) => modelsApi.savePrice(modelId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MODEL_QUERY_KEYS.models })
+      toast({
+        title: t('common.success'),
+        description: t('models.priceSaveSuccess'),
+      })
     },
     onError: (error: unknown) => {
       toast({

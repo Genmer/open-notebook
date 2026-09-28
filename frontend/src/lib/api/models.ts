@@ -3,6 +3,7 @@ import {
   Model,
   CreateModelRequest,
   ModelDefaults,
+  ModelPriceResult,
   ProviderAvailability,
   DiscoveredModel,
   ProviderSyncResult,
@@ -101,6 +102,26 @@ export const modelsApi = {
    */
   testModel: async (modelId: string): Promise<ModelTestResult> => {
     const response = await apiClient.post<ModelTestResult>(`/models/${modelId}/test`)
+    return response.data
+  },
+
+  /**
+   * Fetch the per-1M-token price (CNY) from the public LiteLLM price
+   * database and store it on the model record.
+   */
+  refreshPrice: async (modelId: string): Promise<ModelPriceResult> => {
+    const response = await apiClient.post<ModelPriceResult>(`/models/${modelId}/price/refresh`)
+    return response.data
+  },
+
+  /**
+   * Store a manually entered per-1M-token price (CNY) on the model record.
+   */
+  savePrice: async (
+    modelId: string,
+    data: { price_input_per_m: number; price_output_per_m: number }
+  ): Promise<ModelPriceResult> => {
+    const response = await apiClient.put<ModelPriceResult>(`/models/${modelId}/price`, data)
     return response.data
   },
 }

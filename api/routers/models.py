@@ -1,5 +1,7 @@
+import asyncio
 import os
 import traceback
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from esperanto import AIFactory
@@ -10,6 +12,8 @@ from pydantic import BaseModel
 from api.models import (
     DefaultModelsResponse,
     ModelCreate,
+    ModelPriceRefreshResponse,
+    ModelPriceUpdate,
     ModelResponse,
     ProviderAvailabilityResponse,
 )
@@ -21,6 +25,7 @@ from open_notebook.ai.model_discovery import (
     sync_all_providers,
     sync_provider_models,
 )
+from open_notebook.ai.model_pricing import fetch_model_prices
 from open_notebook.ai.models import DefaultModels, Model
 from open_notebook.domain.credential import Credential
 from open_notebook.exceptions import (
@@ -30,6 +35,70 @@ from open_notebook.exceptions import (
 )
 
 router = APIRouter()
+
+# Keep references to fire-and-forget price fetches so they are not GC'd mid-run.
+_price_fetch_tasks: set = set()
+
+
+def _price_response_fields(model: Model) -> Dict:
+    return {
+        "price_input_per_m": getattr(model, "price_input_per_m", None),
+        "price_output_per_m": getattr(model, "price_output_per_m", None),
+        "price_source": getattr(model, "price_source", None),
+        "price_matched_key": getattr(model, "price_matched_key", None),
+        "price_fetched_at": getattr(model, "price_fetched_at", None),
+    }
+
+
+async def _store_model_price(model_id: str, updates: Dict) -> None:
+    """Targeted price UPDATE - avoids whole-object saves racing other writers."""
+    from open_notebook.database.repository import ensure_record_id, repo_query
+
+    await repo_query(
+        """
+        UPDATE $id SET
+            price_input_per_m = $price_input_per_m,
+            price_output_per_m = $price_output_per_m,
+            price_source = $price_source,
+            price_matched_key = $price_matched_key,
+            price_fetched_at = $price_fetched_at;
+        """,
+        {
+            "id": ensure_record_id(model_id),
+            "price_input_per_m": updates.get("price_input_per_m"),
+            "price_output_per_m": updates.get("price_output_per_m"),
+            "price_source": updates.get("price_source"),
+            "price_matched_key": updates.get("price_matched_key"),
+            "price_fetched_at": updates.get("price_fetched_at"),
+        },
+    )
+
+
+async def _refresh_price_background(model_id: str, name: str, provider: str) -> None:
+    try:
+        prices = await fetch_model_prices(name, provider)
+        if not prices:
+            logger.info(f"No public price entry matched model '{name}'")
+            return
+        prices.setdefault("price_source", "litellm")
+        # Normalize the fetch result key to the stored column name.
+        prices["price_matched_key"] = prices.pop("matched_key", None)
+        prices["price_fetched_at"] = datetime.now(timezone.utc).isoformat()
+        await _store_model_price(model_id, prices)
+        logger.info(
+            f"Stored price for model '{name}' via '{prices['matched_key']}': "
+            f"{prices['price_input_per_m']}/{prices['price_output_per_m']} CNY per 1M"
+        )
+    except Exception as e:
+        logger.warning(f"Background price fetch failed for model '{name}': {e}")
+
+
+def _schedule_price_fetch(model_id: str, name: str, provider: str) -> None:
+    task = asyncio.create_task(
+        _refresh_price_background(model_id, name, provider)
+    )
+    _price_fetch_tasks.add(task)
+    task.add_done_callback(_price_fetch_tasks.discard)
 
 
 # =============================================================================
@@ -190,6 +259,7 @@ async def get_models(
                 credential=model.credential,
                 created=str(model.created),
                 updated=str(model.updated),
+                **_price_response_fields(model),
             )
             for model in models
         ]
@@ -239,6 +309,12 @@ async def create_model(model_data: ModelCreate):
         )
         await new_model.save()
 
+        # Fire-and-forget: fetch the public price for this model in the
+        # background so the listing shows an estimate without blocking save.
+        _schedule_price_fetch(
+            str(new_model.id), model_data.name, model_data.provider
+        )
+
         return ModelResponse(
             id=new_model.id or "",
             name=new_model.name,
@@ -247,6 +323,7 @@ async def create_model(model_data: ModelCreate):
             credential=new_model.credential,
             created=str(new_model.created),
             updated=str(new_model.updated),
+            **_price_response_fields(new_model),
         )
     except HTTPException:
         raise
@@ -277,6 +354,62 @@ async def delete_model(model_id: str):
     except Exception as e:
         logger.error(f"Error deleting model {model_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
+
+
+@router.post("/models/{model_id}/price/refresh", response_model=ModelPriceRefreshResponse)
+async def refresh_model_price(model_id: str):
+    """Re-fetch the public price for a model from the LiteLLM price database."""
+    try:
+        model = await Model.get(model_id)
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+
+        prices = await fetch_model_prices(model.name, model.provider, force=True)
+        if not prices:
+            return ModelPriceRefreshResponse(id=model_id, found=False)
+
+        updates = {
+            "price_input_per_m": prices["price_input_per_m"],
+            "price_output_per_m": prices["price_output_per_m"],
+            "price_source": prices.get("price_source", "litellm"),
+            "price_matched_key": prices["matched_key"],
+            "price_fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _store_model_price(model_id, updates)
+        return ModelPriceRefreshResponse(id=model_id, found=True, **updates)
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing price for model {model_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error refreshing price: {str(e)}")
+
+
+@router.put("/models/{model_id}/price", response_model=ModelPriceRefreshResponse)
+async def set_model_price(model_id: str, price_data: ModelPriceUpdate):
+    """Manually set a model's price (CNY per 1M tokens), overriding public data."""
+    try:
+        model = await Model.get(model_id)
+        if not model:
+            raise HTTPException(status_code=404, detail="Model not found")
+
+        updates = {
+            "price_input_per_m": price_data.price_input_per_m,
+            "price_output_per_m": price_data.price_output_per_m,
+            "price_source": "manual",
+            "price_matched_key": None,
+            "price_fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await _store_model_price(model_id, updates)
+        return ModelPriceRefreshResponse(id=model_id, found=True, **updates)
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting price for model {model_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error setting price: {str(e)}")
 
 
 @router.post("/models/{model_id}/test", response_model=ModelTestResponse)

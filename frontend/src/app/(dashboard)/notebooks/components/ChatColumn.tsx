@@ -14,11 +14,18 @@ import { SourceListResponse } from '@/lib/types/api'
 interface ChatColumnProps {
   notebookId: string
   contextSelections: ContextSelections
+  onOpenContextPicker: () => void
   sources: SourceListResponse[]
   sourcesLoading: boolean
 }
 
-export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoading }: ChatColumnProps) {
+export function ChatColumn({
+  notebookId,
+  contextSelections,
+  onOpenContextPicker,
+  sources,
+  sourcesLoading,
+}: ChatColumnProps) {
   const { t } = useTranslation()
 
   // Fetch notes for this notebook
@@ -32,30 +39,19 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
     contextSelections
   })
 
-  // Calculate context stats for indicator
+  // Context stats for the indicator, counted from the selection maps so
+  // sources picked via the context picker (beyond the loaded pages) count too.
   const contextStats = useMemo(() => {
     let sourcesInsights = 0
     let sourcesFull = 0
+    for (const mode of Object.values(contextSelections.sources)) {
+      if (mode === 'insights') sourcesInsights++
+      else if (mode === 'full') sourcesFull++
+    }
     let notesCount = 0
-
-    // Count sources by mode
-    sources.forEach(source => {
-      const mode = contextSelections.sources[source.id]
-      if (mode === 'insights') {
-        sourcesInsights++
-      } else if (mode === 'full') {
-        sourcesFull++
-      }
-    })
-
-    // Count notes that are included (not 'off')
-    notes.forEach(note => {
-      const mode = contextSelections.notes[note.id]
-      if (mode === 'full') {
-        notesCount++
-      }
-    })
-
+    for (const mode of Object.values(contextSelections.notes)) {
+      if (mode === 'full') notesCount++
+    }
     return {
       sourcesInsights,
       sourcesFull,
@@ -63,7 +59,7 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       tokenCount: chat.tokenCount,
       charCount: chat.charCount
     }
-  }, [sources, notes, contextSelections, chat.tokenCount, chat.charCount])
+  }, [contextSelections, chat.tokenCount, chat.charCount])
 
   // Show loading state while sources/notes are being fetched
   if (sourcesLoading || notesLoading) {
@@ -110,6 +106,7 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       loadingSessions={chat.loadingSessions}
       notebookContextStats={contextStats}
       notebookId={notebookId}
+      onOpenContextPicker={onOpenContextPicker}
     />
   )
 }

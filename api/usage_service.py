@@ -11,6 +11,7 @@ from api.models import (
     UsageSummaryResponse,
     UsageTotals,
 )
+from open_notebook.ai.model_pricing import estimate_cost_cny
 from open_notebook.database.repository import repo_query
 
 # Token columns may be missing on schemaless rows; coalesce to 0 before summing.
@@ -72,6 +73,44 @@ def _totals(row: Optional[Dict[str, Any]]) -> UsageTotals:
         output_tokens=row.get("output_tokens") or 0,
         total_tokens=row.get("total_tokens") or 0,
     )
+
+
+async def _load_model_prices() -> Dict[str, tuple]:
+    """{lowercased model name: (input, output) CNY per 1M} from the model table."""
+    try:
+        rows = await repo_query(
+            "SELECT name, price_input_per_m, price_output_per_m FROM model;"
+        )
+    except Exception:
+        return {}
+    prices: Dict[str, tuple] = {}
+    for row in rows or []:
+        name = str(row.get("name") or "").lower()
+        if not name or name in prices:
+            continue
+        prices[name] = (row.get("price_input_per_m"), row.get("price_output_per_m"))
+    return prices
+
+
+def _attach_costs(
+    by_model: List[UsageByModel],
+    prices: Dict[str, tuple],
+) -> tuple[Optional[float], List[str]]:
+    """Fill estimated_cost_cny per model; return (total cost, unpriced names)."""
+    total_cost = 0.0
+    unpriced: List[str] = []
+    for entry in by_model:
+        name = (entry.model_name or "").lower()
+        price_in, price_out = prices.get(name, (None, None))
+        cost = estimate_cost_cny(
+            entry.input_tokens, entry.output_tokens, price_in, price_out
+        )
+        entry.estimated_cost_cny = cost
+        if cost is None:
+            unpriced.append(entry.model_name or "")
+        else:
+            total_cost += cost
+    return (round(total_cost, 4), [name for name in unpriced if name])
 
 
 async def get_usage_summary(
@@ -149,6 +188,8 @@ async def get_usage_summary(
         else 0
     )
 
+    prices = await _load_model_prices()
+
     by_model = sorted(
         (
             UsageByModel(
@@ -167,6 +208,10 @@ async def get_usage_summary(
         key=lambda m: (m.total_tokens, m.calls),
         reverse=True,
     )
+    total_cost, unpriced_models = _attach_costs(by_model, prices)
+    # Partial coverage is fine: unpriced_models tells the UI which models are
+    # missing from this sum.
+    totals.estimated_cost_cny = total_cost
 
     return UsageSummaryResponse(
         totals=totals,
@@ -190,6 +235,7 @@ async def get_usage_summary(
             )
             for row in daily_by_model_rows
         ],
+        unpriced_models=unpriced_models,
     )
 
 

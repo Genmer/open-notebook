@@ -7,7 +7,6 @@ export function useNavigation() {
     setReturnTo: store.setReturnTo,
     clearReturnTo: store.clearReturnTo,
     getReturnPath: store.getReturnPath,
-    getReturnLabel: store.getReturnLabel,
     returnTo: store.returnTo
   }
 }

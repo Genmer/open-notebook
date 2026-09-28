@@ -39,9 +39,13 @@ export const QUERY_KEYS = {
   embeddingStatus: ['embeddings', 'status'] as const,
   sourceViews: ['source-views'] as const,
   sourceViewGroups: (viewId: string) => ['source-views', 'groups', viewId] as const,
+  contextPreferences: (notebookId: string, folderId: string | null) =>
+    ['context-preferences', notebookId, folderId] as const,
   usageSummary: (days: number, callType?: string) =>
     ['usage', 'summary', days, callType ?? null] as const,
   usageRecords: ['usage', 'records'] as const,
+  storageSummary: ['storage', 'summary'] as const,
+  tasks: (params?: Record<string, unknown>) => ['tasks', params ?? {}] as const,
   dataTransferExport: ['data-transfer', 'export'] as const,
   dataTransferImport: ['data-transfer', 'import'] as const,
 }

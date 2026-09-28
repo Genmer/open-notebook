@@ -32,6 +32,8 @@ KNOWN_GOOD_PROVIDERS = [
     "dashscope",
     "zhipu",
     "minimax",
+    "xiaomi_mimo",
+    "xiaomi_mimo_token_plan",
     "novita",
     "ppq",
     "cohere",
@@ -115,6 +117,8 @@ class TestProviderRegistryIsTheSourceOfTruth:
             "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
             "zhipu": "https://open.bigmodel.cn/api/paas/v4/models",
             "minimax": "https://api.minimax.io/v1/models",
+            "xiaomi_mimo": "https://api.xiaomimimo.com/v1/models",
+            "xiaomi_mimo_token_plan": "https://token-plan-cn.xiaomimimo.com/v1/models",
             "novita": "https://api.novita.ai/openai/models",
             "ppq": "https://api.ppq.ai/v1/models?type=all",
         }

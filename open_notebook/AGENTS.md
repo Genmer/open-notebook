@@ -16,7 +16,7 @@ Normative rules for working on the Python backend. Architecture and design ratio
 - NEVER return API key values from any endpoint — metadata only.
 - Every user-supplied URL field must go through `validate_url()` (`open_notebook/utils/url_validation.py`, async) for SSRF protection. Private IPs/localhost are intentionally allowed (self-hosted Ollama, LM Studio).
 - Errors: raise typed exceptions from `open_notebook.exceptions` — global handlers map them to HTTP status codes (`NotFoundError`→404, `InvalidInputError`→400, `AuthenticationError`→401, `RateLimitError`→429, `ConfigurationError`→422, `NetworkError`/`ExternalServiceError`→502, `OpenNotebookError`→500). Don't raise bare `HTTPException` for domain errors.
-- Requests over `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` (default 100) are rejected by `MaxBodySizeMiddleware` before auth/routing.
+- Requests over `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` (default 1024 = 1 GB) are rejected by `MaxBodySizeMiddleware` before auth/routing.
 - CORS is open by default (`CORS_ORIGINS`); `allow_credentials` flips to `True` only when origins are explicit. No rate limiting built in.
 
 ## AI / model provisioning (`open_notebook/ai/`)
@@ -72,7 +72,7 @@ Normative rules for working on the Python backend. Architecture and design ratio
 |---|---|
 | `OPEN_NOTEBOOK_ENCRYPTION_KEY` (or `_FILE`) | Required for credential storage; any string, no default |
 | `OPEN_NOTEBOOK_CHUNK_SIZE` / `_CHUNK_OVERLAP` | Token-based (default 400 / 15%); Settings page (DB) overrides env only when explicitly filled in, no restart needed |
-| `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` | Upload cap (default 100) |
+| `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` | Upload cap (default 1024 = 1 GB) |
 | `LANGGRAPH_CHECKPOINT_FILE` | Chat history SQLite path |
 | `CORS_ORIGINS` | Restrict before production |
 

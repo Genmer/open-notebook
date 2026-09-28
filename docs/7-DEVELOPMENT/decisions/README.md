@@ -52,3 +52,7 @@ What this makes easier, what it makes harder, what to watch. (bullets)
 | [ADR-008](ADR-008-notebook-scoped-search.md) | Notebook scope is an optional filter on the existing search functions | Accepted |
 | [PDR-001](PDR-001-single-user-first.md) | Single-user first; don't preclude multi-user | Accepted |
 | [PDR-002](PDR-002-provider-agnostic-core.md) | Provider-agnostic core by default | Accepted |
+| [ADR-009](ADR-009-embedding-progress-denormalization.md) | Source embedding progress is denormalized onto the source row | Accepted |
+| [ADR-010](ADR-010-local-token-usage-tracking.md) | Token usage tracking is local-only, best-effort, and off by default-able | Accepted |
+| [ADR-011](ADR-011-data-transfer-export-import.md) | Data export/import — single zip package, id-skip idempotency, direct SQL writes | Accepted |
+| [ADR-012](ADR-012-chat-context-preferences.md) | Chat context preferences: schemaless (notebook, folder, source) table, no DELETE | Accepted |

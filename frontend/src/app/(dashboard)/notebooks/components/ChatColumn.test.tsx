@@ -38,6 +38,7 @@ describe('ChatColumn', () => {
       sources: {},
       notes: {}
     },
+    onOpenContextPicker: vi.fn(),
     sources: [],
   }
 

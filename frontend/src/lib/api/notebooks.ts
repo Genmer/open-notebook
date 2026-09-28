@@ -7,8 +7,24 @@ import {
   NotebookDeletePreview,
   NotebookDeleteResponse,
 } from '@/lib/types/api'
+import type { ContextMode, ContextTreeResponse } from '@/lib/types/notebook-context'
+
+/** One saved per-source chat-context preference for a folder scope. */
+export interface ContextPrefEntry {
+  source_id: string
+  mode: ContextMode
+}
 
 export const notebooksApi = {
+  /** Folder tree + every notebook source, for the chat context picker. */
+  contextTree: async (notebookId: string, viewId?: string | null) => {
+    const response = await apiClient.get<ContextTreeResponse>(
+      `/notebooks/${notebookId}/context-tree`,
+      { params: viewId ? { view_id: viewId } : {} }
+    )
+    return response.data
+  },
+
   list: async (params?: { archived?: boolean; order_by?: string }) => {
     const response = await apiClient.get<NotebookResponse[]>('/notebooks', { params })
     return response.data
@@ -57,6 +73,30 @@ export const notebooksApi = {
 
   removeSource: async (notebookId: string, sourceId: string) => {
     const response = await apiClient.delete(`/notebooks/${notebookId}/sources/${sourceId}`)
+    return response.data
+  },
+}
+
+// Folder-scoped chat-context preferences (chat_context_pref). A null folderId
+// addresses the ungrouped bucket (the request omits folder_id).
+export const contextPrefsApi = {
+  get: async (notebookId: string, folderId: string | null) => {
+    const response = await apiClient.get<{ prefs: Record<string, ContextMode> }>(
+      `/notebooks/${notebookId}/context-preferences`,
+      { params: folderId ? { folder_id: folderId } : undefined },
+    )
+    return response.data.prefs
+  },
+
+  save: async (
+    notebookId: string,
+    folderId: string | null,
+    selections: ContextPrefEntry[],
+  ) => {
+    const response = await apiClient.put<{ saved: number }>(
+      `/notebooks/${notebookId}/context-preferences`,
+      { folder_id: folderId, selections },
+    )
     return response.data
   },
 }

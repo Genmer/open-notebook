@@ -36,6 +36,32 @@ class RecentlyViewedResponse(BaseModel):
     last_viewed_at: str
 
 
+# Study artifact models
+class ArtifactCreate(BaseModel):
+    """Request to generate a study artifact (stored as an AI note)."""
+
+    artifact_type: Literal["study_guide", "faq", "flashcards", "essay_draft"] = Field(
+        ..., description="Kind of artifact to generate"
+    )
+    instruction: Optional[str] = Field(
+        None, description="Optional free-text instructions for the generator"
+    )
+    context_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Same protocol as POST /chat/context: {sources: {id: status}, "
+            "notes: {id: status}} with 'not in' / 'insights' / 'full content'"
+        ),
+    )
+
+
+class ArtifactJobResponse(BaseModel):
+    job_id: str
+    status: str
+    artifact_type: str
+    message: str
+
+
 # Search models
 class NotebookScopeMixin(BaseModel):
     """Optional notebook scope shared by Search and Ask requests (#574, #87).
@@ -117,6 +143,29 @@ class ModelResponse(BaseModel):
     credential: Optional[str] = None
     created: str
     updated: str
+    # Estimated pricing, CNY per 1M tokens (see open_notebook.ai.model_pricing).
+    price_input_per_m: Optional[float] = None
+    price_output_per_m: Optional[float] = None
+    price_source: Optional[str] = None
+    price_matched_key: Optional[str] = None
+    price_fetched_at: Optional[str] = None
+
+
+class ModelPriceUpdate(BaseModel):
+    """Manual price entry, CNY per 1M tokens."""
+
+    price_input_per_m: float = Field(..., ge=0)
+    price_output_per_m: float = Field(..., ge=0)
+
+
+class ModelPriceRefreshResponse(BaseModel):
+    id: str
+    price_input_per_m: Optional[float] = None
+    price_output_per_m: Optional[float] = None
+    price_source: Optional[str] = None
+    price_matched_key: Optional[str] = None
+    price_fetched_at: Optional[str] = None
+    found: bool = False
 
 
 class DefaultModelsResponse(BaseModel):
@@ -612,6 +661,16 @@ class CreateSourceInsightRequest(BaseModel):
 
 
 # Source status response
+class SourceInsightJob(BaseModel):
+    # One run_transformation command for this source (recent ones only; the
+    # UI watches new/running entries and shows terminal failures).
+    command_id: str
+    transformation_id: Optional[str] = None
+    transformation_title: Optional[str] = None
+    status: str
+    error_message: Optional[str] = None
+
+
 class SourceStatusResponse(BaseModel):
     status: Optional[str] = Field(None, description="Processing status")
     message: str = Field(..., description="Descriptive message about the status")
@@ -621,6 +680,9 @@ class SourceStatusResponse(BaseModel):
     command_id: Optional[str] = Field(None, description="Command ID if available")
     embedding: Optional[SourceEmbeddingStatus] = None
     steps: Optional[List[SourceProcessingStep]] = None
+    insight_jobs: Optional[List[SourceInsightJob]] = Field(
+        None, description="Recent insight-generation jobs for this source"
+    )
 
 
 # Error response
@@ -758,6 +820,8 @@ SupportedProvider = Literal[
     "dashscope",
     "zhipu",
     "minimax",
+    "xiaomi_mimo",
+    "xiaomi_mimo_token_plan",
     "novita",
     "ppq",
     "cohere",
@@ -990,6 +1054,7 @@ class UsageTotals(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     estimated_tokens: int = 0
+    estimated_cost_cny: Optional[float] = None
 
 
 class UsageByModel(BaseModel):
@@ -1000,6 +1065,7 @@ class UsageByModel(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     estimated_tokens: int = 0
+    estimated_cost_cny: Optional[float] = None
 
 
 class UsageByDay(BaseModel):
@@ -1022,6 +1088,9 @@ class UsageSummaryResponse(BaseModel):
     by_model: List[UsageByModel]
     by_day: List[UsageByDay]
     daily_by_model: List[UsageDayModel] = []
+    # Models seen in the window that have no stored price: their tokens are
+    # excluded from estimated_cost_cny.
+    unpriced_models: List[str] = []
 
 
 class UsageRecord(BaseModel):
@@ -1081,10 +1150,19 @@ class ExportStatusResponse(BaseModel):
     summary: Optional[ExportSummary] = None
 
 
+class TransferWarning(BaseModel):
+    # Mirrors commands.data_transfer_commands.TransferWarning: stable code +
+    # interpolation params so the frontend can localize; the raw English text
+    # in `warnings` stays as fallback.
+    code: str
+    params: Dict[str, Any] = {}
+
+
 class ImportSummary(BaseModel):
     imported: Dict[str, int] = {}
     skipped: Dict[str, int] = {}
     warnings: List[str] = []
+    warning_codes: List[TransferWarning] = []
     embedding_model_id: Optional[str] = None
     embedding_dimension: Optional[int] = None
 
@@ -1098,3 +1176,87 @@ class ImportStatusResponse(BaseModel):
 
 class PackageDeleteResponse(BaseModel):
     deleted: bool
+
+
+# Task Center (aggregated view over the surreal-commands table)
+class TaskProgress(BaseModel):
+    kind: str
+    embedded_chunks: Optional[int] = None
+    total_chunks: Optional[int] = None
+    stage: Optional[str] = None
+    percent: Optional[int] = None
+    message: Optional[str] = None
+
+
+class TaskEntry(BaseModel):
+    id: str
+    name: str
+    type: str = Field(..., description="Task bucket: insight/embedding/…")
+    target: Optional[str] = Field(None, description="Resource title the task acts on")
+    status: str
+    progress: Optional[TaskProgress] = None
+    error_message: Optional[str] = None
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class TaskListResponse(BaseModel):
+    tasks: List[TaskEntry] = []
+    total: int = 0
+    counts: Dict[str, int] = {}
+
+
+# Storage usage page
+class StorageTableStats(BaseModel):
+    count: int = 0
+    estimated_bytes: int = 0
+    # embeddings only: average vector width across stored chunks
+    dimensions: int = 0
+
+
+class StorageDiskSection(BaseModel):
+    bytes: int = 0
+    files: int = 0
+
+
+class StorageExportEstimate(BaseModel):
+    # last_package: real size of the most recent export zip;
+    # estimated: extrapolated from sampled compression ratios
+    basis: Literal["last_package", "estimated"]
+    estimated_bytes: int
+
+
+class StorageSummaryResponse(BaseModel):
+    database: Dict[str, Any] = Field(
+        ..., description="Per-table estimates keyed by table name plus estimated_bytes total"
+    )
+    disk: Dict[str, Any] = Field(
+        ..., description="Real on-disk usage: root path, total_bytes, per-directory sections"
+    )
+    export_estimate: StorageExportEstimate
+    totals: Dict[str, int] = Field(..., description="database_bytes and disk_bytes roll-ups")
+
+
+class ContextTreeSource(BaseModel):
+    id: str
+    title: Optional[str] = None
+    insights_count: int = 0
+
+
+class ContextTreeGroup(BaseModel):
+    id: str
+    name: str
+    parent_id: Optional[str] = None
+
+
+class ContextTreeMembership(BaseModel):
+    source_id: str
+    group_id: str
+
+
+class NotebookContextTreeResponse(BaseModel):
+    """Folder tree + notebook sources for the chat context picker."""
+
+    sources: List[ContextTreeSource] = []
+    groups: List[ContextTreeGroup] = []
+    memberships: List[ContextTreeMembership] = []

@@ -17,7 +17,10 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-notebooks', () => ({
-  useNotebooks: () => ({ data: [], isLoading: false }),
+  useNotebooks: () => ({
+    data: [{ id: 'notebook:n1', name: 'N1', created: null, updated: null }],
+    isLoading: false,
+  }),
 }))
 vi.mock('@/lib/hooks/use-transformations', () => ({
   useTransformations: () => ({ data: [], isLoading: false }),
@@ -26,6 +29,7 @@ vi.mock('@/lib/hooks/use-settings', () => ({
   useSettings: () => ({ data: null }),
 }))
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useCreateSource: () => ({ mutateAsync: createMock, isPending: false }),
 }))
 vi.mock('@/lib/api/source-views', () => ({
@@ -98,7 +102,27 @@ vi.mock('./steps/SourceTypeStep', async (importOriginal) => {
   )
   return { ...actual, SourceTypeStep: Stub }
 })
-vi.mock('./steps/NotebooksStep', () => ({ NotebooksStep: () => null }))
+vi.mock('./steps/NotebooksStep', () => ({
+  NotebooksStep: ({ notebooks, selectedNotebooks, onToggleNotebook }: {
+    notebooks: Array<{ id: string; name: string }>
+    selectedNotebooks: string[]
+    onToggleNotebook: (id: string) => void
+  }) => (
+    <div>
+      {notebooks.map(n => (
+        <label key={n.id}>
+          <input
+            type="checkbox"
+            aria-label={n.name}
+            checked={selectedNotebooks.includes(n.id)}
+            onChange={() => onToggleNotebook(n.id)}
+          />
+          {n.name}
+        </label>
+      ))}
+    </div>
+  ),
+}))
 vi.mock('./steps/ProcessingStep', () => ({ ProcessingStep: () => null }))
 
 import { AddSourceDialog } from './AddSourceDialog'
@@ -110,9 +134,11 @@ function setup() {
 }
 
 async function pickFolder() {
-  // Step 2 hosts the folder section; the radio list belongs to the Research view
+  // Step 2 hosts the notebook list and the folder section; filing into a
+  // folder requires at least one notebook (see isStepValid), so pick N1 too.
   fireEvent.click(screen.getByText('stub-single'))
   fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+  fireEvent.click(screen.getByLabelText('N1'))
   fireEvent.click(screen.getByLabelText('G1'))
 }
 
@@ -136,6 +162,20 @@ describe('AddSourceDialog folder assignment', () => {
     expect(invalidateGroupingMock).not.toHaveBeenCalled()
   })
 
+  it('does not file, and blocks submit, when a folder is picked without any notebook', async () => {
+    // Filing into a folder without a notebook would create an orphan source
+    // that no notebook's folder view can list, so step 2 must stay invalid.
+    setup()
+    fireEvent.click(screen.getByText('stub-single'))
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+    fireEvent.click(screen.getByLabelText('G1'))
+    const done = screen.getByRole('button', { name: 'common.done' }) as HTMLButtonElement
+    expect(done.disabled).toBe(true)
+    await submit()
+    expect(createMock).not.toHaveBeenCalled()
+    expect(moveMembersMock).not.toHaveBeenCalled()
+  })
+
   it('files a single created source into the picked folder', async () => {
     createMock.mockResolvedValueOnce({ id: 'source:new-1' })
     const { onOpenChange } = setup()
@@ -155,6 +195,7 @@ describe('AddSourceDialog folder assignment', () => {
     setup()
     fireEvent.click(screen.getByText('stub-batch'))
     fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+    fireEvent.click(screen.getByLabelText('N1'))
     fireEvent.click(screen.getByLabelText('G1'))
     await submit()
 
@@ -174,6 +215,7 @@ describe('AddSourceDialog folder assignment', () => {
     setup()
     fireEvent.click(screen.getByText('stub-batch-50'))
     fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+    fireEvent.click(screen.getByLabelText('N1'))
     fireEvent.click(screen.getByLabelText('G1'))
     await submit()
 

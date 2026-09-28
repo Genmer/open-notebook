@@ -3,17 +3,22 @@
 import { useMemo } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { UsageByModel } from '@/lib/types/api'
-import { assignModelColors } from './chart-shared'
+import { assignModelColors, formatCostCny } from './chart-shared'
 
 interface UsageByModelTableProps {
   byModel: UsageByModel[]
   locale: string
+  unpricedModels?: string[]
 }
 
 // Rows use the shared table conventions (h-12 px-4, hover surface, tabular
 // numbers right-aligned); the inline share bar turns the token-sorted table
 // into a lightweight model ranking.
-export default function UsageByModelTable({ byModel, locale }: UsageByModelTableProps) {
+export default function UsageByModelTable({
+  byModel,
+  locale,
+  unpricedModels,
+}: UsageByModelTableProps) {
   const { t } = useTranslation()
 
   const colors = useMemo(
@@ -54,6 +59,9 @@ export default function UsageByModelTable({ byModel, locale }: UsageByModelTable
             <th scope="col" className="h-10 px-4 text-right font-medium text-muted-foreground text-xs uppercase tracking-wide">
               {t('usage.totalTokens')}
             </th>
+            <th scope="col" className="h-10 px-4 text-right font-medium text-muted-foreground text-xs uppercase tracking-wide">
+              {t('usage.costEstimate')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -93,11 +101,28 @@ export default function UsageByModelTable({ byModel, locale }: UsageByModelTable
                 <td className="h-12 px-4 text-right align-middle tabular-nums font-medium">
                   {fmt(row.total_tokens)}
                 </td>
+                <td
+                  className="h-12 px-4 text-right align-middle tabular-nums"
+                  title={row.estimated_cost_cny == null ? t('usage.noPriceHint') : undefined}
+                >
+                  {row.estimated_cost_cny == null ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <span title={t('usage.estimatedHintCost')}>
+                      {formatCostCny(row.estimated_cost_cny, locale)}
+                    </span>
+                  )}
+                </td>
               </tr>
             )
           })}
         </tbody>
       </table>
+      {unpricedModels && unpricedModels.length > 0 && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t('usage.unpricedNote', { models: unpricedModels.join(', ') })}
+        </p>
+      )}
     </div>
   )
 }

@@ -216,13 +216,34 @@ class ImportDataInput(CommandInput):
     package_path: str
 
 
+class TransferWarning(BaseModel):
+    """Structured import warning: stable code + interpolation params so the UI
+    can localize it; the raw English text stays in `warnings` as fallback."""
+
+    code: str
+    params: Dict[str, Any] = {}
+
+
 class ImportDataOutput(CommandOutput):
     success: bool
     imported: Dict[str, int] = {}
     skipped: Dict[str, int] = {}
     warnings: List[str] = []
+    warning_codes: List[TransferWarning] = []
     processing_time: float = 0.0
     error_message: Optional[str] = None
+
+
+class TransferWarningCollector:
+    """Accumulates import warnings as raw text plus structured codes in parallel."""
+
+    def __init__(self) -> None:
+        self.messages: List[str] = []
+        self.codes: List[TransferWarning] = []
+
+    def add(self, code: str, message: str, **params: Any) -> None:
+        self.messages.append(message)
+        self.codes.append(TransferWarning(code=code, params=params))
 
 
 class ManifestFileEntry(BaseModel):
@@ -669,7 +690,7 @@ def _open_member(
 
 
 def _prepare_import_row(
-    table: str, row: Dict[str, Any], warnings: List[str]
+    table: str, row: Dict[str, Any], warnings: TransferWarningCollector
 ) -> Dict[str, Any]:
     allowed = TABLE_FIELDS[table]
     record_fields = RECORD_FIELDS.get(table, set())
@@ -678,7 +699,12 @@ def _prepare_import_row(
         if key == "id":
             continue
         if key not in allowed:
-            warnings.append(f"{table}: dropped field '{key}' (not in whitelist)")
+            warnings.add(
+                "droppedField",
+                f"{table}: dropped field '{key}' (not in whitelist)",
+                table=table,
+                field=key,
+            )
             continue
         if value is None:
             # None means unset; SCHEMAFULL non-optional fields reject NONE.
@@ -696,8 +722,11 @@ def _prepare_import_row(
             try:
                 value = datetime.fromisoformat(value)
             except ValueError:
-                warnings.append(
-                    f"{table}: unparseable {key}, using database default"
+                warnings.add(
+                    "unparseableDatetime",
+                    f"{table}: unparseable {key}, using database default",
+                    table=table,
+                    field=key,
                 )
                 continue
         prepared[key] = value
@@ -802,19 +831,23 @@ def _imported_this_run(
 
 
 async def _embedding_consistency_warnings(
-    manifest: PackageManifest, warnings: List[str]
+    manifest: PackageManifest, warnings: TransferWarningCollector
 ) -> None:
     pkg_model = manifest.embedding.model_id
     current = await _current_embedding_model_id()
     if pkg_model and current and pkg_model != current:
-        warnings.append(
+        warnings.add(
+            "embeddingModelMismatch",
             f"Package was embedded with {pkg_model} but this environment defaults "
-            f"to {current}; similarity search may be inconsistent"
+            f"to {current}; similarity search may be inconsistent",
+            packageModel=pkg_model,
+            currentModel=current,
         )
     elif pkg_model and not current:
-        warnings.append(
+        warnings.add(
+            "noDefaultEmbeddingModel",
             "No default embedding model configured here; imported vectors may "
-            "not match newly generated ones"
+            "not match newly generated ones",
         )
     pkg_dim = manifest.embedding.dominant_dimension
     if pkg_dim:
@@ -828,9 +861,12 @@ async def _embedding_consistency_warnings(
         if lengths:
             target_dim = int(np.argmax(np.bincount(lengths)))
             if target_dim != pkg_dim:
-                warnings.append(
+                warnings.add(
+                    "embeddingDimensionMismatch",
                     f"Package embedding dimension {pkg_dim} differs from this "
-                    f"environment's dominant dimension {target_dim}"
+                    f"environment's dominant dimension {target_dim}",
+                    packageDimension=pkg_dim,
+                    currentDimension=target_dim,
                 )
 
 
@@ -840,7 +876,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
     cmd_id = get_command_id(input_data)
     imported: Dict[str, int] = {}
     skipped: Dict[str, int] = {}
-    warnings: List[str] = []
+    warnings = TransferWarningCollector()
     permanent = False
     completed = False
     await set_transfer_state("import", "starting", 0, command_id=cmd_id)
@@ -856,6 +892,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             # Full parse pass: any failure below happens before a single write.
             package_ids: Dict[str, Set[Any]] = {}
             transformation_models: Set[str] = set()
+            package_transformation_titles: Dict[str, str] = {}
             for table in ALL_TABLES:
                 ids: Set[Any] = set()
                 with _open_member(zf, table) as member:
@@ -870,6 +907,11 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                             ids.add(str(row["id"]))
                             if table == "transformation" and row.get("model_id"):
                                 transformation_models.add(str(row["model_id"]))
+                            if table == "transformation":
+                                title = str(row.get("title") or "")
+                                package_transformation_titles.setdefault(
+                                    title, str(row.get("prompt") or "")
+                                )
                 package_ids[table] = ids
             await set_transfer_state(
                 "import", "validating", IMPORT_STAGES["validating"][0] +
@@ -881,6 +923,15 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             for table in DATA_TABLES + (EMBEDDING_TABLE,):
                 rows = await repo_query(f"SELECT VALUE id FROM {table}")
                 existing_ids[table] = {str(r) for r in rows or []}
+            # Transformations are keyed by title in the UI (the insight-type
+            # dropdown). Default transformations are seeded locally by
+            # migration 5, so importing a package that carries the same titles
+            # would duplicate every entry in that dropdown; skip by title.
+            existing_transformation_titles: Dict[str, str] = {
+                str(r.get("title") or ""): str(r.get("prompt") or "")
+                for r in await repo_query("SELECT title, prompt FROM transformation")
+                or []
+            }
             existing_pairs: Dict[str, Set[Any]] = {}
             for edge in EDGE_TABLES:
                 rows = await repo_query(f"SELECT in, out FROM {edge}")
@@ -895,6 +946,15 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                 ids = package_ids.get(table, set())
                 to_import = len(ids - existing_ids.get(table, set()))
                 skipped[table] = len(ids) - to_import
+                if table == "transformation":
+                    # Title-duplicates land in the skip count, not import.
+                    title_dups = sum(
+                        1
+                        for title in package_transformation_titles
+                        if title in existing_transformation_titles
+                    )
+                    to_import = max(0, to_import - title_dups)
+                    skipped[table] += title_dups
                 total_import += to_import
                 total_skip += skipped[table]
             est_embedding = len(
@@ -924,9 +984,11 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                 known = {str(r) for r in rows or []}
                 missing = transformation_models - known
                 if missing:
-                    warnings.append(
+                    warnings.add(
+                        "transformationModelMissing",
                         "Transformation model(s) not found in this environment: "
-                        + ", ".join(sorted(missing))
+                        + ", ".join(sorted(missing)),
+                        models=", ".join(sorted(missing)),
                     )
 
             imported_source_ids: Set[str] = set()
@@ -950,6 +1012,24 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         if str(rid) in existing_ids.get(table, set()):
                             continue
                         prepared = _prepare_import_row(table, row, warnings)
+                        if table == "transformation":
+                            title = str(prepared.get("title") or "")
+                            if title in existing_transformation_titles:
+                                if (
+                                    existing_transformation_titles[title]
+                                    != str(prepared.get("prompt") or "")
+                                ):
+                                    warnings.add(
+                                        "transformationPromptConflict",
+                                        f"Transformation '{title}' exists with a "
+                                        "different prompt; kept the local version",
+                                        title=title,
+                                    )
+                                skipped[table] = skipped.get(table, 0) + 1
+                                continue
+                            existing_transformation_titles[title] = str(
+                                prepared.get("prompt") or ""
+                            )
                         if table == "source":
                             url = None
                             asset = prepared.pop("asset", None)
@@ -1006,9 +1086,12 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         continue
                     entry = manifest.files[member_name]
                     if member_name not in names:
-                        warnings.append(
+                        warnings.add(
+                            "manifestFileMissing",
                             f"Package file {member_name} listed in manifest but "
-                            f"missing; source {source_id} keeps asset.url"
+                            f"missing; source {source_id} keeps asset.url",
+                            file=member_name,
+                            sourceId=str(source_id),
                         )
                         continue
                     name = member_name[len(prefix) :]
@@ -1019,9 +1102,12 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                     if digest != entry.sha256:
                         with suppress(OSError):
                             await asyncio.to_thread(os.unlink, dst)
-                        warnings.append(
+                        warnings.add(
+                            "fileChecksumMismatch",
                             f"sha256 mismatch for {member_name}; file skipped, "
-                            f"source {source_id} keeps asset.url"
+                            f"source {source_id} keeps asset.url",
+                            file=member_name,
+                            sourceId=str(source_id),
                         )
                         continue
                     await repo_query(
@@ -1094,9 +1180,13 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                             str(in_rid), existing_ids, package_ids
                         ):
                             skipped[edge] = skipped.get(edge, 0) + 1
-                            warnings.append(
+                            warnings.add(
+                                "edgeEndpointNotImported",
                                 f"Skipped {edge} edge {pair[0]} -> {pair[1]}: "
-                                f"in endpoint was not imported this run"
+                                f"in endpoint was not imported this run",
+                                edge=edge,
+                                source=pair[0],
+                                target=pair[1],
                             )
                             continue
                         if not _endpoint_known(
@@ -1105,9 +1195,13 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                             str(out_rid), existing_ids, package_ids
                         ):
                             skipped[edge] = skipped.get(edge, 0) + 1
-                            warnings.append(
+                            warnings.add(
+                                "edgeEndpointUnknown",
                                 f"Skipped {edge} edge {pair[0]} -> {pair[1]}: "
-                                f"endpoint not in package or database"
+                                f"endpoint not in package or database",
+                                edge=edge,
+                                source=pair[0],
+                                target=pair[1],
                             )
                             continue
                         statements.append(
@@ -1132,7 +1226,8 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
         result = {
             "imported": imported,
             "skipped": skipped,
-            "warnings": warnings,
+            "warnings": warnings.messages,
+            "warning_codes": [w.model_dump() for w in warnings.codes],
             "embedding_model_id": manifest.embedding.model_id,
             "embedding_dimension": manifest.embedding.dominant_dimension,
         }
@@ -1152,7 +1247,8 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             success=True,
             imported=imported,
             skipped=skipped,
-            warnings=warnings,
+            warnings=warnings.messages,
+            warning_codes=warnings.codes,
             processing_time=time.time() - start,
         )
     except ValueError as e:

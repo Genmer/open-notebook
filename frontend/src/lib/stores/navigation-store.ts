@@ -4,17 +4,15 @@ import { persist } from 'zustand/middleware'
 interface NavigationState {
   returnTo?: {
     path: string
-    label: string
     preserveState?: {
       scrollPosition?: number
       highlightItemId?: string
       timestamp?: number
     }
   }
-  setReturnTo: (path: string, label: string, preserveState?: object) => void
+  setReturnTo: (path: string, preserveState?: object) => void
   clearReturnTo: () => void
   getReturnPath: () => string
-  getReturnLabel: () => string
 }
 
 export const useNavigationStore = create<NavigationState>()(
@@ -22,10 +20,9 @@ export const useNavigationStore = create<NavigationState>()(
     (set, get) => ({
       returnTo: undefined,
 
-      setReturnTo: (path, label, preserveState) => set({
+      setReturnTo: (path, preserveState) => set({
         returnTo: {
           path,
-          label,
           preserveState: {
             ...preserveState,
             timestamp: Date.now()
@@ -49,22 +46,6 @@ export const useNavigationStore = create<NavigationState>()(
         }
 
         return returnTo?.path || '/sources'
-      },
-
-      getReturnLabel: () => {
-        const state = get()
-        const returnTo = state.returnTo
-
-        // Check if context is stale (older than 1 hour)
-        if (returnTo?.preserveState?.timestamp) {
-          const isStale = Date.now() - returnTo.preserveState.timestamp > 3600000
-          if (isStale) {
-            set({ returnTo: undefined })
-            return 'Back to Sources'
-          }
-        }
-
-        return returnTo?.label || 'Back to Sources'
       }
     }),
     {

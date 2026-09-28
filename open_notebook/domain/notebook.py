@@ -1,7 +1,8 @@
 import os
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -314,6 +315,12 @@ class Notebook(ObjectModel):
                 deleted_chat_sessions += 1
             logger.info(
                 f"Deleted {deleted_chat_sessions} chat sessions for notebook {self.id}"
+            )
+
+            # 3.5 Delete per-source chat context preferences scoped to this notebook
+            await repo_query(
+                "DELETE chat_context_pref WHERE notebook = $notebook_id",
+                {"notebook_id": notebook_id},
             )
 
             # 4. Delete the notebook record itself
@@ -756,6 +763,13 @@ class Source(ObjectModel):
                 "DELETE source_insight WHERE source = $source_id",
                 {"source_id": source_id},
             )
+            # Chat context prefs are keyed (notebook, folder, source); sources can
+            # also be deleted via group cascade / notebook exclusive delete, which
+            # bypass the API endpoint's own sweep.
+            await repo_query(
+                "DELETE chat_context_pref WHERE source = $source_id",
+                {"source_id": source_id},
+            )
             logger.debug(f"Deleted embeddings and insights for source {self.id}")
         except Exception as e:
             logger.warning(
@@ -910,17 +924,54 @@ def _scope_record_ids(notebook_ids: Optional[List[str]]) -> Optional[List[Record
     return [ensure_record_id(nb_id) for nb_id in notebook_ids]
 
 
-async def text_search(
+_CJK_RUN_RE = re.compile(r"[\u3400-\u9fff]+")
+_QUERY_TOKEN_RE = re.compile(r"[\u3400-\u9fff]+|[A-Za-z0-9_]+")
+
+
+def split_search_terms(keyword: str, max_terms: int = 8) -> List[str]:
+    """Split a failed (typically Chinese compound) query into sub-terms.
+
+    SurrealDB's full-text index only matches whole analyzer tokens, and a long
+    Chinese compound like 微服务治理 is one such token: a query for the
+    compound returns nothing even though its parts (微服务, 治理) are all over
+    the corpus. When the full query comes back empty we retry with the query's
+    tokens plus the sliding 2-grams of every CJK run, merged and deduplicated
+    by _search_by_sub_terms. Returns [] when there is nothing useful to split
+    (no CJK at all, a single 2-char CJK word, ...).
+    """
+    keyword = keyword.strip() if keyword else ""
+    if not keyword or not _CJK_RUN_RE.search(keyword):
+        return []
+    terms: List[str] = []
+    # The keyword as a whole already failed - never retry it verbatim.
+    seen = {keyword}
+    for token in _QUERY_TOKEN_RE.findall(keyword):
+        if token not in seen:
+            terms.append(token)
+            seen.add(token)
+        if len(token) > 2 and _CJK_RUN_RE.fullmatch(token):
+            for i in range(len(token) - 1):
+                gram = token[i : i + 2]
+                if gram not in seen:
+                    terms.append(gram)
+                    seen.add(gram)
+    return terms[:max_terms]
+
+
+async def _raw_text_search(
     keyword: str,
     results: int,
-    source: bool = True,
-    note: bool = True,
-    notebook_ids: Optional[List[str]] = None,
-):
-    if not keyword:
-        raise InvalidInputError("Search keyword cannot be empty")
+    source: bool,
+    note: bool,
+    notebook_ids: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    """One fn::text_search round-trip, with the #648 overflow fallback.
+
+    Shared by the primary query and the split-term retries so both get the
+    same position-overflow -> vector_search degradation.
+    """
     try:
-        search_results = await repo_query(
+        return await repo_query(
             """
             select *
             from fn::text_search($keyword, $results, $source, $note, $notebook_ids)
@@ -933,7 +984,6 @@ async def text_search(
                 "notebook_ids": _scope_record_ids(notebook_ids),
             },
         )
-        return search_results
     except RuntimeError as e:
         # SurrealDB's search::highlight can compute a byte position that exceeds the
         # stored string length on large or multi-byte chunks, aborting the whole query
@@ -962,6 +1012,67 @@ async def text_search(
         logger.error(f"Error performing text search: {str(e)}")
         logger.exception(e)
         raise DatabaseOperationError(e)
+
+
+async def _search_by_sub_terms(
+    sub_terms: List[str],
+    results: int,
+    source: bool,
+    note: bool,
+    notebook_ids: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    """Run one text search per sub-term and merge the rows.
+
+    Rows matched by more distinct sub-terms rank first; ties keep the
+    per-term relevance order (dict insertion order + stable sort). A failed
+    sub-term is skipped: the primary query already succeeded (it returned no
+    rows), so a flaky retry must not turn a legitimate empty result into an
+    error.
+    """
+    merged: Dict[str, Tuple[Dict[str, Any], int]] = {}
+    for term in sub_terms:
+        try:
+            rows = await _raw_text_search(term, results, source, note, notebook_ids)
+        except DatabaseOperationError as e:
+            logger.warning(f"Split-term search for '{term}' failed, skipping: {str(e)}")
+            continue
+        for row in rows or []:
+            # Rows without any id are unexpected, but a dict is unhashable as
+            # a key and would blow up the whole degraded path — stringify.
+            key = str(row.get("id") or row.get("parent_id") or str(row))
+            hit = merged.get(key)
+            merged[key] = (hit[0], hit[1] + 1) if hit else (row, 1)
+    ranked = sorted(merged.values(), key=lambda hit: -hit[1])
+    return [row for row, _count in ranked[:results]]
+
+
+async def text_search(
+    keyword: str,
+    results: int,
+    source: bool = True,
+    note: bool = True,
+    notebook_ids: Optional[List[str]] = None,
+):
+    if not keyword:
+        raise InvalidInputError("Search keyword cannot be empty")
+    search_results = await _raw_text_search(
+        keyword, results, source, note, notebook_ids
+    )
+    if search_results:
+        return search_results
+    # Empty result on a Chinese compound query: retry the split terms before
+    # giving up (same spirit as the position-overflow -> vector fallback,
+    # which also only kicks in when the primary path cannot answer).
+    sub_terms = split_search_terms(keyword)
+    if not sub_terms:
+        return search_results
+    logger.warning(
+        f"Text search for '{keyword}' returned no results; "
+        f"retrying with split terms: {sub_terms}"
+    )
+    return await _search_by_sub_terms(
+        sub_terms, results, source, note, notebook_ids
+    )
 
 
 async def vector_search(

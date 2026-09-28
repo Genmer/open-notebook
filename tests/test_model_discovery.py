@@ -57,6 +57,8 @@ class TestOpenAICompatTable:
             "dashscope",
             "zhipu",
             "minimax",
+            "xiaomi_mimo",
+            "xiaomi_mimo_token_plan",
             "novita",
             "ppq",
         }
@@ -81,6 +83,8 @@ class TestOpenAICompatTable:
             "dashscope",
             "zhipu",
             "minimax",
+            "xiaomi_mimo",
+            "xiaomi_mimo_token_plan",
             "novita",
             "ppq",
             "cohere",

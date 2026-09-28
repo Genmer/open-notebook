@@ -7,11 +7,13 @@ import { ArrowLeft } from 'lucide-react'
 import { useSourceChat } from '@/lib/hooks/use-source-chat'
 import { ChatPanel } from '@/components/sources/ChatPanel'
 import { useNavigation } from '@/lib/hooks/use-navigation'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceDetailContent } from '@/components/sources/SourceDetailContent'
 
 export default function SourceDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const { t } = useTranslation()
   const sourceId = params?.id ? decodeURIComponent(params.id as string) : ''
   const navigation = useNavigation()
 
@@ -35,7 +37,7 @@ export default function SourceDetailPage() {
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          {navigation.getReturnLabel()}
+          {t('navigation.backToSources')}
         </Button>
       </div>
 

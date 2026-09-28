@@ -24,6 +24,7 @@ from open_notebook.utils.embedding import (
     iter_embedding_batches,
 )
 from open_notebook.utils.embedding_config import refresh_embedding_params
+from open_notebook.utils.text_cleaning import clean_source_text
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -68,14 +69,15 @@ async def _owning_command_is_stale(command_id: str) -> bool:
     return not rows or str(rows[0].get("status")) in _TERMINAL_COMMAND_STATUSES
 
 
-async def _collect_stale_running_sources() -> Dict[str, str]:
-    """Sources stuck in 'running' whose owning command is terminal or gone are
-    unrecoverable; map them to their stale command id for an optimistic-lock
-    claim during a missing-mode rebuild."""
+async def _collect_stale_claimed_sources() -> Dict[str, str]:
+    """Sources stuck in 'running' or 'queued' whose owning command is terminal
+    or gone are unrecoverable; map them to their stale command id for an
+    optimistic-lock claim during a missing-mode rebuild. Queued sources without
+    a live owner are the classic deadlock: no command will ever run for them."""
     rows = await repo_query(
         """
         SELECT id, embedding_command FROM source
-        WHERE embedding_status = 'running'
+        WHERE embedding_status IN ['running', 'queued']
         AND full_text != NONE AND string::trim(full_text) != ''
         """
     )
@@ -92,7 +94,8 @@ class RebuildItems(TypedDict):
     sources: List[str]
     notes: List[str]
     insights: List[str]
-    # source id -> owning command id ('' when the source has none)
+    # source id -> owning command id ('' when the source has none);
+    # covers both 'running' and 'queued' stragglers
     stale_sources: Dict[str, str]
 
 
@@ -432,8 +435,12 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         content_type = detect_content_type(source.full_text, file_path)
         logger.debug(f"Detected content type: {content_type.value}")
 
-        # 4. Chunk text using appropriate splitter
-        chunks = chunk_text(source.full_text, content_type=content_type)
+        # 4. Chunk text using appropriate splitter. Extraction noise (page
+        # footers, repeated headers, watermarks) is stripped first so it never
+        # lands in embeddings; clean_source_text is a no-op on clean text.
+        chunks = chunk_text(
+            clean_source_text(source.full_text), content_type=content_type
+        )
         total_chunks = len(chunks)
 
         # Log chunk statistics for debugging
@@ -653,8 +660,8 @@ async def collect_items_for_rebuild(
 
     Returns:
         RebuildItems with 'sources', 'notes', 'insights' lists plus
-        'stale_sources' (missing mode only): running sources whose owning
-        command is terminal/gone, mapped to that stale command id.
+        'stale_sources' (missing mode only): running/queued sources whose
+        owning command is terminal/gone, mapped to that stale command id.
     """
     items: RebuildItems = {
         "sources": [],
@@ -674,9 +681,9 @@ async def collect_items_for_rebuild(
                 """
             )
             items["sources"] = [str(item) for item in result] if result else []
-            # Stuck-in-running sources under a dead command would otherwise be
-            # unreachable from missing mode forever
-            items["stale_sources"] = await _collect_stale_running_sources()
+            # Stuck-in-running/queued sources under a dead (or absent)
+            # command would otherwise be unreachable from missing mode forever
+            items["stale_sources"] = await _collect_stale_claimed_sources()
             items["sources"].extend(items["stale_sources"])
         elif mode == "existing":
             # Query sources with embeddings (via source_embedding table)
@@ -781,7 +788,8 @@ async def _claim_and_submit_sources(
     stamps the coordinator's command id so a manual trigger during the
     queued->running window can't start a second concurrent embed.
 
-    stale_running maps sources stuck in 'running' under a dead command to that
+    stale_running maps sources stuck in 'running'/'queued' under a dead (or
+    absent) command to that
     stale command id; they are claimed with an optimistic lock (the owner must
     still match) so a live owner is never stolen.
 
@@ -837,7 +845,7 @@ async def _claim_and_submit_sources(
         rows = await repo_query(
             f"""
             UPDATE source SET embedding_status = 'queued'{command_set}, embedding_error = NONE
-            WHERE id IN $ids AND embedding_status = 'running' {owner_clause}
+            WHERE id IN $ids AND embedding_status IN ['running', 'queued'] {owner_clause}
             RETURN id
             """,
             group_params,

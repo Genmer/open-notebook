@@ -88,6 +88,18 @@ export function formatCompact(value: number, locale: string): string {
   }).format(value)
 }
 
+// CNY cost estimate; keeps 4 decimals for sub-cent values so tiny embedding
+// totals don't collapse to ¥0.00. Null means "no price stored".
+export function formatCostCny(value?: number | null, locale = 'en-US'): string {
+  if (value == null) return '—'
+  const abs = Math.abs(value)
+  const digits = abs > 0 && abs < 0.01 ? 4 : 2
+  return `¥${value.toLocaleString(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`
+}
+
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
 const toLocalDay = (date: Date) =>

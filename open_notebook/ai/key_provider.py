@@ -79,6 +79,14 @@ PROVIDER_CONFIG = {
     "minimax": {
         "env_var": "MINIMAX_API_KEY",
     },
+    # Xiaomi MiMo: pay-as-you-go key (sk-…). Token Plan keys (tp-/ttp-…) are a
+    # separate provider with its own endpoint and env var.
+    "xiaomi_mimo": {
+        "env_var": "MIMO_API_KEY",
+    },
+    "xiaomi_mimo_token_plan": {
+        "env_var": "MIMO_TOKEN_PLAN_API_KEY",
+    },
     "novita": {
         "env_var": "NOVITA_API_KEY",
     },

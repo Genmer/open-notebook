@@ -118,10 +118,12 @@ class TransferRecorder:
         existing_pairs: Optional[Dict[str, Set[Tuple[str, str]]]] = None,
         models: Optional[List[str]] = None,
         embedding_lengths: Optional[List[int]] = None,
+        existing_transformation_titles: Optional[Dict[str, str]] = None,
     ):
         self.tables = _default_rows() if tables is None else tables
         self.existing_ids = existing_ids or {}
         self.existing_pairs = existing_pairs or {}
+        self.existing_transformation_titles = existing_transformation_titles or {}
         self.models = models or []
         self.embedding_lengths = embedding_lengths or []
         self.queries: List[Tuple[str, Optional[Dict[str, Any]]]] = []
@@ -161,6 +163,11 @@ class TransferRecorder:
             edge = sql[len("SELECT in, out FROM ") :].strip()
             return [
                 {"in": a, "out": b} for a, b in sorted(self.existing_pairs.get(edge, set()))
+            ]
+        if "SELECT title, prompt FROM transformation" in sql:
+            return [
+                {"title": title, "prompt": prompt}
+                for title, prompt in sorted(self.existing_transformation_titles.items())
             ]
         match = _CONFIG_ROW_RE.match(sql)
         if match:
@@ -873,6 +880,48 @@ class TestConfigTables:
         assert "default_prompts" not in output.imported
         assert output.warnings == []
         assert not [sql for sql, _ in recorder.writes if "MERGE" in sql]
+
+
+class TestTransformationTitleDedup:
+    @pytest.mark.asyncio
+    async def test_same_title_skipped_and_prompt_conflict_warns(self, tmp_path):
+        rows = _package_rows()
+        rows["transformation"] = [
+            {"id": TRANSFORMATION_ID, "name": "Sum", "title": "Sum",
+             "description": "d", "prompt": "p", "apply_default": False,
+             "model_id": "model:m1"},
+            {"id": "transformation:t2", "name": "SumV2", "title": "Sum",
+             "description": "d", "prompt": "p v2", "apply_default": False,
+             "model_id": "model:m1"},
+            {"id": "transformation:t3", "name": "New", "title": "New",
+             "description": "d", "prompt": "p3", "apply_default": False,
+             "model_id": "model:m1"},
+        ]
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        package = tmp_path / "pkg.zip"
+        _build_package(package, rows, {})
+        # Migration 5 seeds the local defaults; a package carrying the same
+        # titles must not duplicate the insight-type dropdown entries.
+        recorder = TransferRecorder(
+            models=["model:m1"],
+            existing_transformation_titles={"Sum": "p"},
+        )
+
+        output = await _run_import(recorder, str(uploads), package)
+
+        created = [
+            sql for sql, _ in recorder.writes if "CREATE transformation:" in sql
+        ]
+        assert len(created) == 1
+        assert "CREATE transformation:t3 SET" in created[0]
+        assert output.warnings == [
+            "Transformation 'Sum' exists with a different prompt; "
+            "kept the local version"
+        ]
+        assert output.imported["transformation"] == 1
+        # Both same-title rows (silent + conflicting) count as skipped.
+        assert output.skipped["transformation"] == 3
 
 
 def _params_of(recorder: TransferRecorder, prefix: str) -> Dict[str, Any]:

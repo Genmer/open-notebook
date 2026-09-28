@@ -9,7 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2 } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
@@ -53,6 +54,8 @@ interface ChatPanelProps {
   // Generic props for reusability
   title?: string
   contextType?: 'source' | 'notebook'
+  /** When set, the notebook context row becomes a button opening the picker. */
+  onOpenContextPicker?: () => void
   // Notebook context stats (for notebook chat)
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
@@ -76,13 +79,26 @@ export function ChatPanel({
   title,
   contextType = 'source',
   notebookContextStats,
+  onOpenContextPicker,
   notebookId
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { openModal } = useModalManager()
+
+  // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
+  // 无需目标元素持有焦点；非全屏态不挂监听。
+  useEffect(() => {
+    if (!isFullscreen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFullscreen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isFullscreen])
 
   // Stable reference-click handler so memoized messages don't re-render on
   // composer keystrokes (which no longer re-render this component at all, since
@@ -107,13 +123,21 @@ export function ChatPanel({
 
   return (
     <>
-    <Card className="flex flex-col h-full flex-1 overflow-hidden">
+    <Card
+      className={cn(
+        'flex flex-col overflow-hidden',
+        // 全屏时 fixed 脱离 flex 流，尺寸锚定改为受控 class（h-screen/w-screen），
+        // 不再依赖 h-full/flex-1 从父容器继承。
+        isFullscreen ? 'fixed inset-0 z-50 h-screen w-screen rounded-none' : 'h-full flex-1'
+      )}
+    >
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-muted-foreground">
             <span aria-hidden className="h-3.5 w-[3px] rounded-full bg-teal" />
             {title || (contextType === 'source' ? t('chat.chatWith', { name: t('navigation.sources') }) : t('chat.chatWith', { name: t('common.notebook') }))}
           </CardTitle>
+          <div className="flex items-center gap-1">
           {onSelectSession && onCreateSession && onDeleteSession && (
             <Dialog open={sessionManagerOpen} onOpenChange={setSessionManagerOpen}>
               <Button
@@ -143,6 +167,17 @@ export function ChatPanel({
               </DialogContent>
             </Dialog>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setIsFullscreen((value) => !value)}
+            aria-label={isFullscreen ? t('chat.exitFullscreen') : t('chat.enterFullscreen')}
+            title={isFullscreen ? t('chat.exitFullscreen') : t('chat.enterFullscreen')}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
@@ -216,6 +251,7 @@ export function ChatPanel({
             notesCount={notebookContextStats.notesCount}
             tokenCount={notebookContextStats.tokenCount}
             charCount={notebookContextStats.charCount}
+            onOpenPicker={onOpenContextPicker}
           />
         )}
 

@@ -84,6 +84,14 @@ export interface SourceTypeGroupResponse {
 }
 
 
+export interface SourceInsightJob {
+  command_id: string
+  transformation_id?: string | null
+  transformation_title?: string | null
+  status: string
+  error_message?: string | null
+}
+
 export interface SourceStatusResponse {
   status?: string
   message: string
@@ -91,6 +99,7 @@ export interface SourceStatusResponse {
   command_id?: string
   embedding?: SourceEmbeddingStatus | null
   steps?: SourceProcessingStep[] | null
+  insight_jobs?: SourceInsightJob[] | null
 }
 
 export type SourceViewType = 'ai_content' | 'ai_title' | 'custom'
@@ -384,6 +393,7 @@ export interface UsageTotals {
   output_tokens: number
   total_tokens: number
   estimated_tokens?: number
+  estimated_cost_cny?: number | null
 }
 
 export interface UsageByModel extends UsageTotals {
@@ -407,6 +417,9 @@ export interface UsageSummaryResponse {
   by_model: UsageByModel[]
   by_day: UsageByDay[]
   daily_by_model: UsageDayModel[]
+  // Model names excluded from totals.estimated_cost_cny because no price is
+  // stored for them; the usage page points the user at the model settings.
+  unpriced_models?: string[]
 }
 
 export interface UsageRecord {

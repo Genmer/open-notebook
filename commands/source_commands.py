@@ -241,19 +241,15 @@ async def run_transformation_command(
         )
 
     except ValueError as e:
-        # Validation errors are permanent failures - don't retry
+        # Validation errors are permanent - raise so surreal-commands marks the
+        # command failed instead of 'completed' (the UI tracks insight jobs by
+        # command status; a soft success=False would look finished forever).
         processing_time = time.time() - start_time
         logger.error(
             f"Failed to run transformation {input_data.transformation_id} "
             f"on source {input_data.source_id}: {e}"
         )
-        return RunTransformationOutput(
-            success=False,
-            source_id=input_data.source_id,
-            transformation_id=input_data.transformation_id,
-            processing_time=processing_time,
-            error_message=str(e),
-        )
+        raise
     except Exception as e:
         # Transient failure - will be retried (surreal-commands logs final failure)
         logger.debug(

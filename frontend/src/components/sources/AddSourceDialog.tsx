@@ -260,6 +260,10 @@ export function AddSourceDialog({
         }
         return true
       case 2:
+        // Filing into a folder without any notebook creates an orphan source:
+        // folder counts are global, but no notebook's folder view will list it.
+        if (targetFolder && selectedNotebooks.length === 0) return false
+        return true
       case 3:
         return true
       default:
@@ -638,6 +642,11 @@ export function AddSourceDialog({
                   onChange={setTargetFolder}
                   defaultViewId={defaultViewId}
                 />
+                {targetFolder && selectedNotebooks.length === 0 && (
+                  <p className="text-sm text-destructive">
+                    {t('sources.grouping.folderNeedsNotebook')}
+                  </p>
+                )}
               </div>
             )}
             

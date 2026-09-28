@@ -1,9 +1,16 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
+from api.command_service import CommandService
 from api.models import (
+    ArtifactCreate,
+    ArtifactJobResponse,
+    ContextTreeGroup,
+    ContextTreeMembership,
+    ContextTreeSource,
+    NotebookContextTreeResponse,
     NotebookCreate,
     NotebookDeletePreview,
     NotebookDeleteResponse,
@@ -418,6 +425,48 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         )
 
 
+@router.post(
+    "/notebooks/{notebook_id}/artifacts", response_model=ArtifactJobResponse
+)
+async def generate_artifact(notebook_id: str, request: ArtifactCreate):
+    """Submit an async study-artifact generation (study guide / FAQ /
+    flashcards). The result is stored as an AI note; poll the generic job
+    status endpoint GET /api/commands/jobs/{job_id} for progress."""
+    try:
+        # Verify the notebook exists (raises NotFoundError -> 404)
+        await Notebook.get(notebook_id)
+
+        job_id = await CommandService.submit_command_job(
+            module_name="open_notebook",
+            command_name="generate_artifact",
+            command_args={
+                "notebook_id": notebook_id,
+                "artifact_type": request.artifact_type,
+                "instruction": request.instruction,
+                "context_config": request.context_config,
+            },
+        )
+
+        return ArtifactJobResponse(
+            job_id=job_id,
+            status="submitted",
+            artifact_type=request.artifact_type,
+            message=f"Artifact '{request.artifact_type}' generation submitted",
+        )
+    except HTTPException:
+        raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting artifact generation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error submitting artifact generation: {str(e)}",
+        )
+
+
 @router.delete("/notebooks/{notebook_id}", response_model=NotebookDeleteResponse)
 async def delete_notebook(
     notebook_id: str,
@@ -457,4 +506,125 @@ async def delete_notebook(
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error deleting notebook: {str(e)}"
+        )
+
+
+@router.get(
+    "/notebooks/{notebook_id}/context-tree",
+    response_model=NotebookContextTreeResponse,
+)
+async def get_notebook_context_tree(
+    notebook_id: str,
+    view_id: Optional[str] = Query(
+        None, description="Folder view whose groups define the tree"
+    ),
+):
+    """Folder tree and every notebook source for the chat context picker.
+
+    One round trip so the picker can render sources that paginated listings
+    have not loaded yet; groups/memberships come from the browsed view and
+    are empty when the notebook has no folder view.
+    """
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        groups: List[ContextTreeGroup] = []
+        members_by_source: Dict[str, str] = {}
+        if view_id:
+            group_rows = (
+                await repo_query(
+                    "SELECT id, name, parent_id FROM source_group "
+                    "WHERE source_view = $view_id;",
+                    {"view_id": ensure_record_id(view_id)},
+                )
+                or []
+            )
+            group_ids = [ensure_record_id(str(g.get("id"))) for g in group_rows]
+            if group_ids:
+                member_rows = (
+                    await repo_query(
+                        "SELECT in AS source_id, out AS group_id "
+                        "FROM source_group_member WHERE out IN $group_ids;",
+                        {"group_ids": group_ids},
+                    )
+                    or []
+                )
+            else:
+                member_rows = []
+            groups = [
+                ContextTreeGroup(
+                    id=str(g.get("id")),
+                    name=str(g.get("name") or ""),
+                    parent_id=str(g.get("parent_id")) if g.get("parent_id") else None,
+                )
+                for g in group_rows
+            ]
+            members_by_source = {
+                str(m.get("source_id")): str(m.get("group_id")) for m in member_rows
+            }
+
+        source_id_rows = (
+            await repo_query(
+                "SELECT VALUE in FROM reference WHERE out = $notebook_id;",
+                {"notebook_id": ensure_record_id(notebook_id)},
+            )
+            or []
+        )
+        source_ids = [ensure_record_id(str(sid)) for sid in source_id_rows]
+        if not source_ids:
+            return NotebookContextTreeResponse(groups=groups)
+
+        source_rows = (
+            await repo_query(
+                "SELECT id, title, updated FROM source WHERE id IN $source_ids "
+                "ORDER BY updated DESC;",
+                {"source_ids": source_ids},
+            )
+            or []
+        )
+        insight_rows = (
+            await repo_query(
+                "SELECT source, count() AS cnt FROM source_insight "
+                "WHERE source IN $source_ids GROUP BY source;",
+                {"source_ids": source_ids},
+            )
+            or []
+        )
+        insights_by_source = {
+            str(r.get("source")): int(r.get("cnt") or 0) for r in insight_rows
+        }
+
+        # Membership edges are notebook-agnostic; keep only sources of this
+        # notebook so the picker never renders foreign sources.
+        source_id_strs = {str(r.get("id")) for r in source_rows}
+        memberships = [
+            ContextTreeMembership(source_id=source_id, group_id=group_id)
+            for source_id, group_id in members_by_source.items()
+            if source_id in source_id_strs
+        ]
+
+        return NotebookContextTreeResponse(
+            sources=[
+                ContextTreeSource(
+                    id=str(r.get("id")),
+                    title=r.get("title"),
+                    insights_count=insights_by_source.get(str(r.get("id")), 0),
+                )
+                for r in source_rows
+            ],
+            groups=groups,
+            memberships=memberships,
+        )
+    except HTTPException:
+        raise
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching context tree: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching context tree: {str(e)}"
         )

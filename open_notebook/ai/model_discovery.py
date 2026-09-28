@@ -170,6 +170,14 @@ MINIMAX_MODEL_TYPES = {
     "language": ["minimax", "abab"],
 }
 
+# MiMo ids: mimo-v2.6-pro/-flash are chat; asr/tts carry the modality in the
+# name (mimo-v2.5-asr, mimo-*-tts-*) and bill differently (per hour / free),
+# so they must not land in the language slot.
+MIMO_MODEL_TYPES = {
+    "speech_to_text": ["asr"],
+    "text_to_speech": ["tts"],
+}
+
 # PPQ (PayPerQ) is a multi-modality OpenAI-compatible gateway that proxies many
 # upstream providers, so its model ids carry recognisable substrings. Classify
 # by those so discovered models land in sensible slots (default: language).
@@ -210,6 +218,8 @@ def classify_model_type(model_name: str, provider: str) -> str:
         "elevenlabs": ELEVENLABS_MODEL_TYPES,
         "deepgram": DEEPGRAM_MODEL_TYPES,
         "dashscope": DASHSCOPE_MODEL_TYPES,
+        "xiaomi_mimo": MIMO_MODEL_TYPES,
+        "xiaomi_mimo_token_plan": MIMO_MODEL_TYPES,
         "zhipu": ZHIPU_MODEL_TYPES,
         "minimax": MINIMAX_MODEL_TYPES,
         "ppq": PPQ_MODEL_TYPES,
@@ -344,6 +354,10 @@ discover_xai_models = _make_openai_compat_discoverer("xai")
 discover_dashscope_models = _make_openai_compat_discoverer("dashscope")
 discover_zhipu_models = _make_openai_compat_discoverer("zhipu")
 discover_minimax_models = _make_openai_compat_discoverer("minimax")
+discover_xiaomi_mimo_models = _make_openai_compat_discoverer("xiaomi_mimo")
+discover_xiaomi_mimo_token_plan_models = _make_openai_compat_discoverer(
+    "xiaomi_mimo_token_plan"
+)
 discover_novita_models = _make_openai_compat_discoverer("novita")
 discover_ppq_models = _make_openai_compat_discoverer("ppq")
 
@@ -881,6 +895,8 @@ PROVIDER_DISCOVERY_FUNCTIONS = {
     "dashscope": discover_dashscope_models,
     "zhipu": discover_zhipu_models,
     "minimax": discover_minimax_models,
+    "xiaomi_mimo": discover_xiaomi_mimo_models,
+    "xiaomi_mimo_token_plan": discover_xiaomi_mimo_token_plan_models,
     "novita": discover_novita_models,
     "ppq": discover_ppq_models,
     "cohere": discover_cohere_models,

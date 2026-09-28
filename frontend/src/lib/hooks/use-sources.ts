@@ -15,6 +15,18 @@ import {
 
 const NOTEBOOK_SOURCES_PAGE_SIZE = 30
 
+/** Insight jobs in these command states still have work in flight. */
+export function isActiveInsightJobStatus(status?: string | null): boolean {
+  return status === 'new' || status === 'queued' || status === 'running'
+}
+
+/** True while any insight-generation job for the source is still in flight. */
+export function hasActiveInsightJobs(
+  insightJobs?: Array<{ status: string }> | null
+): boolean {
+  return !!insightJobs?.some((job) => isActiveInsightJobStatus(job.status))
+}
+
 export function useSources(notebookId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.sources(notebookId),
@@ -82,6 +94,9 @@ export function useNotebookSources(notebookId: string, filters?: NotebookSourceF
   return {
     sources,
     isLoading: query.isLoading,
+    // True while the previous scope's list is shown via keepPreviousData —
+    // callers must not rebuild scope-dependent state from it (see notebook page).
+    isPlaceholderData: query.isPlaceholderData,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
@@ -271,6 +286,10 @@ export function useSourceStatus(sourceId: string, enabled = true) {
       }
       // Embedding progress also advances in the background — keep polling
       if (data?.embedding?.status === 'running' || data?.embedding?.status === 'queued') {
+        return 2000
+      }
+      // In-flight insight-generation jobs likewise need live progress
+      if (hasActiveInsightJobs(data?.insight_jobs)) {
         return 2000
       }
       // No auto-refresh if completed, failed, or unknown

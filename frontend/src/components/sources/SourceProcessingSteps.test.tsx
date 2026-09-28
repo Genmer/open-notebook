@@ -27,6 +27,7 @@ const useRetrySourceMock = vi.fn(() => ({
   isPending: false,
 }))
 vi.mock('@/lib/hooks/use-sources', () => ({
+  hasActiveInsightJobs: () => false,
   useRetrySource: () => useRetrySourceMock(),
 }))
 

@@ -42,6 +42,8 @@ import {
   Command,
   Gauge,
   DatabaseBackup,
+  HardDrive,
+  ListTodo,
 } from 'lucide-react'
 
 const getNavigation = (t: TFunction) => [
@@ -67,8 +69,10 @@ const getNavigation = (t: TFunction) => [
   {
     title: t('navigation.manage'),
     items: [
+      { name: t('navigation.tasks'), href: '/tasks', icon: ListTodo, iconClass: undefined },
       { name: t('navigation.models'), href: '/settings/models', icon: Bot, iconClass: undefined },
       { name: t('navigation.usage'), href: '/settings/usage', icon: Gauge, iconClass: undefined },
+      { name: t('navigation.storage'), href: '/settings/storage', icon: HardDrive, iconClass: undefined },
       { name: t('navigation.dataManagement'), href: '/settings/data', icon: DatabaseBackup, iconClass: undefined },
       { name: t('navigation.transformations'), href: '/transformations', icon: Shuffle, iconClass: undefined },
       { name: t('navigation.settings'), href: '/settings', icon: Settings, iconClass: undefined },

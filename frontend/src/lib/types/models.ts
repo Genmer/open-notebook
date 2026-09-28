@@ -6,6 +6,23 @@ export interface Model {
   credential?: string | null
   created: string
   updated: string
+  // CNY per 1M tokens; null until fetched from the public price database or
+  // entered manually (see ModelPriceDialog).
+  price_input_per_m?: number | null
+  price_output_per_m?: number | null
+  price_source?: 'litellm' | 'manual' | null
+  price_matched_key?: string | null
+  price_fetched_at?: string | null
+}
+
+export interface ModelPriceResult {
+  id: string
+  price_input_per_m?: number | null
+  price_output_per_m?: number | null
+  price_source?: 'litellm' | 'manual' | null
+  price_matched_key?: string | null
+  price_fetched_at?: string | null
+  found: boolean
 }
 
 export interface CreateModelRequest {

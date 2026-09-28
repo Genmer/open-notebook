@@ -60,13 +60,47 @@ describe('useSourceStatus refetch policy', () => {
     ).toBe(2000)
   })
 
-  it('stops polling once everything is completed or failed', () => {
+  it('keeps polling while an insight-generation job is in flight', () => {
+    const options = useLastStatusOptions()
+    const data = {
+      status: 'completed',
+      embedding: { status: 'completed' },
+      insight_jobs: [{ command_id: 'command:1', status: 'running' }],
+    }
+    expect(options.refetchInterval({ state: { data } })).toBe(2000)
+    const queued = {
+      status: 'completed',
+      insight_jobs: [{ command_id: 'command:1', status: 'queued' }],
+    }
+    expect(options.refetchInterval({ state: { data: queued } })).toBe(2000)
+  })
+
+  it('stops polling once insight jobs and everything else are terminal', () => {
     const options = useLastStatusOptions()
     expect(
       options.refetchInterval({ state: { data: { status: 'completed', embedding: { status: 'completed' } } } })
     ).toBe(false)
     expect(
-      options.refetchInterval({ state: { data: { status: 'failed', embedding: { status: 'failed' } } } })
+      options.refetchInterval({
+        state: {
+          data: {
+            status: 'completed',
+            embedding: { status: 'completed' },
+            insight_jobs: [{ command_id: 'command:1', status: 'completed' }],
+          },
+        },
+      })
+    ).toBe(false)
+    expect(
+      options.refetchInterval({
+        state: {
+          data: {
+            status: 'failed',
+            embedding: { status: 'failed' },
+            insight_jobs: [{ command_id: 'command:1', status: 'failed' }],
+          },
+        },
+      })
     ).toBe(false)
     expect(options.refetchInterval({ state: { data: undefined } })).toBe(false)
   })

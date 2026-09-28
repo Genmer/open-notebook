@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { sourcesApi } from '@/lib/api/sources'
 import { QUERY_KEYS } from '@/lib/api/query-client'
-import { useSource, useSourceStatus, useUpdateSource, useDeleteSource } from '@/lib/hooks/use-sources'
+import { useSource, useSourceStatus, useUpdateSource, useDeleteSource, hasActiveInsightJobs, isActiveInsightJobStatus } from '@/lib/hooks/use-sources'
+import { useInsightJobWatcher, type ActiveInsightJob } from '@/lib/hooks/use-insight-jobs'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
 import { embeddingApi } from '@/lib/api/embedding'
@@ -59,6 +60,7 @@ import {
   Lightbulb,
   Database,
   MessageSquare,
+  Loader2,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
@@ -115,6 +117,8 @@ function SourceDetailContentInner({
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
   const [deletingInsight, setDeletingInsight] = useState(false)
+  // Insight completion catch-up compares against the count before the job ran.
+  const insightsCountRef = useRef(0)
 
   // A 404 means the source was deleted (e.g. a dangling chat/ask reference) —
   // handled by the shared "content no longer exists" state. The global query
@@ -144,6 +148,7 @@ function SourceDetailContentInner({
       setLoadingInsights(true)
       const data = await insightsApi.listForSource(sourceId)
       setInsights(data)
+      insightsCountRef.current = data.length
     } catch (err) {
       console.error('Failed to fetch insights:', err)
     } finally {
@@ -167,6 +172,25 @@ function SourceDetailContentInner({
     }
   }, [fetchInsights, fetchTransformations, sourceId])
 
+  // In-flight insight jobs: submission registers the command here; a job found
+  // running after a page reload is adopted from the polled status payload.
+  const insightWatcher = useInsightJobWatcher({
+    refetchInsights: fetchInsights,
+    getInsightCount: useCallback(() => insightsCountRef.current, []),
+    onSettled: useCallback(() => {
+      // Refresh insight counts everywhere (list cards, notebook header…)
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+    }, [queryClient]),
+  })
+  const activeInsightJob = insightWatcher.activeJob
+
+  useEffect(() => {
+    insightWatcher.adoptActiveJobs(statusData?.insight_jobs ?? null)
+    // adoptActiveJobs identity changes with activeJob; including it would
+    // re-run on every watcher state change — only new status data matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusData])
+
   const createInsight = async () => {
     if (!selectedTransformation) {
       toast.error(t('sources.selectTransformation'))
@@ -175,6 +199,7 @@ function SourceDetailContentInner({
 
     try {
       setCreatingInsight(true)
+      const selected = transformations.find((trans) => trans.id === selectedTransformation)
       const response = await insightsApi.create(sourceId, {
         transformation_id: selectedTransformation
       })
@@ -182,20 +207,15 @@ function SourceDetailContentInner({
       toast.success(t('sources.insightGenerationStarted'))
       setSelectedTransformation('')
 
-      // Poll for command completion if we have a command_id
       if (response.command_id) {
-        // Poll in background (don't block UI)
-        insightsApi.waitForCommand(response.command_id, {
-          maxAttempts: 120, // Up to 4 minutes (120 * 2s)
-          intervalMs: 2000
-        }).then(success => {
-          if (success) {
-            void fetchInsights()
-            // Invalidate sources queries so notebook page refreshes with updated insights_count
-            queryClient.invalidateQueries({ queryKey: ['sources'] })
-          }
-        }).catch(err => {
-          console.error('Error waiting for insight command:', err)
+        // Track the job: an in-progress row renders and completion is caught
+        // by the watcher (which also refreshes the insights list).
+        insightWatcher.watchJob({
+          commandId: response.command_id,
+          title: selected
+            ? displayTransformationTitle(selected.title, t) || selected.name
+            : null,
+          startedAt: Date.now(),
         })
       } else {
         // Fallback: refresh after delay if no command_id
@@ -621,6 +641,9 @@ function SourceDetailContentInner({
                 </div>
               </div>
 
+              {/* In-flight insight generation */}
+              {activeInsightJob && <InsightInProgressRow job={activeInsightJob} />}
+
               {/* Insights List */}
               {loadingInsights ? (
                 <div className="flex items-center justify-center py-8">
@@ -850,6 +873,43 @@ function SourceDetailContentInner({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  )
+}
+
+/**
+ * Live row for a running insight-generation job: spinner + transformation
+ * name + client-side elapsed clock (command-level progress percentages are
+ * not available; a steady clock communicates "still working" honestly).
+ */
+function InsightInProgressRow({ job }: { job: ActiveInsightJob }) {
+  const { t } = useTranslation()
+  const [elapsed, setElapsed] = useState('')
+
+  useEffect(() => {
+    if (job.startedAt == null) return
+    const startedAt = job.startedAt
+    const tick = () => {
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      setElapsed(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [job.startedAt])
+
+  return (
+    <div className="mt-5 flex items-center gap-3 rounded-md border border-teal/30 bg-teal-tint px-3 py-2.5">
+      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-teal" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">
+          {job.title ?? t('sources.insightInProgress')}
+        </p>
+        <p className="text-xs text-muted-foreground">{t('sources.insightInProgress')}</p>
+      </div>
+      {elapsed && (
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">{elapsed}</span>
+      )}
     </div>
   )
 }

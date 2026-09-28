@@ -32,8 +32,8 @@ server {
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
-    # Allow file uploads up to 100MB
-    client_max_body_size 100M;
+    # Allow file uploads up to 1 GB (Open Notebook's default upload cap)
+    client_max_body_size 1024M;
 
     # Single location block - that's it!
     location / {
@@ -225,8 +225,8 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers HIGH:!aNULL:!MD5;
 
-        # Allow file uploads up to 100MB
-        client_max_body_size 100M;
+        # Allow file uploads up to 1 GB (Open Notebook's default upload cap)
+        client_max_body_size 1024M;
 
         # Security headers
         add_header X-Frame-Options DENY;
@@ -697,7 +697,7 @@ When uploading files, your reverse proxy may reject the request due to body size
    ```nginx
    server {
        # Allow larger file uploads (default is 1MB)
-       client_max_body_size 100M;
+       client_max_body_size 1024M;
 
        # Add CORS headers to error responses
        error_page 413 = @cors_error_413;
@@ -706,7 +706,7 @@ When uploading files, your reverse proxy may reject the request due to body size
            add_header 'Access-Control-Allow-Origin' '*' always;
            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
            add_header 'Access-Control-Allow-Headers' '*' always;
-           return 413 '{"detail": "File too large. Maximum size is 100MB."}';
+           return 413 '{"detail": "File too large. Maximum size is 1GB."}';
        }
 
        location / {
@@ -722,7 +722,7 @@ When uploading files, your reverse proxy may reject the request due to body size
      middlewares:
        large-body:
          buffering:
-           maxRequestBodyBytes: 104857600  # 100MB
+           maxRequestBodyBytes: 1073741824  # 1 GB
    ```
 
    Apply middleware to your router:
@@ -748,7 +748,7 @@ When uploading files, your reverse proxy may reject the request due to body size
    ```caddy
    notebook.example.com {
        request_body {
-           max_size 100MB
+           max_size 1GB
        }
        reverse_proxy open-notebook:8502 {
            transport http {

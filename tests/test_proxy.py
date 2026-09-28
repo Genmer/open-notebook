@@ -1,6 +1,7 @@
 """Tests for the internal no_proxy injection (issue #1160)."""
 
 import os
+import sys
 
 import pytest
 
@@ -53,6 +54,11 @@ def test_lowercase_and_uppercase_kept_in_sync(monkeypatch):
     assert os.environ["no_proxy"] == os.environ["NO_PROXY"]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="os.environ is case-insensitive on Windows; the two case variants "
+    "cannot coexist to be merged",
+)
 def test_merges_both_case_variants(monkeypatch):
     monkeypatch.setenv("no_proxy", "lower.example.com")
     monkeypatch.setenv("NO_PROXY", "UPPER.example.com")

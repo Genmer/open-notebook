@@ -28,7 +28,9 @@ export function buildUsageCsv({ summary, days, callType }: UsageExportInput): st
   const stamp = new Date().toISOString()
   lines.push(`# generated_at=${stamp}`, `# days=${days}`, `# call_type=${callType || 'all'}`)
   lines.push('# Totals')
-  lines.push(csvRow(['calls', 'input_tokens', 'output_tokens', 'total_tokens', 'estimated_tokens']))
+  lines.push(
+    csvRow(['calls', 'input_tokens', 'output_tokens', 'total_tokens', 'estimated_tokens', 'estimated_cost_cny'])
+  )
   lines.push(
     csvRow([
       summary.totals.calls,
@@ -36,12 +38,13 @@ export function buildUsageCsv({ summary, days, callType }: UsageExportInput): st
       summary.totals.output_tokens,
       summary.totals.total_tokens,
       summary.totals.estimated_tokens ?? 0,
+      summary.totals.estimated_cost_cny ?? '',
     ])
   )
   lines.push('')
   lines.push('# By model')
   lines.push(
-    csvRow(['model', 'provider', 'calls', 'input_tokens', 'output_tokens', 'total_tokens', 'estimated_tokens'])
+    csvRow(['model', 'provider', 'calls', 'input_tokens', 'output_tokens', 'total_tokens', 'estimated_tokens', 'estimated_cost_cny'])
   )
   for (const row of summary.by_model) {
     lines.push(
@@ -53,8 +56,14 @@ export function buildUsageCsv({ summary, days, callType }: UsageExportInput): st
         row.output_tokens,
         row.total_tokens,
         row.estimated_tokens ?? 0,
+        row.estimated_cost_cny ?? '',
       ])
     )
+  }
+  lines.push('')
+  lines.push('# Unpriced models')
+  for (const name of summary.unpriced_models ?? []) {
+    lines.push(csvRow([name]))
   }
   lines.push('')
   lines.push('# By day')
@@ -78,6 +87,7 @@ export function buildUsageJson({ summary, days, callType }: UsageExportInput): s
       by_model: summary.by_model,
       by_day: summary.by_day,
       daily_by_model: summary.daily_by_model,
+      unpriced_models: summary.unpriced_models ?? [],
     },
     null,
     2

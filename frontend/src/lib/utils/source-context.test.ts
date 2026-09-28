@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   applyBulkNoteContext,
   applyBulkSourceContext,
+  buildChatContextConfig,
   bulkModeForSource,
   computeNoteSelections,
   computeSourceSelections,
   includedMode,
+  scopedFolderSelections,
 } from './source-context'
 
 const src = (id: string, insights_count = 0) => ({ id, insights_count })
@@ -121,6 +123,47 @@ describe('applyBulkSourceContext', () => {
   })
 })
 
+describe('scopedFolderSelections', () => {
+  const folderIds = new Set(['s:1', 's:2'])
+
+  it('defaults in-folder sources to full and out-of-folder sources to off', () => {
+    const result = scopedFolderSelections(
+      [src('s:1', 2), src('s:2', 0), src('s:3', 4)],
+      folderIds,
+      {},
+    )
+    expect(result).toEqual({ 's:1': 'full', 's:2': 'full', 's:3': 'off' })
+  })
+
+  it('lets saved preferences override the folder defaults', () => {
+    const result = scopedFolderSelections(
+      [src('s:1', 2), src('s:2', 0), src('s:3', 4)],
+      folderIds,
+      { 's:1': 'insights', 's:2': 'off' },
+    )
+    expect(result).toEqual({ 's:1': 'insights', 's:2': 'off', 's:3': 'off' })
+  })
+
+  it('with empty prefs every source falls back to its membership default', () => {
+    const result = scopedFolderSelections(
+      [src('s:1', 0), src('s:9', 0)],
+      new Set(['s:1']),
+      {},
+    )
+    expect(result).toEqual({ 's:1': 'full', 's:9': 'off' })
+  })
+
+  it('applies a session bulk intent to in-folder sources without prefs (pagination, #915)', () => {
+    const result = scopedFolderSelections(
+      [src('s:1', 2), src('s:2', 0), src('s:3', 4)],
+      folderIds,
+      { 's:1': 'insights' },
+      'exclude',
+    )
+    expect(result).toEqual({ 's:1': 'insights', 's:2': 'off', 's:3': 'off' })
+  })
+})
+
 describe('note context', () => {
   it('defaults new notes to full (included)', () => {
     expect(computeNoteSelections({}, [note('n:1'), note('n:2')], 'include')).toEqual({
@@ -148,5 +191,40 @@ describe('note context', () => {
     expect(applyBulkNoteContext({ 'n:1': 'full' }, [note('n:1')], 'exclude')).toEqual({
       'n:1': 'off',
     })
+  })
+})
+
+describe('buildChatContextConfig', () => {
+  const selections = {
+    sources: {
+      's-insights': 'insights',
+      's-full': 'full',
+      's-off': 'off',
+      's-unloaded': 'full',
+    },
+    notes: { 'n1': 'full', 'n2': 'off' },
+  } as const
+
+  it('maps selection modes to API wording', () => {
+    const config = buildChatContextConfig(selections, ['s-insights', 's-full', 's-off', 's-extra'], ['n1', 'n2', 'n3'])
+    expect(config.sources['s-insights']).toBe('insights')
+    expect(config.sources['s-full']).toBe('full content')
+    expect(config.sources['s-off']).toBe('not in')
+    expect(config.sources['s-extra']).toBe('not in') // loaded but unselected
+    expect(config.notes['n1']).toBe('full content')
+    expect(config.notes['n2']).toBe('not in')
+    expect(config.notes['n3']).toBe('not in')
+  })
+
+  it('includes unloaded sources picked via the context picker', () => {
+    const config = buildChatContextConfig(selections, [], [])
+    expect(config.sources['s-unloaded']).toBe('full content')
+    expect(Object.keys(config.sources)).toHaveLength(4)
+  })
+
+  it('empty selections yield empty maps', () => {
+    const config = buildChatContextConfig({ sources: {}, notes: {} }, [], [])
+    expect(config.sources).toEqual({})
+    expect(config.notes).toEqual({})
   })
 })

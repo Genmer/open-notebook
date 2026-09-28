@@ -5,7 +5,10 @@
 # npm retry logic, ...) apply to both variants at once.
 
 # Stage 1: Frontend builder
-FROM node:22-slim AS frontend-builder
+# node:22-trixie-slim instead of node:22-slim: the docker.io node:22-slim layers
+# were persistently corrupted on this machine (unpack-level, survives re-pull);
+# the trixie variant was pulled via a working mirror. Functionally equivalent.
+FROM node:22-trixie-slim AS frontend-builder
 WORKDIR /app/frontend
 
 # Copy dependency files first to leverage cache

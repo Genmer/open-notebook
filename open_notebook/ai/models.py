@@ -85,6 +85,13 @@ class Model(ObjectModel):
     provider: str
     type: str
     credential: Optional[str] = None
+    # Estimated pricing, CNY per 1M tokens. Filled from the LiteLLM public
+    # price DB when the model is created/refreshed, or entered manually.
+    price_input_per_m: Optional[float] = None
+    price_output_per_m: Optional[float] = None
+    price_source: Optional[str] = None  # "litellm" | "manual"
+    price_matched_key: Optional[str] = None
+    price_fetched_at: Optional[str] = None
 
     @classmethod
     async def get_models_by_type(cls, model_type):

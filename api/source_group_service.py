@@ -147,9 +147,12 @@ async def delete_view(view_id: str) -> Dict[str, int]:
         {"view": view_param},
     )
     deleted_groups = len(rows or [])
-    # Memberships first so no edge outlives its group.
+    # Memberships first so no edge outlives its group. Folder-scoped chat
+    # context prefs go in the same call, while the groups still exist for the
+    # subquery.
     await repo_query(
-        "DELETE source_group_member WHERE out IN (SELECT VALUE id FROM source_group WHERE source_view = $view)",
+        "DELETE source_group_member WHERE out IN (SELECT VALUE id FROM source_group WHERE source_view = $view); "
+        "DELETE chat_context_pref WHERE folder IN (SELECT VALUE id FROM source_group WHERE source_view = $view)",
         {"view": view_param},
     )
     await repo_query(
@@ -322,14 +325,20 @@ async def delete_group(group_id: str, delete_sources: bool) -> GroupDeleteRespon
             "DELETE source_group_member WHERE out IN $subtree",
             {"subtree": subtree_ids},
         )
+        # The merged statement also drops chat_context_pref rows scoped to these
+        # folders (keyed by folder record) in the same call.
         await repo_query(
-            "DELETE source_group WHERE id IN $subtree", {"subtree": subtree_ids}
+            "DELETE source_group WHERE id IN $subtree; "
+            "DELETE chat_context_pref WHERE folder IN $subtree",
+            {"subtree": subtree_ids},
         )
     else:
-        # Members are dropped, sources stay ungrouped: single implicit transaction.
+        # Members are dropped, sources stay ungrouped; folder-scoped chat
+        # context prefs are swept in the same call: single implicit transaction.
         await repo_query(
             "DELETE source_group_member WHERE out IN $subtree; "
-            "DELETE source_group WHERE id IN $subtree;",
+            "DELETE source_group WHERE id IN $subtree; "
+            "DELETE chat_context_pref WHERE folder IN $subtree;",
             {"subtree": subtree_ids},
         )
 
