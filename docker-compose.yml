@@ -14,7 +14,7 @@ services:
 
       # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
       # for local use; override them in a .env file before exposing the instance
-      # (the same values configure the surrealdb service above).
+      # (the same values must be given to the standalone SurrealDB container).
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=${SURREAL_USER:-root}
       - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
@@ -42,6 +42,7 @@ services:
     volumes:
       - ./notebook_data:/app/data
     # SurrealDB runs as a standalone container on the same compose network
-    # (network alias: surrealdb), started separately with `docker run` —
-    # see README notes / the surrealdb launch command in the setup notes.
+    # (network alias: surrealdb). Quick start: `docker compose -f
+    # examples/docker-compose-dev.yml --project-directory . up -d surrealdb`
+    # starts it with matching credentials — see README Quick Start.
     restart: always

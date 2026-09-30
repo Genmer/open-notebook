@@ -28,6 +28,8 @@
     <br />
     <a href="docs/0-START-HERE/index.md">📚 Get Started</a>
     ·
+    <a href="#-fork-enhancements">⭐ Fork Enhancements</a>
+    ·
     <a href="docs/3-USER-GUIDE/index.md">📖 User Guide</a>
     ·
     <a href="docs/2-CORE-CONCEPTS/index.md">✨ Features</a>
@@ -54,13 +56,17 @@
 
 ## A private, multi-model, 100% local, full-featured alternative to Notebook LM
 
+<!-- KEEP ON UPSTREAM MERGE: this fork section must survive merges from lfnovo/open-notebook. -->
+> [!NOTE]
+> **About this fork**: this repository is an enhanced fork of [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook). It carries everything upstream plus fork-only enhancements — a Gemini/NotebookLM-style studio workspace, a task center with live progress inspection, one-click study artifacts, full-library export/import, a built-in MCP server, and extra providers (Zhipu, Xiaomi MiMo). See the [Fork Enhancements](#-fork-enhancements) overview below. For bugs in fork-specific features, report to [Genmer/open-notebook/issues](https://github.com/Genmer/open-notebook/issues); general project discussions stay upstream. The multilingual translations and the website linked below describe the upstream project and may not cover fork additions.
+
 ![New Notebook](docs/assets/asset_list.png)
 
 In a world dominated by Artificial Intelligence, having the ability to think 🧠 and acquire new knowledge 💡, is a skill that should not be a privilege for a few, nor restricted to a single provider.
 
 **Open Notebook empowers you to:**
 - 🔒 **Control your data** - Keep your research private and secure
-- 🤖 **Choose your AI models** - Support for 18+ providers including OpenAI, Anthropic, Ollama, LM Studio, and more
+- 🤖 **Choose your AI models** - Support for 25 providers including OpenAI, Anthropic, Ollama, LM Studio, Xiaomi MiMo, Zhipu, and more
 - 📚 **Organize multi-modal content** - PDFs, videos, audio, web pages, and more
 - 🎙️ **Generate professional podcasts** - Advanced multi-speaker podcast generation
 - 🔍 **Search intelligently** - Full-text and vector search across all your content
@@ -76,14 +82,15 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 | Feature | Open Notebook | Google Notebook LM | Advantage |
 |---------|---------------|--------------------|-----------|
 | **Privacy & Control** | Self-hosted, your data | Google cloud only | Complete data sovereignty |
-| **AI Provider Choice** | 18+ providers (OpenAI, Anthropic, Ollama, LM Studio, etc.) | Google models only | Flexibility and cost optimization |
+| **AI Provider Choice** | 25 providers (OpenAI, Anthropic, Ollama, LM Studio, etc.) | Google models only | Flexibility and cost optimization |
 | **Podcast Speakers** | 1-4 speakers with custom profiles | 2 speakers only | Extreme flexibility |
+| **Studio Artifacts** | Study guides, FAQs, flashcards & essay drafts generated into notes | Study guide/Briefing doc/audio overview | More artifact types, fully under your control |
 | **Content Transformations** | Custom and built-in | Limited options | Unlimited processing power |
 | **API Access** | Full REST API | No API | Complete automation |
 | **Deployment** | Docker, cloud, or local | Google hosted only | Deploy anywhere |
-| **Citations** | Basic references (will improve) | Comprehensive with sources | Research integrity |
+| **Citations** | Enhanced references with per-source titles and finer control | Comprehensive with sources | Research integrity |
 | **Customization** | Open source, fully customizable | Closed system | Unlimited extensibility |
-| **Cost** | Pay only for AI usage | Free tier + Monthly subscription | Transparent and controllable |
+| **Cost** | Pay only for AI usage, with per-model cost estimates | Free tier + Monthly subscription | Transparent and controllable |
 
 **Why Choose Open Notebook?**
 - 🔒 **Privacy First**: Your sensitive research stays completely private
@@ -102,81 +109,48 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
 - That's it! (API keys configured later in the UI)
 
-### Step 1: Get docker-compose.yml
+> [!IMPORTANT]
+> This fork publishes no prebuilt images. The upstream `lfnovo/open_notebook` image runs **upstream code only** — none of the fork enhancements. Deploy from this repository so the app is built locally with fork features included.
 
-**Option A:** Download directly
+### Step 1: Get the code
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
+git clone https://github.com/Genmer/open-notebook.git
+cd open-notebook
 ```
 
-**Option B:** Create the file manually
-Copy this into a new file called `docker-compose.yml`:
-
-```yaml
-services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    # Credentials default to root:root for a zero-config local setup. Before
-    # exposing this instance to a network, set SURREAL_USER / SURREAL_PASSWORD
-    # in a .env file (see .env.example) — they are applied here and to the
-    # open_notebook service below, so the two always stay in sync.
-    # List (exec) form so each interpolated value stays a single argument —
-    # a password containing spaces would otherwise be split into several.
-    command: ["start", "--log", "info", "--user", "${SURREAL_USER:-root}", "--pass", "${SURREAL_PASSWORD:-root}", "rocksdb:/mydata/mydatabase.db"]
-    user: root  # Required for bind mounts on Linux
-    ports:
-      # Bound to localhost only: the open_notebook service reaches this over
-      # the internal compose network regardless, so the host port is purely
-      # for local debugging (e.g. Surrealist, `surreal sql`). Exposing this
-      # on 0.0.0.0 would let anyone who can reach the host connect with the
-      # default root:root credentials.
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - ./surreal_data:/mydata
-    environment:
-      - SURREAL_EXPERIMENTAL_GRAPHQL=true
-    restart: always
-    pull_policy: always
-
-  open_notebook:
-    image: lfnovo/open_notebook:v1-latest
-    ports:
-      - "8502:8502"  # Web UI
-      - "5055:5055"  # REST API
-    environment:
-      # REQUIRED: Change this to your own secret string
-      # This encrypts your API keys in the database
-      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-
-      # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
-      # for local use; override them in a .env file before exposing the instance
-      # (the same values configure the surrealdb service above).
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=${SURREAL_USER:-root}
-      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
-      - SURREAL_NAMESPACE=open_notebook
-      - SURREAL_DATABASE=open_notebook
-    volumes:
-      - ./notebook_data:/app/data
-    depends_on:
-      - surrealdb
-    restart: always
-    pull_policy: always
+### Step 2: Configure
+```bash
+cp .env.example docker.env
 ```
-
-### Step 2: Set Your Encryption Key
-Edit `docker-compose.yml` and change this line:
-```yaml
-- OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
+Edit `docker.env` and change this line:
 ```
-to any secret value (e.g., `my-super-secret-key-123`)
+OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
+```
+to any secret value (e.g., `my-super-secret-key-123`). The file already ships working local defaults for the database connection.
 
 ### Step 3: Start Services
 ```bash
-docker compose up -d
+docker compose -f examples/docker-compose-dev.yml --project-directory . up -d --build
 ```
+Equivalent to `make dev`. This starts SurrealDB plus the app — built locally from this repository, so every fork feature is included. The first build takes a few minutes.
 
-Wait 15-20 seconds, then open: **http://localhost:8502**
+Wait 15-20 seconds after the build finishes, then open: **http://localhost:8502**
+
+<details>
+<summary>Alternative: app-only compose with a standalone database container</summary>
+
+The root [`docker-compose.yml`](docker-compose.yml) builds only the app and expects SurrealDB as a standalone container on the same compose network:
+
+```bash
+# start just the database (network alias: surrealdb)
+docker compose -f examples/docker-compose-dev.yml --project-directory . up -d surrealdb
+# build & start the app (joins the same default network)
+docker compose up -d --build
+```
+</details>
+
+> [!TIP]
+> **Upload limits**: the API accepts request bodies up to 1 GB by default (`OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB`), and import-package decompression is capped at 4 GB (`OPEN_NOTEBOOK_MAX_IMPORT_UNCOMPRESSED_MB`) — both adjustable. A fronting reverse proxy's own limit still applies. See the [environment variable reference](docs/5-CONFIGURATION/environment-reference.md).
 
 ### Step 4: Configure AI Provider
 1. Go to **Models** and choose your provider (OpenAI, Anthropic, Google, etc.)
@@ -191,7 +165,7 @@ Done! You're ready to create your first notebook.
 > **Need an API key?** Get one from:
 > [OpenAI](https://platform.openai.com/api-keys) · [Anthropic](https://console.anthropic.com/) · [Google](https://aistudio.google.com/) · [Groq](https://console.groq.com/) (free tier)
 
-> **Want free local AI?** See [examples/docker-compose-ollama.yml](examples/) for Ollama setup
+> **Want free local AI?** See [examples/docker-compose-ollama.yml](examples/docker-compose-ollama.yml) for Ollama setup
 
 ---
 
@@ -200,15 +174,6 @@ Done! You're ready to create your first notebook.
 - **[With Ollama (Free Local AI)](examples/docker-compose-ollama.yml)** - Run models locally without API costs
 - **[From Source (Developers)](docs/1-INSTALLATION/from-source.md)** - For development and contributions
 - **[Complete Installation Guide](docs/1-INSTALLATION/index.md)** - All deployment scenarios
-
----
-
-### 📖 Need Help?
-
-- **🤖 AI Installation Assistant**: [CustomGPT to help you install](https://chatgpt.com/g/g-68776e2765b48191bd1bae3f30212631-open-notebook-installation-assistant)
-- **🆘 Troubleshooting**: [5-minute troubleshooting guide](docs/6-TROUBLESHOOTING/quick-fixes.md)
-- **💬 Community Support**: [Discord Server](https://discord.gg/37XJPXfz2w)
-- **🐛 Report Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
 
 ---
 
@@ -230,7 +195,6 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 | Vertex AI    | ✅          | ✅               | ❌             | ✅             |
 | Ollama       | ✅          | ✅               | ❌             | ❌             |
 | oMLX         | ✅          | ✅               | ❌             | ❌             |
-| Perplexity   | ✅          | ❌               | ❌             | ❌             |
 | ElevenLabs   | ❌          | ❌               | ✅             | ✅             |
 | Deepgram     | ❌          | ❌               | ✅             | ✅             |
 | Azure OpenAI | ✅          | ✅               | ✅             | ✅             |
@@ -240,21 +204,27 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 | Voyage       | ❌          | ✅               | ❌             | ❌             |
 | xAI          | ✅          | ❌               | ❌             | ✅             |
 | OpenRouter   | ✅          | ✅               | ✅             | ✅             |
-| DashScope (Qwen) | ✅          | ❌               | ❌             | ❌             |
+| DashScope (Qwen) | ✅      | ✅               | ❌             | ❌             |
+| Zhipu (BigModel) | ✅      | ✅               | ❌             | ❌             |
+| Xiaomi MiMo** | ✅         | ✅               | ✅             | ✅             |
+| Xiaomi MiMo Token Plan** | ✅ | ✅            | ✅             | ✅             |
 | MiniMax      | ✅          | ❌               | ❌             | ❌             |
 | Novita       | ✅          | ❌               | ❌             | ❌             |
 | PayPerQ (PPQ) | ✅          | ✅               | ✅             | ✅             |
 | OpenAI Compatible* | ✅          | ✅               | ✅             | ✅             |
+| Anthropic Compatible* | ✅     | ❌             | ❌             | ❌             |
 
-*Supports LM Studio and any OpenAI-compatible endpoint. Prefer the native **oMLX** provider for [oMLX](https://omlx.ai/) (Apple Silicon); see [docs/5-CONFIGURATION/omlx.md](docs/5-CONFIGURATION/omlx.md).
+*Supports LM Studio and any OpenAI-compatible / Anthropic-compatible endpoint. Prefer the native **oMLX** provider for [oMLX](https://omlx.ai/) (Apple Silicon); see [docs/5-CONFIGURATION/omlx.md](docs/5-CONFIGURATION/omlx.md).
+
+**MiMo's audio models are served over the chat-completions protocol rather than the standard `/audio/*` endpoints; this fork ships dedicated adapters for that.
 
 ## ✨ Key Features
 
 ### Core Capabilities
 - **🔒 Privacy-First**: Your data stays under your control - no cloud dependencies
-- **🎯 Multi-Notebook Organization**: Manage multiple research projects seamlessly
+- **🎯 Multi-Notebook Organization**: Manage multiple research projects seamlessly, with nested source folders and AI-assisted classification
 - **📚 Universal Content Support**: PDFs, videos, audio, web pages, Office docs, and more
-- **🤖 Multi-Model AI Support**: 18+ providers including OpenAI, Anthropic, Ollama, Google, LM Studio, and more
+- **🤖 Multi-Model AI Support**: 25 providers including OpenAI, Anthropic, Ollama, Google, LM Studio, Zhipu, Xiaomi MiMo, and more
 - **🎙️ Professional Podcast Generation**: Advanced multi-speaker podcasts with Episode Profiles
 - **🔍 Intelligent Search**: Full-text and vector search across all your content
 - **💬 Context-Aware Chat**: AI conversations powered by your research materials
@@ -262,12 +232,38 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 
 ### Advanced Features
 - **⚡ Reasoning Model Support**: Full support for thinking models like DeepSeek-R1 and Qwen3
+- **🛠️ Task Center & Live Progress**: Every async job (insights, embeddings, imports, podcasts) in one place, with live streaming inspection, token rate and multi-stage progress
+- **🎓 Study Artifacts**: One-click study guides, FAQs, flashcards and essay drafts generated from your sources and saved back as notes
+- **💾 Full-Library Export / Import**: One-click backup and restore of notebooks, sources, notes, vectors and files, with conflict-aware import and model-configuration migration
+- **🔌 Built-in MCP Server**: Expose your notebooks to coding agents via `python -m open_notebook.mcp_server` — see [MCP server docs](docs/5-CONFIGURATION/mcp-server.md)
+- **🩺 AI Task Diagnostics**: Failed tasks explain what happened, the likely root cause and how to fix it, with recovery checks and one-click retry
+- **📊 Usage, Cost & Storage Dashboards**: Daily token trends, per-model cost estimates and on-disk storage analytics
 - **🔧 Content Transformations**: Powerful customizable actions to summarize and extract insights
 - **🌐 Comprehensive REST API**: Full programmatic access for custom integrations [![API Docs](https://img.shields.io/badge/API-Documentation-blue?style=flat-square)](http://localhost:5055/docs)
 - **🔐 Optional Password Protection**: Secure public deployments with authentication
 - **📊 Fine-Grained Context Control**: Choose exactly what to share with AI models
 - **📎 Citations**: Get answers with proper source citations
 
+
+## ⭐ Fork Enhancements
+
+<!-- KEEP ON UPSTREAM MERGE: this fork section must survive merges from lfnovo/open-notebook. -->
+Everything below is added by this fork on top of upstream. Each item links to the feature mention above or to its docs when user docs exist.
+
+| Enhancement | What you get |
+|-------------|--------------|
+| [Gemini-style Studio workspace](#-key-features) | NotebookLM-like three-column view (folder tree / chat / studio) alongside the classic view, switchable in settings |
+| [Task Center & Live Inspector](#-key-features) | All async operations in one page; live model-output streaming, token rate, multi-stage progress |
+| [Study Artifacts](#-key-features) | Study guides, FAQs, flashcards, essay drafts — generated asynchronously and saved back as notes |
+| [AI Task Diagnostics](#-key-features) | Failed jobs get a four-part explanation (what / why / how to fix / next actions) with recovery detection and retry |
+| [Full-Library Export / Import v2](#-key-features) | Backup & migrate everything (including model configs and API keys, conflict-confirmed) across instances |
+| [Built-in MCP Server](docs/5-CONFIGURATION/mcp-server.md) | Let Claude Code and other MCP clients search and chat with your notebooks |
+| [Folders & multi-view organization](#-key-features) | Nested source folders, AI content/filename classification, file-type views, bulk operations |
+| [Usage, cost & storage dashboards](#-key-features) | Token trends, heatmaps, per-model cost estimates (CNY), storage analytics with export-size estimation |
+| [New providers](#provider-support-matrix) | Zhipu (BigModel), Xiaomi MiMo & MiMo Token Plan (full modality incl. chat-audio), DashScope embeddings |
+| Detailed fork changelog | Every batch of fork changes, in Chinese: [本地定制记录](#本地定制记录) |
+
+**Contents**: [Quick Start](#-quick-start-2-minutes) · [vs Notebook LM](#-open-notebook-vs-google-notebook-lm) · [Provider Matrix](#provider-support-matrix) · [Key Features](#-key-features) · [Documentation](#-documentation) · [Roadmap](#-roadmap) · [本地定制记录](#本地定制记录)
 
 ## Podcast Feature
 
@@ -294,26 +290,37 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **[🔧 Content Transformations](docs/3-USER-GUIDE/transformations.md)** - Customize content processing
 - **[🤖 AI Models](docs/4-AI-PROVIDERS/index.md)** - AI model configuration
 - **[🔌 MCP Integration](docs/5-CONFIGURATION/mcp-integration.md)** - Connect with Claude Desktop, VS Code and other MCP clients
+- **[⌨️ Built-in MCP Server](docs/5-CONFIGURATION/mcp-server.md)** - Expose your notebooks to coding agents (fork feature)
 - **[🔧 REST API Reference](docs/7-DEVELOPMENT/api-reference.md)** - Complete API documentation
 - **[🔐 Security](docs/5-CONFIGURATION/security.md)** - Password protection and privacy
 - **[🚀 Deployment](docs/1-INSTALLATION/index.md)** - Complete deployment guides for all scenarios
 - **[🧭 Vision & Principles](VISION.md)** - What Open Notebook is, and where it's going
 - **[🛠️ Developer Docs](docs/7-DEVELOPMENT/index.md)** - Architecture, setup, contributing, decision records
 
+### Configuration & Operations
+- **[⚙️ Environment Variables](docs/5-CONFIGURATION/environment-reference.md)** - Every setting, including upload limits and worker tuning
+- **[🧩 Configuration Index](docs/5-CONFIGURATION/index.md)** - All configuration topics
+- **[🌐 Reverse Proxy Setup](docs/5-CONFIGURATION/reverse-proxy.md)** - nginx / Traefik / Caddy examples
+
+### Troubleshooting
+- **[🚑 Quick Fixes](docs/6-TROUBLESHOOTING/quick-fixes.md)** - 5-minute troubleshooting guide
+- **[❓ FAQ](docs/6-TROUBLESHOOTING/faq.md)** - Common questions and solutions
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## 🗺️ Roadmap
 
+> This is the upstream project roadmap. Fork-specific plans live in the [fork roadmap (中文)](#后续体验优化与新功能规划路线图-roadmap) at the bottom of this file.
+
 ### Upcoming Features
-- **Live Front-End Updates**: Real-time UI updates for smoother experience
-- **Async Processing**: Faster UI through asynchronous content processing
+- **Global Realtime Push**: SSE/WebSocket-driven UI updates (task-level live progress already shipped in this fork — see [Fork Enhancements](#-fork-enhancements))
 - **Cross-Notebook Sources**: Reuse research materials across projects
 - **Bookmark Integration**: Connect with your favorite bookmarking apps
 
 ### Recently Completed ✅
 - **Next.js Frontend**: Modern React-based frontend with improved performance
 - **Comprehensive REST API**: Full programmatic access to all functionality
-- **Multi-Model Support**: 18+ AI providers including OpenAI, Anthropic, Ollama, LM Studio
+- **Multi-Model Support**: 25 AI providers including OpenAI, Anthropic, Ollama, LM Studio
 - **Advanced Podcast Generator**: Professional multi-speaker podcasts with Episode Profiles
 - **Content Transformations**: Powerful customizable actions for content processing
 - **Enhanced Citations**: Improved layout and finer control for source citations
@@ -328,7 +335,7 @@ Explore [GitHub Discussions](https://github.com/lfnovo/open-notebook/discussions
 - **🤖 AI Installation Assistant**: We have a [CustomGPT built to help you install Open Notebook](https://chatgpt.com/g/g-68776e2765b48191bd1bae3f30212631-open-notebook-installation-assistant) - it will guide you through each step!
 - **New to Open Notebook?** Start with our [Getting Started Guide](docs/0-START-HERE/index.md)
 - **Need installation help?** Check our [Installation Guide](docs/1-INSTALLATION/index.md)
-- **Want to see it in action?** Try our [Quick Start Tutorial](docs/0-START-HERE/index.md)
+- **Something broken?** Try the [5-minute troubleshooting guide](docs/6-TROUBLESHOOTING/quick-fixes.md) or the [FAQ](docs/6-TROUBLESHOOTING/faq.md)
 
 ## 🤝 Community & Contributing
 
@@ -336,7 +343,7 @@ Explore [GitHub Discussions](https://github.com/lfnovo/open-notebook/discussions
 - 💬 **[Discord Server](https://discord.gg/37XJPXfz2w)** - Get help, share ideas, and connect with other users
 - 𝕏 **[Follow @lfnovo on X](https://x.com/lfnovo)** - Project updates and news from the maintainer
 - 💡 **[GitHub Discussions](https://github.com/lfnovo/open-notebook/discussions)** - Ask questions and shape features, product direction, design, and architecture
-- 🐛 **[GitHub Issues](https://github.com/lfnovo/open-notebook/issues)** - Report reproducible bugs and find approved work
+- 🐛 **[Report fork bugs](https://github.com/Genmer/open-notebook/issues)** - Reproducible issues with fork-specific features go to this fork's tracker; upstream bugs go to [lfnovo/open-notebook/issues](https://github.com/lfnovo/open-notebook/issues)
 - ⭐ **Star this repo** - Show your support and help others discover Open Notebook
 
 ### Contributing
@@ -358,14 +365,6 @@ See our [Contributing Guide](CONTRIBUTING.md) for detailed information on how to
 
 Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 
-
-**Community Support**:
-- 💬 [Discord Server](https://discord.gg/37XJPXfz2w) - Get help, share ideas, and connect with users
-- 𝕏 [Follow @lfnovo on X](https://x.com/lfnovo) - Project updates and news from the maintainer
-- 💡 [GitHub Discussions](https://github.com/lfnovo/open-notebook/discussions) - Ask questions and shape ideas
-- 🐛 [GitHub Issues](https://github.com/lfnovo/open-notebook/issues) - Report reproducible bugs and find approved work
-- 🌐 [Website](https://www.open-notebook.ai) - Learn more about the project
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -380,10 +379,9 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 [issues-shield]: https://img.shields.io/github/issues/lfnovo/open-notebook.svg?style=for-the-badge
 [issues-url]: https://github.com/lfnovo/open-notebook/issues
 [license-shield]: https://img.shields.io/github/license/lfnovo/open-notebook.svg?style=for-the-badge
-[license-url]: https://github.com/lfnovo/open-notebook/blob/master/LICENSE.txt
+[license-url]: LICENSE
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/lfnovo
-[product-screenshot]: images/screenshot.png
 [Next.js]: https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white
 [Next-url]: https://nextjs.org/
 [React]: https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black
@@ -456,10 +454,10 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 完善数据备份与容灾：将通用系统设置 `open_notebook:content_settings`（处理引擎、向量化切块参数、Docling OCR/公式/视觉开关、Token 审计开关等）与全局自定义提示词 `open_notebook:default_prompts` 纳入数据导出与导入链路（分别生成 data/content_settings.ndjson 与 data/default_prompts.ndjson），导入时通过 UPSERT MERGE 安全还原合并，保持向后兼容老版本导出包，且物理隔离私有凭据。涉及：commands/data_transfer_commands.py、tests/test_data_transfer_commands.py。
 
 ### 2026-09-26：内置 MCP 服务器（把本库暴露给编程代理）
-新增 `python -m open_notebook.mcp_server`（fastmcp 提为直接依赖，stdio 传输）：暴露 4 只读 + 1 写工具——list_notebooks / list_sources / search（复用 domain 层 text_search+vector_search 与作用域解析，文本失败自动向量回退）/ chat（单轮 Prompter+vector_search 组装上下文，复用 ask/query_process 模板与 tools 默认模型，不引入 langgraph 会话，用量计入 mcp_chat）/ add_note（Note 落库并入组，仅此一个写操作）。Claude Code 一行接入：`claude mcp add open-notebook -- uv run --directory /path/to/open-notebook python -m open_notebook.mcp_server`。配置片段与工具表见 docs/5-CONFIGURATION/mcp-server.md。涉及：open_notebook/mcp_server.py、pyproject.toml、uv.lock、docs/5-CONFIGURATION/mcp-server.md、docs/5-CONFIGURATION/mcp-integration.md、tests/test_mcp_server.py。
+新增 `python -m open_notebook.mcp_server`（fastmcp 提为直接依赖，stdio 传输）：暴露 4 只读 + 1 写工具——list_notebooks / list_sources / search（复用 domain 层 text_search+vector_search 与作用域解析，文本失败自动向量回退）/ chat（单轮 Prompter+vector_search 组装上下文，复用 ask/query_process 模板与 tools 默认模型，不引入 langgraph 会话，用量计入 mcp_chat）/ add_note（Note 落库并入组，仅此一个写操作）。Claude Code 一行接入：`claude mcp add open-notebook -- uv run --directory /path/to/open-notebook python -m open_notebook.mcp_server`。配置片段与工具表见 [docs/5-CONFIGURATION/mcp-server.md](docs/5-CONFIGURATION/mcp-server.md)。涉及：open_notebook/mcp_server.py、pyproject.toml、uv.lock、docs/5-CONFIGURATION/mcp-server.md、docs/5-CONFIGURATION/mcp-integration.md、tests/test_mcp_server.py。
 
 ### 2026-09-28：任务失败答疑 AI（恢复判定 + AI 重试 + 嵌入冲突误判修复）
-任务中心失败任务新增"为什么失败？"答疑入口：POST /api/explain 按 12k token 预算组装材料（任务实况、实体当前态、known_issues 知识库、用量元数据）送 qa 模型槽位（缺省回退 chat），输出脱敏四段式解释（What happened / Likely root cause / How to fix / Next actions）与行动建议，LRU 缓存 50 条/TTL 10 分钟、信号量限并发 3、90s 超时降级不报 500；前端 TaskExplainCard 渐变【AI 分析】徽章 + thinking 动效。恢复判定以实体当前态为准（命令行无时间戳可用）：源嵌入 completed 且 embedded=total、source_view last_classified_at、transfer 阶段 done、同实体后续成功任务四种口径，已恢复任务显示"当前已正常"提示并隐藏重试按钮；"AI 重试"携带 check_recovery 预检（已恢复则跳过提交并刷新判定），另保留手动重试（generate_podcast 除外，防重复生成）。配套修复 embed_source 的 RuntimeError 分支误判：SurrealDB 事务冲突（repository 层裸 RuntimeError，可重试）此前被转成 ValueError 永久失败导致源永久卡 queued，现按冲突消息特征分流为临时失败走命令级重试（红宝书 642 块源已实测恢复）。i18n 14 语言全量补齐，前后端字段契约测试双向锁定。涉及：api/routers/explain.py、api/explain_service.py、api/command_service.py、api/routers/commands.py、commands/embedding_commands.py、prompts/qa/、frontend/src/components/tasks/TaskExplainCard.tsx、frontend/src/lib/hooks/use-explain.ts、frontend/src/lib/api/（explain.ts、tasks.ts）、frontend/src/app/(dashboard)/tasks/page.tsx、frontend/src/messages/×14、tests/（test_explain_api.py、test_explain_contract.py、test_tasks_api.py、test_embed_source_progress.py 及前端 TaskExplainCard 测试）、docs/7-DEVELOPMENT/decisions/ADR-013。
+任务中心失败任务新增"为什么失败？"答疑入口：POST /api/explain 按 12k token 预算组装材料（任务实况、实体当前态、known_issues 知识库、用量元数据）送 qa 模型槽位（缺省回退 chat），输出脱敏四段式解释（What happened / Likely root cause / How to fix / Next actions）与行动建议，LRU 缓存 50 条/TTL 10 分钟、信号量限并发 3、90s 超时降级不报 500；前端 TaskExplainCard 渐变【AI 分析】徽章 + thinking 动效。恢复判定以实体当前态为准（命令行无时间戳可用）：源嵌入 completed 且 embedded=total、source_view last_classified_at、transfer 阶段 done、同实体后续成功任务四种口径，已恢复任务显示"当前已正常"提示并隐藏重试按钮；"AI 重试"携带 check_recovery 预检（已恢复则跳过提交并刷新判定），另保留手动重试（generate_podcast 除外，防重复生成）。配套修复 embed_source 的 RuntimeError 分支误判：SurrealDB 事务冲突（repository 层裸 RuntimeError，可重试）此前被转成 ValueError 永久失败导致源永久卡 queued，现按冲突消息特征分流为临时失败走命令级重试（红宝书 642 块源已实测恢复）。i18n 14 语言全量补齐，前后端字段契约测试双向锁定。涉及：api/routers/explain.py、api/explain_service.py、api/command_service.py、api/routers/commands.py、commands/embedding_commands.py、prompts/qa/、frontend/src/components/tasks/TaskExplainCard.tsx、frontend/src/lib/hooks/use-explain.ts、frontend/src/lib/api/（explain.ts、tasks.ts）、frontend/src/app/(dashboard)/tasks/page.tsx、frontend/src/messages/×14、tests/（test_explain_api.py、test_explain_contract.py、test_tasks_api.py、test_embed_source_progress.py 及前端 TaskExplainCard 测试）、[ADR-013](docs/7-DEVELOPMENT/decisions/ADR-013-task-failure-explain-ai.md)。
 
 ### 2026-09-28：小米 MiMo 全模态放开 + chat-audio 音频适配器
 小米两家供应商（xiaomi_mimo / xiaomi_mimo_token_plan）模态声明从 language-only 放开到全四种（provider_registry modalities + UI 下拉），配套新增 chat-audio 适配器打通其音频模型——MiMo 的 TTS/ASR 不在 OpenAI 标准 /audio/* 端点上（实测 404），而是走 chat/completions 协议（TTS：assistant 角色消息承载文本，响应 message.audio.data 为 base64 WAV；ASR：input_audio content part 且严禁 text part，响应 message.content 为转写）。实现 open_notebook/ai/xiaomi_audio.py 两个适配器类挂入 AIFactory 私有 provider 表（register_openai_compatible_profile 只覆盖 /audio/* 协议族；esperanto profile 的 capabilities 相应收回 language+embedding，防止 create_tts/stt 优先命中 404 路径），podcast_creator 直连 AIFactory 与连接测试器两条消费链路同时覆盖；每 provider 一个薄子类承载默认 host 与 env key 契约。实测：mimo-v2.5-tts 真实合成成功、mimo-v2.5-asr 转写测试音频 "Hello there."。涉及：open_notebook/ai/xiaomi_audio.py、open_notebook/ai/__init__.py、open_notebook/ai/provider_registry.py、tests/test_xiaomi_audio.py。
@@ -468,7 +466,7 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 任务中心失败行不再要求先点"为什么失败？"才能重试：行上直接渲染【重试】（强制重放）与【AI 重试】（携带 check_recovery 恢复预检，已恢复则后端跳过提交并 toast 提示），是否可重试由任务列表接口新下发的 retryable 字段决定（command 是否在 RETRYABLE_COMMANDS 白名单，generate_podcast 永不可重试，前后端单一事实来源），explain 分析卡内按钮保持不变。涉及：api/task_service.py、api/models.py、frontend/src/lib/api/tasks.ts、frontend/src/app/(dashboard)/tasks/page.tsx、tests/test_tasks_api.py 及前端任务页测试。
 
 ### 2026-09-29：模型配置导出/导入（含 API Key，冲突确认式导入）
-数据管理新增"仅模型配置"导出（凭据+模型+默认模型分配，包格式 v2：manifest.package_type、format_version=2，v1 包仍可导入），整体导出可勾选"包含模型配置"；凭据 API Key 经用户拍板以**明文**进包（导出解密写入，导入用本机 OPEN_NOTEBOOK_ENCRYPTION_KEY 重加密入库，任一解密失败整体快速失败，UI 明示风险），反转 ADR-011 凭据物理排除政策（见 ADR-014）。导入改为两阶段：上传即冲突扫描（API 进程内解析+本地 diff，sha256 绑定包字节防串包），同 id 且指纹不同的凭据/模型逐项确认跳过/覆盖（默认跳过，credential 覆盖仅 api_key/config/modalities），default_models MERGE 应用+悬空指针置空警告；同指纹静默跳过保幂等。顺带把 import_data 移出任务中心可重试名单（永久失败删包后重试必 FileNotFoundError）。实测闭环：仅模型导出→改坏本地凭据 key→重扫描报冲突→覆盖导入→密文恢复且解密一致。同日追加进度可视化：导出/导入写入结构化进度 detail（当前表/文件名/向量块数+序号）与 stages 阶段统计持久化（每阶段行内嵌 x/y 或结果统计，刷新不丢），前端按语言模板渲染实时活动行（替代原样显示英文日志）；摘要计数表名本地化（17 表 ×14 语言）并显示总用时；导出摘要的"文件被跳过"可展开查看明细（来源 ID+文件路径+原因 invalid_path/missing_on_disk，上限 100 条），可据此定位跨环境迁移的失效附件。涉及：commands/data_transfer_commands.py、api/routers/data_transfer.py、api/data_transfer_service.py、api/models.py、api/explain_service.py、frontend/src/components/settings/data/（ExportCard、ImportCard、ImportConflictDialog 新增、TransferStageList）、frontend/src/lib/api/dataTransfer.ts、frontend/src/lib/hooks/use-data-transfer.ts、frontend/src/lib/locales/×14、tests/（test_data_transfer_commands、test_data_transfer_api、test_data_transfer_scan 新增）、docs/7-DEVELOPMENT/decisions/ADR-014（新增，ADR-011 标注部分被取代）。
+数据管理新增"仅模型配置"导出（凭据+模型+默认模型分配，包格式 v2：manifest.package_type、format_version=2，v1 包仍可导入），整体导出可勾选"包含模型配置"；凭据 API Key 经用户拍板以**明文**进包（导出解密写入，导入用本机 OPEN_NOTEBOOK_ENCRYPTION_KEY 重加密入库，任一解密失败整体快速失败，UI 明示风险），反转 ADR-011 凭据物理排除政策（见 [ADR-014](docs/7-DEVELOPMENT/decisions/ADR-014-model-config-export-import.md)）。导入改为两阶段：上传即冲突扫描（API 进程内解析+本地 diff，sha256 绑定包字节防串包），同 id 且指纹不同的凭据/模型逐项确认跳过/覆盖（默认跳过，credential 覆盖仅 api_key/config/modalities），default_models MERGE 应用+悬空指针置空警告；同指纹静默跳过保幂等。顺带把 import_data 移出任务中心可重试名单（永久失败删包后重试必 FileNotFoundError）。实测闭环：仅模型导出→改坏本地凭据 key→重扫描报冲突→覆盖导入→密文恢复且解密一致。同日追加进度可视化：导出/导入写入结构化进度 detail（当前表/文件名/向量块数+序号）与 stages 阶段统计持久化（每阶段行内嵌 x/y 或结果统计，刷新不丢），前端按语言模板渲染实时活动行（替代原样显示英文日志）；摘要计数表名本地化（17 表 ×14 语言）并显示总用时；导出摘要的"文件被跳过"可展开查看明细（来源 ID+文件路径+原因 invalid_path/missing_on_disk，上限 100 条），可据此定位跨环境迁移的失效附件。涉及：commands/data_transfer_commands.py、api/routers/data_transfer.py、api/data_transfer_service.py、api/models.py、api/explain_service.py、frontend/src/components/settings/data/（ExportCard、ImportCard、ImportConflictDialog 新增、TransferStageList）、frontend/src/lib/api/dataTransfer.ts、frontend/src/lib/hooks/use-data-transfer.ts、frontend/src/lib/locales/×14、tests/（test_data_transfer_commands、test_data_transfer_api、test_data_transfer_scan 新增）、[ADR-014](docs/7-DEVELOPMENT/decisions/ADR-014-model-config-export-import.md)（新增，ADR-011 标注部分被取代）。
 
 ### 2026-09-29：Gemini Notebook (NotebookLM) 风格三栏工作台与文件夹层级展示
 复刻 Google NotebookLM 交互形态，系统设置新增"笔记详情页面风格"切换（Open NoteBook 默认经典 vs Gemini Notebook 现代三栏，Zustand 本地持久化且无需刷新即时生效），详情页解耦为 ClassicNotebookView 与 GeminiNotebookView 双视图共享底层数据 Hooks。左侧来源彻底重构为**文件夹树形层级展示**（文件夹展开/折叠、所属来源统计徽标、文件夹三态 Checkbox 级联批量勾选、未归档资源独立分类），并引入 Web Research 智能导源入口；中间 Chat 增加 AI 回复底部常驻【保存为笔记】与划词存笔记交互；右侧 Studio 设立成熟功能矩阵（Audio Overview 直连生成播客、Study Guide / FAQ / Briefing Doc / Flashcards 直连后端 generate_artifact 异步命令生成并自动回流入库为笔记，实时轮询与状态响应），配合卡片流笔记管理；同日追加：**生成任务进度管理**——点击生成后不再原地转圈，对话框切换为进度详情视图（状态徽标/进度条/已用时长/实时消息/任务ID），提供【打开进度管理】跳转任务中心与【后台运行，关闭】按钮，工具箱标题栏常驻进度管理入口，本地 5 分钟轮询窗口后引导至任务中心继续跟踪；文件夹徽标改为"本笔记本数/知识库总数"双数字口径、来源右键全套菜单（移动/重命名/移除/删除/打开）完整移植、左栏加宽至 380/420px 且修复 flex `min-h-0` 缺失导致的树区不可滚动、右栏 Studio 接入 CollapsibleColumn 支持收起为窄条（与经典视图笔记栏共享持久化折叠状态）。**数据修复**：排查出 9月24日两批共 16 个文件（论文 9 + 红宝书 7）经"无笔记本上下文"上传入口写入、仅落全局文件夹而从未建立笔记本关联；已重新挂回笔记本（24→40 个文件），并在 AddSourceDialog 增加"选文件夹未选笔记本时自动推断唯一笔记本"逻辑消除同类隐患（多笔记本保留拦截），配套后端回归测试锁定关联契约。涉及：frontend/src/app/(dashboard)/notebooks/[id]/page.tsx、ClassicNotebookView、GeminiNotebookView、GeminiSourcesColumn、GeminiStudioColumn、AddSourceDialog、sources.ts、api/routers/sources.py、MessageActions、AppearanceCard、notebook-view-store、14国语言包及配套组件单元测试。
