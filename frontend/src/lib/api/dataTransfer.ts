@@ -7,13 +7,21 @@ export interface TransferProgress {
   percent: number
   message?: string
   error?: string
+  /** Structured per-item progress the UI renders with localized templates. */
+  detail?: Record<string, unknown> | null
+  /** Last detail per finished stage id, so rows keep stats across refreshes. */
+  stages?: Record<string, Record<string, unknown>> | null
 }
 
 export interface ExportSummary {
   package_filename: string
   package_size_bytes: number
+  package_type?: 'full' | 'models'
   counts: Record<string, number>
   files_skipped: number
+  /** First 100 skipped entries (source_id/file/reason); files_skipped stays the total. */
+  skipped_files?: Array<{ source_id: string; file: string; reason: string }>
+  duration_seconds?: number | null
   embedding_model_id?: string | null
   embedding_dimension?: number | null
   exported_at?: string | null
@@ -31,6 +39,7 @@ export interface ImportSummary {
   warning_codes?: TransferWarning[]
   embedding_model_id?: string | null
   embedding_dimension?: number | null
+  duration_seconds?: number | null
 }
 
 export interface ExportStatusResponse {
@@ -56,9 +65,48 @@ export interface PackageDeleteResponse {
   deleted: boolean
 }
 
+export type ExportScope = 'full' | 'models'
+
+export interface ExportStartInput {
+  scope: ExportScope
+  include_models: boolean
+}
+
+export interface ImportConflictItem {
+  kind: 'credential' | 'model'
+  id: string
+  local: Record<string, unknown>
+  package: Record<string, unknown>
+  diff_fields: string[]
+  default_action: 'skip' | 'overwrite'
+}
+
+export interface ImportScanResponse {
+  scan_id: string
+  package_type: ExportScope
+  format_version: number
+  counts: Record<string, number>
+  conflicts: ImportConflictItem[]
+  decisions_required: number
+}
+
+export interface ImportDecisionInput {
+  kind: 'credential' | 'model'
+  id: string
+  action: 'skip' | 'overwrite'
+}
+
+export interface ImportExecuteInput {
+  scan_id: string
+  decisions: ImportDecisionInput[]
+}
+
 export const dataTransferApi = {
-  startExport: async (): Promise<DataTransferStartResponse> => {
-    const response = await apiClient.post<DataTransferStartResponse>('/data-transfer/export')
+  startExport: async (input: ExportStartInput): Promise<DataTransferStartResponse> => {
+    const response = await apiClient.post<DataTransferStartResponse>(
+      '/data-transfer/export',
+      input
+    )
     return response.data
   },
 
@@ -92,10 +140,10 @@ export const dataTransferApi = {
     return response.data
   },
 
-  uploadImport: async (file: File): Promise<DataTransferStartResponse> => {
+  uploadImport: async (file: File): Promise<ImportScanResponse> => {
     const formData = new FormData()
     formData.append('file', file)
-    const response = await apiClient.post<DataTransferStartResponse>(
+    const response = await apiClient.post<ImportScanResponse>(
       '/data-transfer/import',
       formData,
       {
@@ -103,6 +151,14 @@ export const dataTransferApi = {
           'Content-Type': 'multipart/form-data',
         },
       }
+    )
+    return response.data
+  },
+
+  executeImport: async (input: ImportExecuteInput): Promise<DataTransferStartResponse> => {
+    const response = await apiClient.post<DataTransferStartResponse>(
+      '/data-transfer/import/execute',
+      input
     )
     return response.data
   },

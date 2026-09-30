@@ -356,6 +356,95 @@ async def test_transient_error_keeps_running_and_records_error(command_env):
     repo_insert.assert_not_awaited()
 
 
+TXN_CONFLICT_MESSAGE = (
+    "The query was not executed due to a failed transaction. "
+    "Failed to commit transaction due to a read or write conflict. "
+    "This transaction can be retried"
+)
+
+
+@pytest.mark.asyncio
+async def test_txn_conflict_from_batch_iterator_is_transient(command_env):
+    """A SurrealDB transaction conflict surfacing as RuntimeError from the
+    batch iterator must be treated as transient, not permanent."""
+    source, refresh, repo_query, repo_insert, chunk_text, input_data = command_env
+    batches = _fake_batches([[0.1, 0.2], RuntimeError(TXN_CONFLICT_MESSAGE)])
+
+    with (
+        patch.object(Source, "get", new=AsyncMock(return_value=source)),
+        patch("commands.embedding_commands.refresh_embedding_params", new=refresh),
+        patch("commands.embedding_commands.repo_query", new=repo_query),
+        patch("commands.embedding_commands.repo_insert", new=repo_insert),
+        patch("commands.embedding_commands.chunk_text", new=chunk_text),
+        patch("commands.embedding_commands.iter_embedding_batches", new=batches),
+    ):
+        with pytest.raises(RuntimeError):
+            await embed_source_command(input_data)
+
+    statuses = _statuses(source)
+    assert statuses, "no progress writes happened"
+    assert all(status not in ("partial", "failed") for status, _ in statuses)
+    assert statuses[-1][0] == "running"
+    assert TXN_CONFLICT_MESSAGE in (_errors(source)[-1] or "")
+
+
+@pytest.mark.asyncio
+async def test_txn_insert_conflict_keeps_running_for_retry(command_env):
+    """A transaction conflict raised by repo_insert mid-run must leave the
+    source in running state so the command-level retry can take over."""
+    source, refresh, repo_query, repo_insert, chunk_text, input_data = command_env
+    batches = _fake_batches([[0.1, 0.2], [0.3, 0.4]])
+    repo_insert.side_effect = [None, RuntimeError(TXN_CONFLICT_MESSAGE)]
+
+    with (
+        patch.object(Source, "get", new=AsyncMock(return_value=source)),
+        patch("commands.embedding_commands.refresh_embedding_params", new=refresh),
+        patch("commands.embedding_commands.repo_query", new=repo_query),
+        patch("commands.embedding_commands.repo_insert", new=repo_insert),
+        patch("commands.embedding_commands.chunk_text", new=chunk_text),
+        patch("commands.embedding_commands.iter_embedding_batches", new=batches),
+    ):
+        with pytest.raises(RuntimeError):
+            await embed_source_command(input_data)
+
+    statuses = _statuses(source)
+    assert statuses, "no progress writes happened"
+    assert all(status not in ("partial", "failed") for status, _ in statuses)
+    assert statuses[-1][0] == "running"
+    assert TXN_CONFLICT_MESSAGE in (_errors(source)[-1] or "")
+    # First batch inserted, second batch hit the conflict.
+    assert repo_insert.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_txn_insert_conflict_on_first_batch_still_transient(command_env):
+    """A transaction conflict before any batch is persisted (embedded_so_far=0)
+    must still take the transient path - 'running' + re-raise - and not be
+    classified as the zero-progress permanent 'failed' terminal state."""
+    source, refresh, repo_query, repo_insert, chunk_text, input_data = command_env
+    batches = _fake_batches([[0.1, 0.2], [0.3, 0.4]])
+    repo_insert.side_effect = RuntimeError(TXN_CONFLICT_MESSAGE)
+
+    with (
+        patch.object(Source, "get", new=AsyncMock(return_value=source)),
+        patch("commands.embedding_commands.refresh_embedding_params", new=refresh),
+        patch("commands.embedding_commands.repo_query", new=repo_query),
+        patch("commands.embedding_commands.repo_insert", new=repo_insert),
+        patch("commands.embedding_commands.chunk_text", new=chunk_text),
+        patch("commands.embedding_commands.iter_embedding_batches", new=batches),
+    ):
+        with pytest.raises(RuntimeError) as exc_info:
+            await embed_source_command(input_data)
+
+    statuses = _statuses(source)
+    assert statuses, "no progress writes happened"
+    assert all(status not in ("partial", "failed") for status, _ in statuses)
+    assert statuses[-1][0] == "running"
+    assert TXN_CONFLICT_MESSAGE in (_errors(source)[-1] or "")
+    # The original error reaches the retry layer unwrapped.
+    assert str(exc_info.value) == TXN_CONFLICT_MESSAGE
+
+
 class TestSaveStripsEmbeddingProgress:
     """Generic save() must never write the denormalized progress fields - they
     are owned by set_embedding_state, and a stale in-memory copy would clobber

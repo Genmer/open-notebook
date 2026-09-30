@@ -260,6 +260,34 @@ class TestNotebookDomain:
         chat_session_two.delete.assert_awaited_once()
         assert result["deleted_chat_sessions"] == 2
 
+    def test_notebook_without_description_loads_with_default(self):
+        """Rows created outside the API may miss description; it must not break loads."""
+        notebook = Notebook(id="notebook:test", name="Test")
+        assert notebook.description == ""
+
+    @pytest.mark.asyncio
+    async def test_objectmodel_get_wraps_broken_row_as_database_error(self):
+        """A row that exists but fails validation must not surface as NotFound."""
+        from open_notebook.exceptions import DatabaseOperationError
+
+        with patch(
+            "open_notebook.domain.base.repo_query",
+            new=AsyncMock(return_value=[{"id": "notebook:test"}]),
+        ):
+            with pytest.raises(DatabaseOperationError, match="notebook:test"):
+                await Notebook.get("notebook:test")
+
+    @pytest.mark.asyncio
+    async def test_objectmodel_get_missing_row_raises_not_found(self):
+        from open_notebook.exceptions import NotFoundError
+
+        with patch(
+            "open_notebook.domain.base.repo_query",
+            new=AsyncMock(return_value=[]),
+        ):
+            with pytest.raises(NotFoundError):
+                await Notebook.get("notebook:missing")
+
 
 # ============================================================================
 # TEST SUITE 4: Source Domain

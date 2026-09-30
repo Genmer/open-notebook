@@ -1,0 +1,16 @@
+### Concurrent embedding transaction conflict (fixed in current version)
+
+**Symptoms**: A SurrealDB transaction error ("read or write conflict ...
+can be retried") appeared while running `embed_source` or
+`rebuild_embeddings` on versions up to 1.14.0; the task failed permanently
+and the source's embedding progress stalled.
+
+**Explanation**: Under concurrent workers this conflict is occasionally
+expected and retriable. Older versions misclassified it as a permanent
+failure (the RuntimeError branch in `commands/embedding_commands.py`); the
+current version detects the conflict and retries automatically, so newly
+observed occurrences should recover on their own.
+
+**Recovery**: For a task that already failed with this error on an older
+version, "Retry this task" restores the source. Avoid running a manual
+embedding and a rebuild at the same time on the same source.

@@ -74,6 +74,30 @@ class TestStartExport:
         assert "already" in response.json()["detail"]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("scope", "include_models", "expected_args"),
+        [
+            ("models", False, {"include_files": False, "include_models": False, "scope": "models"}),
+            ("full", True, {"include_files": True, "include_models": True, "scope": "full"}),
+            ("full", False, {"include_files": True, "include_models": False, "scope": "full"}),
+        ],
+    )
+    async def test_start_export_submits_scope_args(
+        self, scope, include_models, expected_args
+    ):
+        submit = AsyncMock(return_value="command:e1")
+        with patch.object(
+            svc, "repo_query", new=AsyncMock(return_value=[])
+        ), patch.object(
+            svc, "set_transfer_state", new=AsyncMock()
+        ), patch.object(
+            svc.CommandService, "submit_command_job", new=submit
+        ):
+            await svc.start_export(scope, include_models)
+
+        assert submit.call_args.args[2] == expected_args
+
+    @pytest.mark.asyncio
     async def test_start_export_writes_failed_state_on_submit_error(self, client):
         states = []
         with patch.object(
@@ -227,13 +251,25 @@ class TestExportDownload:
 
 class TestImport:
     @pytest.mark.asyncio
-    async def test_upload_import_starts_job(self, client):
+    async def test_upload_import_returns_scan(self, client):
+        from api.models import ImportScanResponse
+
         with patch.object(
             svc,
             "save_import_upload",
-            new=AsyncMock(return_value="/tmp/data/imports/x.zip"),
+            new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
         ), patch.object(
-            svc, "start_import", new=AsyncMock(return_value="command:i1")
+            svc,
+            "scan_import_package",
+            new=AsyncMock(
+                return_value=ImportScanResponse(
+                    scan_id="scan-1",
+                    package_type="full",
+                    format_version=2,
+                    counts={},
+                    conflicts=[],
+                )
+            ),
         ):
             response = client.post(
                 "/api/data-transfer/import",
@@ -241,18 +277,24 @@ class TestImport:
             )
 
         assert response.status_code == 200
-        assert response.json()["command_id"] == "command:i1"
+        body = response.json()
+        assert body["scan_id"] == "scan-1"
+        assert body["package_type"] == "full"
 
     @pytest.mark.asyncio
     async def test_upload_import_rejects_concurrent_job(self, client):
         with patch.object(
             svc,
             "save_import_upload",
-            new=AsyncMock(return_value="/tmp/data/imports/x.zip"),
+            new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
         ), patch.object(
             svc,
-            "start_import",
-            new=AsyncMock(side_effect=svc.InvalidInputError("A data import job is already queued or running")),
+            "scan_import_package",
+            new=AsyncMock(
+                side_effect=svc.InvalidInputError(
+                    "A data import job is already queued or running"
+                )
+            ),
         ):
             response = client.post(
                 "/api/data-transfer/import",

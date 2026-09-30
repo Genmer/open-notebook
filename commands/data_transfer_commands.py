@@ -1,7 +1,11 @@
 """Data export/import commands: package notebooks, sources, notes, groups and
 their files/vectors into one zip and restore them into another environment.
+Format v2 adds model configuration (credential/model/default_models); when the
+export scope includes it, credential api_keys are written decrypted (ADR-014
+risk accepted by product) and re-encrypted on import with the local
+OPEN_NOTEBOOK_ENCRYPTION_KEY.
 
-Key invariants (ADR-011):
+Key invariants (ADR-011, extended by ADR-014):
 - Progress lives in data_transfer_state:{export,import}; surreal-commands has
   no native progress API.
 - Writes are inline-id CREATE/RELATE SQL (or UPSERT MERGE for singleton configs),
@@ -9,7 +13,9 @@ Key invariants (ADR-011):
   submits embed jobs).
 - Import skips whole records by id for data/edges: existing files, embeddings
   and edges are never touched; singleton config records (content_settings,
-  default_prompts) are safely merged with whitelisted fields.
+  default_prompts, default_models) are safely merged with whitelisted fields.
+- Model-configuration conflicts (same id, different content) are decided
+  up-front by the caller via model_decisions; undecided conflicts skip.
 """
 
 import asyncio
@@ -30,6 +36,7 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Literal,
     Optional,
     Set,
     Tuple,
@@ -48,6 +55,11 @@ from open_notebook.database.repository import (
     repo_query,
 )
 from open_notebook.domain.source_grouping import DEFAULT_VIEW_IDS, ensure_default_views
+from open_notebook.utils.encryption import (
+    decrypt_value,
+    encrypt_value,
+    get_fernet,
+)
 
 # Package-validation errors (bad manifest, unsupported version, illegal member
 # name) are permanent ValueErrors; transient DB errors retry safely because
@@ -61,9 +73,15 @@ TRANSFER_RETRY_CONFIG = {
     "retry_log_level": "warning",
 }
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# v1 packages (data/files only) stay importable; model members in a v1 package
+# are a packaging bug and reject the whole import.
+SUPPORTED_FORMAT_VERSIONS = (1, 2)
 EXPORT_BATCH = 500
 WRITE_BATCH = 100
+# Per-file skip details kept for the summary; beyond this only the counter
+# grows so the state record can't balloon on a badly broken uploads dir.
+MAX_SKIPPED_FILE_DETAILS = 100
 COPY_CHUNK = 1024 * 1024
 
 EXPORTS_FOLDER = os.path.join(DATA_FOLDER, "exports")
@@ -86,10 +104,17 @@ EMBEDDING_TABLE = "source_embedding"
 # Single-record tables living at fixed ids (open_notebook:<table>), not at
 # <table>:<key>; export reads them with LIMIT 1 and import MERGEs unconditionally.
 CONFIG_TABLES = ("content_settings", "default_prompts")
-ALL_TABLES = DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES
+# Model configuration (format v2, ADR-014); default_models is a singleton like
+# the CONFIG_TABLES entries, credential/model are regular keyed records.
+MODEL_CONFIG_TABLES = ("credential", "model", "default_models")
+SINGLETON_TABLES = CONFIG_TABLES + ("default_models",)
+ALL_TABLES = (
+    DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES + MODEL_CONFIG_TABLES
+)
 
-# The query layer physically excludes credential/model_usage/command/
-# chat_session/refers_to: none of them appears in any query string below.
+# The query layer excludes model_usage/command/chat_session/refers_to from
+# every export; credential/model are only read for model-config exports
+# (include_models/models scope, ADR-014).
 SOURCE_EXPORT_COLUMNS = (
     "id, asset, title, topics, full_text, last_viewed_at, embedding_status, "
     "embedding_error, total_chunks, embedded_chunks, created, updated"
@@ -104,10 +129,18 @@ EXPORT_STAGES = {
     "packaging": (90, 9),
 }
 
+# Model-configuration exports have no files/embeddings to move.
+EXPORT_STAGES_MODELS = {
+    "collecting": (0, 20),
+    "exporting_tables": (20, 70),
+    "packaging": (90, 9),
+}
+
 IMPORT_STAGES = {
     "validating": (0, 8),
     "precheck": (8, 7),
-    "metadata": (15, 25),
+    "metadata": (15, 23),
+    "model_config": (38, 2),
     "files": (40, 20),
     "embeddings": (60, 25),
     "relations": (85, 10),
@@ -177,6 +210,48 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
     "default_prompts": (
         "transformation_instructions",
     ),
+    "credential": (
+        "name",
+        "provider",
+        "modalities",
+        "api_key",
+        "base_url",
+        "endpoint",
+        "api_version",
+        "endpoint_llm",
+        "endpoint_embedding",
+        "endpoint_stt",
+        "endpoint_tts",
+        "project",
+        "location",
+        "credentials_path",
+        "config",
+        "created",
+        "updated",
+    ),
+    "model": (
+        "name",
+        "provider",
+        "type",
+        "credential",
+        "price_input_per_m",
+        "price_output_per_m",
+        "price_source",
+        "price_matched_key",
+        "price_fetched_at",
+        "created",
+        "updated",
+    ),
+    "default_models": (
+        "default_chat_model",
+        "default_transformation_model",
+        "large_context_model",
+        "default_text_to_speech_model",
+        "default_speech_to_text_model",
+        "default_embedding_model",
+        "default_tools_model",
+        "default_qa_model",
+    ),
 }
 ASSET_FIELDS = ("file_path", "url")
 
@@ -185,8 +260,13 @@ RECORD_FIELDS: Dict[str, Set[str]] = {
     "transformation": {"model_id"},
     "source_group": {"source_view", "parent"},
     EMBEDDING_TABLE: {"source"},
+    "model": {"credential"},
 }
 DATETIME_FIELDS = {"created", "updated", "last_viewed_at", "last_classified_at"}
+
+# Business fingerprinting ignores bookkeeping fields; credential api_key is
+# compared on the decrypted plaintext (see fingerprint_payload).
+FINGERPRINT_EXCLUDED_FIELDS = ("created", "updated")
 
 SOURCE_ID_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
@@ -200,6 +280,8 @@ _MEMBER_PATTERNS = (
 
 class ExportDataInput(CommandInput):
     include_files: bool = True
+    include_models: bool = False
+    scope: Literal["full", "models"] = "full"
 
 
 class ExportDataOutput(CommandOutput):
@@ -208,12 +290,21 @@ class ExportDataOutput(CommandOutput):
     package_size_bytes: int = 0
     counts: Dict[str, int] = {}
     files_skipped: int = 0
+    skipped_files: List[Dict[str, str]] = []
+    duration_seconds: float = 0.0
     processing_time: float = 0.0
     error_message: Optional[str] = None
 
 
+class ModelImportDecision(BaseModel):
+    kind: Literal["credential", "model"]
+    id: str
+    action: Literal["skip", "overwrite"]
+
+
 class ImportDataInput(CommandInput):
     package_path: str
+    model_decisions: List[ModelImportDecision] = []
 
 
 class TransferWarning(BaseModel):
@@ -230,6 +321,7 @@ class ImportDataOutput(CommandOutput):
     skipped: Dict[str, int] = {}
     warnings: List[str] = []
     warning_codes: List[TransferWarning] = []
+    duration_seconds: float = 0.0
     processing_time: float = 0.0
     error_message: Optional[str] = None
 
@@ -260,6 +352,7 @@ class PackageManifest(BaseModel):
     format_version: int
     app_version: str = "unknown"
     exported_at: Optional[str] = None
+    package_type: Literal["full", "models"] = "full"
     embedding: ManifestEmbedding = Field(default_factory=ManifestEmbedding)
     counts: Dict[str, int] = Field(default_factory=dict)
     files: Dict[str, ManifestFileEntry] = Field(default_factory=dict)
@@ -289,21 +382,28 @@ async def set_transfer_state(
     error: Optional[str] = None,
     command_id: Optional[str] = None,
     result: Optional[Dict[str, Any]] = None,
+    detail: Optional[Dict[str, Any]] = None,
+    stages: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> None:
     """Best-effort progress write; a failure here must not kill the job."""
     # SET assigns each field wholesale; repo_upsert's MERGE would deep-merge
     # nested objects, leaving stale keys inside a fresh result (e.g. an empty
     # imported dict from a no-op rerun keeping the previous run's counts).
     assignments = ["kind = $kind", "progress = $progress"]
+    progress = {
+        "stage": stage,
+        "percent": percent,
+        "message": message,
+        "error": error,
+    }
+    if detail is not None:
+        progress["detail"] = detail
+    if stages is not None:
+        progress["stages"] = stages
     params: Dict[str, Any] = {
         "target": ensure_record_id(f"data_transfer_state:{kind}"),
         "kind": kind,
-        "progress": {
-            "stage": stage,
-            "percent": percent,
-            "message": message,
-            "error": error,
-        },
+        "progress": progress,
     }
     if command_id:
         assignments.append("command_id = $command_id")
@@ -356,6 +456,51 @@ async def _current_embedding_model_id() -> Optional[str]:
 def _file_sha256(path: str) -> str:
     with open(path, "rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+def mask_secret(value: Optional[str]) -> Optional[str]:
+    """UI-safe api_key preview; absent or short values carry no preview."""
+    if not value:
+        return None
+    if len(value) < 8:
+        return "***"
+    return "***" + value[-4:]
+
+
+def fingerprint_payload(
+    table: str,
+    row: Dict[str, Any],
+    api_key_plain: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Business fields of a row (id/created/updated excluded), normalized for
+    comparison. credential api_key must arrive decrypted: pass api_key_plain
+    for rows where it is known (export/import paths decrypt it anyway);
+    without it, a set api_key is decrypted here (ValueError propagates)."""
+    fields: Dict[str, Any] = {}
+    for key in TABLE_FIELDS[table]:
+        if key in FINGERPRINT_EXCLUDED_FIELDS:
+            continue
+        value = row.get(key)
+        if key == "api_key" and table == "credential":
+            if api_key_plain is not None:
+                value = api_key_plain
+            elif value:
+                value = decrypt_value(str(value))
+        elif key in RECORD_FIELDS.get(table, set()) and value is not None:
+            value = str(value)
+        fields[key] = value
+    return fields
+
+
+def record_fingerprint(
+    table: str,
+    row: Dict[str, Any],
+    api_key_plain: Optional[str] = None,
+) -> str:
+    payload = fingerprint_payload(table, row, api_key_plain)
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 async def _count_table(table: str) -> int:
@@ -420,8 +565,13 @@ def _write_ndjson_line(member: Any, payload: Dict[str, Any]) -> None:
 async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
     start = time.time()
     cmd_id = get_command_id(input_data)
+    models_scope = input_data.scope == "models"
+    include_models = models_scope or input_data.include_models
+    include_files = input_data.include_files and not models_scope
+    stages = EXPORT_STAGES_MODELS if models_scope else EXPORT_STAGES
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"open_notebook_export_{ts}.zip"
+    prefix = "open_notebook_models" if models_scope else "open_notebook_export"
+    filename = f"{prefix}_{ts}.zip"
     tmp_path = os.path.join(EXPORTS_FOLDER, f".export_{ts}.zip.tmp")
     final_path = os.path.join(EXPORTS_FOLDER, filename)
 
@@ -429,34 +579,89 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
     files_manifest: Dict[str, Dict[str, Any]] = {}
     file_refs: List[Tuple[str, str]] = []  # (source id key, absolute file path)
     files_skipped = 0
+    skipped_files: List[Dict[str, str]] = []
     lengths: List[int] = []
+    decrypted_keys: Dict[str, str] = {}  # credential id -> plaintext api_key
 
-    await set_transfer_state("export", "starting", 0, command_id=cmd_id)
+    # Per-stage last detail kept in the state record so the UI can render
+    # result stats on finished stage rows, surviving page refreshes.
+    stage_stats: Dict[str, Dict[str, Any]] = {}
+
+    async def report(
+        stage: str,
+        percent: int,
+        message: str = "",
+        detail: Optional[Dict[str, Any]] = None,
+        **kw: Any,
+    ) -> None:
+        if detail:
+            stage_stats[stage] = dict(detail)
+        await set_transfer_state(
+            "export", stage, percent, message, stages=stage_stats, **kw
+        )
+
+    counted_tables: Tuple[str, ...] = MODEL_CONFIG_TABLES if models_scope else (
+        ALL_TABLES
+        if include_models
+        else DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES
+    )
+    if models_scope:
+        export_tables: Tuple[str, ...] = ("credential", "model")
+    elif include_models:
+        export_tables = DATA_TABLES + EDGE_TABLES + ("credential", "model")
+    else:
+        export_tables = DATA_TABLES + EDGE_TABLES
+    singleton_tables: Tuple[str, ...] = (
+        ("default_models",)
+        if models_scope
+        else CONFIG_TABLES + (("default_models",) if include_models else ())
+    )
+
+    await report("starting", 0, command_id=cmd_id)
     try:
         await asyncio.to_thread(os.makedirs, EXPORTS_FOLDER, exist_ok=True)
 
-        await set_transfer_state(
-            "export", "collecting", EXPORT_STAGES["collecting"][0]
-        )
-        for i, table in enumerate(ALL_TABLES):
-            if table in CONFIG_TABLES:
+        await report("collecting", stages["collecting"][0])
+        for i, table in enumerate(counted_tables):
+            if table in SINGLETON_TABLES:
                 counts[table] = 1 if await _fetch_record_row(table) else 0
             else:
                 counts[table] = await _count_table(table)
-            await set_transfer_state(
-                "export",
+            await report(
                 "collecting",
-                _stage_percent(EXPORT_STAGES, "collecting", i + 1, len(ALL_TABLES)),
-                f"Collecting metadata (tables {i + 1}/{len(ALL_TABLES)})",
+                _stage_percent(stages, "collecting", i + 1, len(counted_tables)),
+                f"Collecting metadata (tables {i + 1}/{len(counted_tables)})",
+                detail={
+                    "table": table,
+                    "current": i + 1,
+                    "total": len(counted_tables),
+                },
             )
 
-        export_tables = DATA_TABLES + EDGE_TABLES
+        if include_models:
+            # api_keys enter the package as plaintext, so every credential must
+            # decrypt here or the whole export fails before anything is written.
+            await report(
+                "collecting",
+                stages["collecting"][0] + stages["collecting"][1],
+                "Checking credential decryption",
+            )
+            for row in await repo_query("SELECT * FROM credential") or []:
+                raw = row.get("api_key")
+                if not raw:
+                    continue
+                try:
+                    decrypted_keys[str(row.get("id"))] = decrypt_value(str(raw))
+                except ValueError as e:
+                    raise ValueError(
+                        f"Credential {row.get('id')} ({row.get('name')}) could not "
+                        f"be decrypted with the current OPEN_NOTEBOOK_ENCRYPTION_KEY"
+                    ) from e
+
         with zipfile.ZipFile(
             tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6
         ) as zf:
-            await set_transfer_state(
-                "export", "exporting_tables", EXPORT_STAGES["exporting_tables"][0]
-            )
+            await report("exporting_tables", stages["exporting_tables"][0])
             for i, table in enumerate(export_tables):
                 if table == "source":
                     columns, where, params = SOURCE_EXPORT_COLUMNS, "", None
@@ -490,20 +695,29 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                                 if file_path:
                                     rid = ensure_record_id(str(row["id"]))
                                     file_refs.append((str(rid.id), file_path))
+                            elif table == "credential":
+                                plain = decrypted_keys.get(str(row.get("id")))
+                                if plain is not None:
+                                    payload["api_key"] = plain
                         _write_ndjson_line(member, payload)
                 # counts must describe the package contents, not the source
                 # table (source_view rows are filtered down on export).
                 counts[table] = written
-                await set_transfer_state(
-                    "export",
+                await report(
                     "exporting_tables",
                     _stage_percent(
-                        EXPORT_STAGES, "exporting_tables", i + 1, len(export_tables)
+                        stages, "exporting_tables", i + 1, len(export_tables)
                     ),
                     f"Exporting {table} ({i + 1}/{len(export_tables)})",
+                    detail={
+                        "table": table,
+                        "current": i + 1,
+                        "total": len(export_tables),
+                        "rows": written,
+                    },
                 )
 
-            for table in CONFIG_TABLES:
+            for table in singleton_tables:
                 row = await _fetch_record_row(table)
                 written = 0
                 if row is not None:
@@ -512,114 +726,152 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                         written = 1
                 counts[table] = written
 
-            if input_data.include_files:
-                await set_transfer_state(
-                    "export", "copying_files", EXPORT_STAGES["copying_files"][0]
-                )
-                total_files = len(file_refs)
-                for idx, (sid_key, file_path) in enumerate(file_refs):
-                    basename = os.path.basename(file_path)
-                    if not SOURCE_ID_KEY_RE.match(sid_key) or not basename:
-                        files_skipped += 1
-                        continue
-                    if not await asyncio.to_thread(os.path.isfile, file_path):
-                        files_skipped += 1
-                        continue
-                    digest = await asyncio.to_thread(_file_sha256, file_path)
-                    size = await asyncio.to_thread(os.path.getsize, file_path)
-                    arcname = f"files/{sid_key}/{basename}"
-                    await asyncio.to_thread(zf.write, file_path, arcname)
-                    files_manifest[arcname] = {"sha256": digest, "size": size}
-                    await set_transfer_state(
-                        "export",
-                        "copying_files",
-                        _stage_percent(
-                            EXPORT_STAGES, "copying_files", idx + 1, total_files
-                        ),
-                        f"Copying files ({idx + 1}/{total_files})",
-                    )
-            else:
-                await set_transfer_state(
-                    "export",
-                    "copying_files",
-                    EXPORT_STAGES["copying_files"][0],
-                    "Skipping files (data-only export)",
-                )
-
-            await set_transfer_state(
-                "export",
-                "exporting_embeddings",
-                EXPORT_STAGES["exporting_embeddings"][0],
-            )
-            total_chunks = counts.get(EMBEDDING_TABLE, 0)
-            written = 0
-            with zf.open(f"data/{EMBEDDING_TABLE}.ndjson", "w") as member:
-                async for row in _iter_paged(
-                    EMBEDDING_EXPORT_COLUMNS, EMBEDDING_TABLE
-                ):
-                    vec = row.get("embedding")
-                    if isinstance(vec, list):
-                        lengths.append(len(vec))
-                    _write_ndjson_line(
-                        member,
-                        {
-                            "id": str(row.get("id")),
-                            "source": str(row.get("source")),
-                            "order": row.get("order"),
-                            "content": row.get("content"),
-                            "embedding": vec,
-                        },
-                    )
-                    written += 1
-                    if written % EXPORT_BATCH == 0:
-                        await set_transfer_state(
-                            "export",
-                            "exporting_embeddings",
+            if not models_scope:
+                if include_files:
+                    await report("copying_files", stages["copying_files"][0])
+                    total_files = len(file_refs)
+                    for idx, (sid_key, file_path) in enumerate(file_refs):
+                        basename = os.path.basename(file_path)
+                        if not SOURCE_ID_KEY_RE.match(sid_key) or not basename:
+                            files_skipped += 1
+                            if len(skipped_files) < MAX_SKIPPED_FILE_DETAILS:
+                                skipped_files.append(
+                                    {
+                                        "source_id": f"source:{sid_key}",
+                                        "file": file_path,
+                                        "reason": "invalid_path",
+                                    }
+                                )
+                            continue
+                        if not await asyncio.to_thread(os.path.isfile, file_path):
+                            files_skipped += 1
+                            if len(skipped_files) < MAX_SKIPPED_FILE_DETAILS:
+                                skipped_files.append(
+                                    {
+                                        "source_id": f"source:{sid_key}",
+                                        "file": file_path,
+                                        "reason": "missing_on_disk",
+                                    }
+                                )
+                            continue
+                        digest = await asyncio.to_thread(_file_sha256, file_path)
+                        size = await asyncio.to_thread(os.path.getsize, file_path)
+                        arcname = f"files/{sid_key}/{basename}"
+                        await asyncio.to_thread(zf.write, file_path, arcname)
+                        files_manifest[arcname] = {"sha256": digest, "size": size}
+                        await report(
+                            "copying_files",
                             _stage_percent(
-                                EXPORT_STAGES,
-                                "exporting_embeddings",
-                                written,
-                                total_chunks,
+                                stages, "copying_files", idx + 1, total_files
                             ),
-                            f"Exporting embeddings ({written}/{total_chunks})",
+                            f"Copying files ({idx + 1}/{total_files})",
+                            detail={
+                                "current": idx + 1,
+                                "total": total_files,
+                                "item": basename,
+                            },
                         )
+                else:
+                    await report(
+                        "copying_files",
+                        stages["copying_files"][0],
+                        "Skipping files (data-only export)",
+                    )
 
-            await set_transfer_state(
-                "export", "packaging", EXPORT_STAGES["packaging"][0], "Packaging"
-            )
+                await report(
+                    "exporting_embeddings",
+                    stages["exporting_embeddings"][0],
+                )
+                total_chunks = counts.get(EMBEDDING_TABLE, 0)
+                written = 0
+                with zf.open(f"data/{EMBEDDING_TABLE}.ndjson", "w") as member:
+                    async for row in _iter_paged(
+                        EMBEDDING_EXPORT_COLUMNS, EMBEDDING_TABLE
+                    ):
+                        vec = row.get("embedding")
+                        if isinstance(vec, list):
+                            lengths.append(len(vec))
+                        _write_ndjson_line(
+                            member,
+                            {
+                                "id": str(row.get("id")),
+                                "source": str(row.get("source")),
+                                "order": row.get("order"),
+                                "content": row.get("content"),
+                                "embedding": vec,
+                            },
+                        )
+                        written += 1
+                        if written % EXPORT_BATCH == 0:
+                            await report(
+                                "exporting_embeddings",
+                                _stage_percent(
+                                    stages,
+                                    "exporting_embeddings",
+                                    written,
+                                    total_chunks,
+                                ),
+                                f"Exporting embeddings ({written}/{total_chunks})",
+                                detail={
+                                    "current": written,
+                                    "total": total_chunks,
+                                },
+                            )
+
+            await report("packaging", stages["packaging"][0], "Packaging")
             dominant = int(np.argmax(np.bincount(lengths))) if lengths else 0
             manifest: Dict[str, Any] = {
                 "format_version": FORMAT_VERSION,
                 "app_version": _app_version(),
                 "exported_at": datetime.now(timezone.utc).isoformat(),
-                "embedding": {
+                "package_type": "models" if models_scope else "full",
+                "counts": dict(counts),
+            }
+            if models_scope:
+                # Keep the manifest honest: no embedding/files members exist.
+                manifest["counts"] = {
+                    table: counts.get(table, 0) for table in MODEL_CONFIG_TABLES
+                }
+            else:
+                manifest["embedding"] = {
                     "model_id": await _current_embedding_model_id(),
                     "dominant_dimension": dominant or None,
-                },
-                "counts": {**counts, "files": len(files_manifest)},
-                "files": files_manifest,
-            }
+                }
+                manifest["counts"] = {**counts, "files": len(files_manifest)}
+                manifest["files"] = files_manifest
             zf.writestr("manifest.json", json.dumps(manifest, indent=2))
 
         await asyncio.to_thread(os.replace, tmp_path, final_path)
         package_size = await asyncio.to_thread(os.path.getsize, final_path)
 
-        result = {
+        result: Dict[str, Any] = {
             "package_path": final_path,
             "package_filename": filename,
             "package_size_bytes": package_size,
+            "package_type": "models" if models_scope else "full",
             "counts": manifest["counts"],
             "files_skipped": files_skipped,
-            "embedding_model_id": manifest["embedding"]["model_id"],
-            "embedding_dimension": manifest["embedding"]["dominant_dimension"],
+            "skipped_files": skipped_files,
             "exported_at": manifest["exported_at"],
+            "duration_seconds": round(time.time() - start, 1),
         }
-        await set_transfer_state(
-            "export",
+        if not models_scope:
+            result["embedding_model_id"] = manifest["embedding"]["model_id"]
+            result["embedding_dimension"] = manifest["embedding"]["dominant_dimension"]
+        if models_scope:
+            done_message = (
+                f"Export complete: {counts.get('credential', 0)} credentials, "
+                f"{counts.get('model', 0)} models"
+            )
+        else:
+            done_message = (
+                f"Export complete: {counts.get('source', 0)} sources, "
+                f"{counts.get(EMBEDDING_TABLE, 0)} chunks, {len(files_manifest)} files"
+            )
+        await report(
             "done",
             100,
-            f"Export complete: {counts.get('source', 0)} sources, "
-            f"{counts.get(EMBEDDING_TABLE, 0)} chunks, {len(files_manifest)} files",
+            done_message,
             result=result,
         )
         logger.info(f"[export] wrote {final_path} ({package_size} bytes)")
@@ -629,10 +881,12 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             package_size_bytes=package_size,
             counts=manifest["counts"],
             files_skipped=files_skipped,
+            skipped_files=skipped_files,
+            duration_seconds=round(time.time() - start, 1),
             processing_time=time.time() - start,
         )
     except Exception as e:
-        await set_transfer_state("export", "failed", 100, error=str(e)[:500])
+        await report("failed", 100, error=str(e)[:500])
         with suppress(OSError):
             await asyncio.to_thread(os.unlink, tmp_path)
         raise
@@ -666,8 +920,8 @@ def _parse_member_row(table: str, line: str) -> Dict[str, Any]:
         raise ValueError(
             f"Invalid record id {rid_value!r} in data/{table}.ndjson"
         ) from e
-    if table in CONFIG_TABLES:
-        # Config records live at open_notebook:<table>, so the generic
+    if table in SINGLETON_TABLES:
+        # Singleton records live at open_notebook:<table>, so the generic
         # table-name check below does not apply.
         if rid_value != f"open_notebook:{table}":
             raise ValueError(
@@ -780,6 +1034,7 @@ def _unique_upload_path(filename: str) -> str:
 
 def _validate_package(zf: zipfile.ZipFile) -> PackageManifest:
     names = zf.namelist()
+    data_tables: Set[str] = set()
     for name in names:
         if ".." in name.split("/") or "\\" in name or name.startswith("/"):
             raise ValueError(f"Unsafe package member name: {name!r}")
@@ -789,21 +1044,45 @@ def _validate_package(zf: zipfile.ZipFile) -> PackageManifest:
             table = name[len("data/") : -len(".ndjson")]
             if table not in ALL_TABLES:
                 raise ValueError(f"Unknown data table in package: {table!r}")
+            data_tables.add(table)
     if "manifest.json" not in names:
         raise ValueError("Package is missing manifest.json")
     try:
         manifest = PackageManifest.model_validate(json.loads(zf.read("manifest.json")))
     except (json.JSONDecodeError, ValidationError) as e:
         raise ValueError(f"Invalid manifest.json: {e}") from e
-    if manifest.format_version != FORMAT_VERSION:
+    if manifest.format_version not in SUPPORTED_FORMAT_VERSIONS:
         raise ValueError(
             f"Unsupported package format_version {manifest.format_version} "
-            f"(expected {FORMAT_VERSION})"
+            f"(supported: {', '.join(str(v) for v in SUPPORTED_FORMAT_VERSIONS)})"
+        )
+    if manifest.format_version < 2 and data_tables & set(MODEL_CONFIG_TABLES):
+        raise ValueError(
+            "Model configuration members require package format_version 2"
+        )
+    if manifest.package_type == "models" and data_tables - set(MODEL_CONFIG_TABLES):
+        unexpected = sorted(data_tables - set(MODEL_CONFIG_TABLES))
+        raise ValueError(
+            f"Model-configuration package carries non-model tables: {unexpected}"
         )
     total = sum(info.file_size for info in zf.infolist())
     if total > _max_import_uncompressed_bytes():
         raise ValueError(f"Package uncompressed size {total} exceeds the import limit")
     return manifest
+
+
+def _safe_fingerprint(
+    table: str,
+    row: Dict[str, Any],
+    api_key_plain: Optional[str] = None,
+) -> Optional[str]:
+    """Fingerprint that degrades to None on undecryptable local secrets (e.g.
+    a rotated OPEN_NOTEBOOK_ENCRYPTION_KEY): the row then counts as a conflict
+    so the decision flow applies instead of failing the whole import."""
+    try:
+        return record_fingerprint(table, row, api_key_plain)
+    except ValueError:
+        return None
 
 
 def _endpoint_known(
@@ -870,6 +1149,140 @@ async def _embedding_consistency_warnings(
                 )
 
 
+# Fields rewritten when a conflicting model is overwritten (business fields
+# only; created bookkeeping stays local, updated is stamped to now).
+MODEL_OVERWRITE_FIELDS = (
+    "name",
+    "provider",
+    "type",
+    "credential",
+    "price_input_per_m",
+    "price_output_per_m",
+    "price_source",
+    "price_matched_key",
+    "price_fetched_at",
+)
+
+DEFAULT_MODELS_RECORD_ID = "open_notebook:default_models"
+
+
+async def _import_model_config(
+    zf: zipfile.ZipFile,
+    names: Set[str],
+    decisions: Dict[Tuple[str, str], str],
+    imported: Dict[str, int],
+    skipped: Dict[str, int],
+    warnings: TransferWarningCollector,
+) -> None:
+    """Apply v2 model-configuration members (credential/model/default_models);
+    a no-op for v1 packages and full packages without model config. Undecided
+    conflicts (same id, different fingerprint) skip."""
+    if not any(f"data/{table}.ndjson" in names for table in MODEL_CONFIG_TABLES):
+        return
+
+    local_credentials = {
+        str(r.get("id")): r for r in await repo_query("SELECT * FROM credential") or []
+    }
+    with _open_member(zf, "credential") as member:
+        for raw in member:
+            line = raw.decode("utf-8").strip()
+            if not line:
+                continue
+            row = _parse_member_row("credential", line)
+            rid = ensure_record_id(row["id"])
+            rid_str = str(rid)
+            plain_key = str(row.get("api_key")) if row.get("api_key") else None
+            local = local_credentials.get(rid_str)
+            if local is None:
+                prepared = _prepare_import_row("credential", row, warnings)
+                if plain_key:
+                    prepared["api_key"] = encrypt_value(plain_key)
+                await _write_create_batch("credential", [(rid, prepared)], imported)
+                continue
+            pkg_fp = record_fingerprint("credential", row, api_key_plain=plain_key)
+            local_fp = _safe_fingerprint("credential", local)
+            if local_fp == pkg_fp or decisions.get(("credential", rid_str)) != "overwrite":
+                skipped["credential"] = skipped.get("credential", 0) + 1
+                continue
+            # Overwrite keeps the local name/provider; only the secret and
+            # provider tuning fields take the package state.
+            values = {
+                "api_key": encrypt_value(plain_key) if plain_key else None,
+                "config": row.get("config"),
+                "modalities": row.get("modalities"),
+                "updated": datetime.now(timezone.utc),
+            }
+            await repo_query(
+                "UPDATE $id SET api_key = $api_key, config = $config, "
+                "modalities = $modalities, updated = $updated;",
+                {"id": rid, **values},
+            )
+            imported["credential"] = imported.get("credential", 0) + 1
+
+    local_models = {
+        str(r.get("id")): r for r in await repo_query("SELECT * FROM model") or []
+    }
+    # Ids a default_models pointer may legally target: pre-existing models plus
+    # everything this run created or overwrote.
+    known_model_ids = set(local_models)
+    with _open_member(zf, "model") as member:
+        for raw in member:
+            line = raw.decode("utf-8").strip()
+            if not line:
+                continue
+            row = _parse_member_row("model", line)
+            rid = ensure_record_id(row["id"])
+            rid_str = str(rid)
+            local = local_models.get(rid_str)
+            if local is None:
+                prepared = _prepare_import_row("model", row, warnings)
+                await _write_create_batch("model", [(rid, prepared)], imported)
+            else:
+                pkg_fp = record_fingerprint("model", row)
+                local_fp = _safe_fingerprint("model", local)
+                if local_fp == pkg_fp or decisions.get(("model", rid_str)) != "overwrite":
+                    skipped["model"] = skipped.get("model", 0) + 1
+                else:
+                    prepared = _prepare_import_row("model", row, warnings)
+                    values = {field: prepared.get(field) for field in MODEL_OVERWRITE_FIELDS}
+                    values["updated"] = datetime.now(timezone.utc)
+                    assignments = ", ".join(f"{f} = ${f}" for f in values)
+                    await repo_query(
+                        f"UPDATE $id SET {assignments};",
+                        {"id": rid, **values},
+                    )
+                    imported["model"] = imported.get("model", 0) + 1
+            known_model_ids.add(rid_str)
+
+    with _open_member(zf, "default_models") as member:
+        for raw in member:
+            line = raw.decode("utf-8").strip()
+            if not line:
+                continue
+            row = _parse_member_row("default_models", line)
+            merge: Dict[str, Any] = {}
+            for field in TABLE_FIELDS["default_models"]:
+                if field not in row:
+                    continue
+                target = row.get(field)
+                if target and str(target) in known_model_ids:
+                    merge[field] = ensure_record_id(str(target))
+                    continue
+                if target:
+                    warnings.add(
+                        "defaultModelTargetMissing",
+                        f"Default model {target} from the package was not imported; "
+                        f"the {field} assignment was cleared",
+                        model=str(target),
+                    )
+                merge[field] = None
+            await repo_query(
+                f"UPSERT {DEFAULT_MODELS_RECORD_ID} MERGE $data;",
+                {"data": merge},
+            )
+            imported["default_models"] = imported.get("default_models", 0) + 1
+
+
 @command("import_data", app="open_notebook", retry=TRANSFER_RETRY_CONFIG)
 async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
     start = time.time()
@@ -877,22 +1290,38 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
     imported: Dict[str, int] = {}
     skipped: Dict[str, int] = {}
     warnings = TransferWarningCollector()
+    # Same as export: keeps finished stage rows' stats renderable after refresh.
+    stage_stats: Dict[str, Dict[str, Any]] = {}
+
+    async def report(
+        stage: str,
+        percent: int,
+        message: str = "",
+        detail: Optional[Dict[str, Any]] = None,
+        **kw: Any,
+    ) -> None:
+        if detail:
+            stage_stats[stage] = dict(detail)
+        await set_transfer_state(
+            "import", stage, percent, message, stages=stage_stats, **kw
+        )
     permanent = False
     completed = False
-    await set_transfer_state("import", "starting", 0, command_id=cmd_id)
+    await report("starting", 0, command_id=cmd_id)
     try:
         # Default views are excluded from export but groups may reference them.
         await ensure_default_views()
 
         with zipfile.ZipFile(input_data.package_path) as zf:
             names = set(zf.namelist())
-            await set_transfer_state("import", "validating", 0, "Validating package")
+            await report("validating", 0, "Validating package")
             manifest = _validate_package(zf)
 
             # Full parse pass: any failure below happens before a single write.
             package_ids: Dict[str, Set[Any]] = {}
             transformation_models: Set[str] = set()
             package_transformation_titles: Dict[str, str] = {}
+            package_has_api_keys = False
             for table in ALL_TABLES:
                 ids: Set[Any] = set()
                 with _open_member(zf, table) as member:
@@ -912,13 +1341,42 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                                 package_transformation_titles.setdefault(
                                     title, str(row.get("prompt") or "")
                                 )
+                            if table == "credential" and row.get("api_key"):
+                                package_has_api_keys = True
                 package_ids[table] = ids
-            await set_transfer_state(
-                "import", "validating", IMPORT_STAGES["validating"][0] +
-                IMPORT_STAGES["validating"][1], "Validating package"
+
+            # Model decisions must reference package members exactly once; a
+            # package carrying API keys is unimportable without the local
+            # encryption key (fast-fail before any write, ADR-014).
+            decisions: Dict[Tuple[str, str], str] = {}
+            for decision in input_data.model_decisions:
+                decision_key = (decision.kind, decision.id)
+                if decision.id not in package_ids.get(decision.kind, set()):
+                    raise ValueError(
+                        f"Model decision references an id outside the package: "
+                        f"{decision.kind} {decision.id}"
+                    )
+                if decision_key in decisions:
+                    raise ValueError(
+                        f"Duplicate model decision for {decision.kind} {decision.id}"
+                    )
+                decisions[decision_key] = decision.action
+            if package_has_api_keys:
+                try:
+                    get_fernet()
+                except ValueError as e:
+                    raise ValueError(
+                        "The package contains credential API keys; set "
+                        "OPEN_NOTEBOOK_ENCRYPTION_KEY on this instance before "
+                        "importing it"
+                    ) from e
+            await report(
+                "validating",
+                IMPORT_STAGES["validating"][0] + IMPORT_STAGES["validating"][1],
+                "Validating package",
             )
 
-            await set_transfer_state("import", "precheck", IMPORT_STAGES["precheck"][0])
+            await report("precheck", IMPORT_STAGES["precheck"][0])
             existing_ids: Dict[str, Set[str]] = {}
             for table in DATA_TABLES + (EMBEDDING_TABLE,):
                 rows = await repo_query(f"SELECT VALUE id FROM {table}")
@@ -971,8 +1429,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                 skipped[edge] = len(pairs) - to_import
                 total_import += to_import
                 total_skip += skipped[edge]
-            await set_transfer_state(
-                "import",
+            await report(
                 "precheck",
                 IMPORT_STAGES["precheck"][0] + IMPORT_STAGES["precheck"][1],
                 f"Precheck: {total_import} to import, {total_skip} to skip",
@@ -981,7 +1438,9 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             await _embedding_consistency_warnings(manifest, warnings)
             if transformation_models:
                 rows = await repo_query("SELECT VALUE id FROM model")
-                known = {str(r) for r in rows or []}
+                # Model members of this same package land in model_config after
+                # the metadata stage, so they count as known targets here.
+                known = {str(r) for r in rows or []} | package_ids.get("model", set())
                 missing = transformation_models - known
                 if missing:
                     warnings.add(
@@ -997,7 +1456,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                 key.split("/")[1] for key in manifest.files if key.startswith("files/")
             }
 
-            await set_transfer_state("import", "metadata", IMPORT_STAGES["metadata"][0])
+            await report("metadata", IMPORT_STAGES["metadata"][0])
             for i, table in enumerate(DATA_TABLES):
                 if f"data/{table}.ndjson" not in names:
                     continue
@@ -1049,13 +1508,17 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                             batch = []
                     if batch:
                         await _write_create_batch(table, batch, imported)
-                await set_transfer_state(
-                    "import",
+                await report(
                     "metadata",
                     _stage_percent(
                         IMPORT_STAGES, "metadata", i + 1, len(DATA_TABLES)
                     ),
                     f"Writing {table} ({i + 1}/{len(DATA_TABLES)})",
+                    detail={
+                        "table": table,
+                        "current": i + 1,
+                        "total": len(DATA_TABLES),
+                    },
                 )
 
             # Config records merge unconditionally into the fixed target id:
@@ -1078,9 +1541,19 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         )
                         imported[table] = imported.get(table, 0) + 1
 
-            await set_transfer_state("import", "files", IMPORT_STAGES["files"][0])
+            await _import_model_config(
+                zf, names, decisions, imported, skipped, warnings
+            )
+            await report(
+                "model_config",
+                IMPORT_STAGES["model_config"][0] + IMPORT_STAGES["model_config"][1],
+                "Model configuration applied",
+            )
+
+            await report("files", IMPORT_STAGES["files"][0])
             for idx, (source_id, key, url) in enumerate(pending_files):
                 prefix = f"files/{key}/"
+                last_name = ""
                 for member_name in list(manifest.files):
                     if not member_name.startswith(prefix):
                         continue
@@ -1095,6 +1568,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         )
                         continue
                     name = member_name[len(prefix) :]
+                    last_name = name
                     dst = await asyncio.to_thread(_unique_upload_path, name)
                     digest = await asyncio.to_thread(
                         _extract_member, zf, member_name, dst
@@ -1117,18 +1591,20 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                             "asset": {"file_path": dst, "url": url},
                         },
                     )
-                await set_transfer_state(
-                    "import",
+                await report(
                     "files",
                     _stage_percent(
                         IMPORT_STAGES, "files", idx + 1, len(pending_files)
                     ),
                     f"Saving files ({idx + 1}/{len(pending_files)})",
+                    detail={
+                        "current": idx + 1,
+                        "total": len(pending_files),
+                        "item": last_name,
+                    },
                 )
 
-            await set_transfer_state(
-                "import", "embeddings", IMPORT_STAGES["embeddings"][0]
-            )
+            await report("embeddings", IMPORT_STAGES["embeddings"][0])
             if f"data/{EMBEDDING_TABLE}.ndjson" in names:
                 batch = []
                 with _open_member(zf, EMBEDDING_TABLE) as member:
@@ -1155,9 +1631,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                     if batch:
                         await _write_create_batch(EMBEDDING_TABLE, batch, imported)
 
-            await set_transfer_state(
-                "import", "relations", IMPORT_STAGES["relations"][0]
-            )
+            await report("relations", IMPORT_STAGES["relations"][0])
             for i, edge in enumerate(EDGE_TABLES):
                 if f"data/{edge}.ndjson" not in names:
                     continue
@@ -1215,11 +1689,15 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                     if statements:
                         await repo_query("\n".join(statements))
                         imported[edge] = imported.get(edge, 0) + len(statements)
-                await set_transfer_state(
-                    "import",
+                await report(
                     "relations",
                     _stage_percent(IMPORT_STAGES, "relations", i + 1, len(EDGE_TABLES)),
                     f"Linking {edge} ({i + 1}/{len(EDGE_TABLES)})",
+                    detail={
+                        "table": edge,
+                        "current": i + 1,
+                        "total": len(EDGE_TABLES),
+                    },
                 )
 
         completed = True
@@ -1230,12 +1708,12 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             "warning_codes": [w.model_dump() for w in warnings.codes],
             "embedding_model_id": manifest.embedding.model_id,
             "embedding_dimension": manifest.embedding.dominant_dimension,
+            "duration_seconds": round(time.time() - start, 1),
         }
         # Report what was actually written, not the precheck estimate: edges
         # with dangling endpoints are skipped at write time (precheck counts
         # them as import candidates).
-        await set_transfer_state(
-            "import",
+        await report(
             "done",
             100,
             f"Import complete: {sum(imported.values())} imported, "
@@ -1249,14 +1727,15 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
             skipped=skipped,
             warnings=warnings.messages,
             warning_codes=warnings.codes,
+            duration_seconds=round(time.time() - start, 1),
             processing_time=time.time() - start,
         )
     except ValueError as e:
         permanent = True
-        await set_transfer_state("import", "failed", 100, error=str(e)[:500])
+        await report("failed", 100, error=str(e)[:500])
         raise
     except Exception as e:
-        await set_transfer_state("import", "failed", 100, error=str(e)[:500])
+        await report("failed", 100, error=str(e)[:500])
         raise
     finally:
         # Keep the zip for the retry layer on transient failures only.

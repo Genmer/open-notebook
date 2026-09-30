@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-const { createMock, moveMembersMock, toastWarningMock, invalidateGroupingMock } = vi.hoisted(() => ({
+const { createMock, moveMembersMock, toastWarningMock, invalidateGroupingMock, notebooksMock } = vi.hoisted(() => ({
   createMock: vi.fn(),
   moveMembersMock: vi.fn(),
   toastWarningMock: vi.fn(),
   invalidateGroupingMock: vi.fn(),
+  notebooksMock: vi.fn(),
 }))
 
 vi.mock('sonner', () => ({
@@ -18,7 +19,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/hooks/use-notebooks', () => ({
   useNotebooks: () => ({
-    data: [{ id: 'notebook:n1', name: 'N1', created: null, updated: null }],
+    data: notebooksMock(),
     isLoading: false,
   }),
 }))
@@ -149,6 +150,7 @@ async function submit() {
 describe('AddSourceDialog folder assignment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    notebooksMock.mockReturnValue([{ id: 'notebook:n1', name: 'N1', created: null, updated: null }])
     createMock.mockImplementation(async () => ({ id: `source:new-${createMock.mock.calls.length + 1}` }))
   })
 
@@ -162,9 +164,35 @@ describe('AddSourceDialog folder assignment', () => {
     expect(invalidateGroupingMock).not.toHaveBeenCalled()
   })
 
-  it('does not file, and blocks submit, when a folder is picked without any notebook', async () => {
-    // Filing into a folder without a notebook would create an orphan source
-    // that no notebook's folder view can list, so step 2 must stay invalid.
+  it('auto-selects the only notebook when a folder is picked without one', async () => {
+    // "Picked a folder — how can there be no notebook?" The single existing
+    // notebook is the only possible answer, so infer it instead of nagging;
+    // filing into the folder then links the source correctly.
+    createMock.mockResolvedValueOnce({ id: 'source:new-1' })
+    setup()
+    fireEvent.click(screen.getByText('stub-single'))
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+    fireEvent.click(screen.getByLabelText('G1'))
+
+    await waitFor(() => expect(screen.getByLabelText('N1')).toBeChecked())
+    const done = screen.getByRole('button', { name: 'common.done' }) as HTMLButtonElement
+    expect(done.disabled).toBe(false)
+
+    await submit()
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1))
+    expect(createMock.mock.calls[0][0]).toMatchObject({ notebooks: ['notebook:n1'] })
+    await waitFor(() =>
+      expect(moveMembersMock).toHaveBeenCalledWith('source_group:g1', ['source:new-1'])
+    )
+  })
+
+  it('still blocks submit when a folder is picked without a notebook and several exist', async () => {
+    // With multiple notebooks the choice is genuinely ambiguous; filing
+    // without one would create an orphan no notebook's folder view can list.
+    notebooksMock.mockReturnValue([
+      { id: 'notebook:n1', name: 'N1', created: null, updated: null },
+      { id: 'notebook:n2', name: 'N2', created: null, updated: null },
+    ])
     setup()
     fireEvent.click(screen.getByText('stub-single'))
     fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
@@ -243,6 +271,7 @@ describe('AddSourceDialog folder assignment', () => {
 describe('AddSourceDialog default folder context', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    notebooksMock.mockReturnValue([{ id: 'notebook:n1', name: 'N1', created: null, updated: null }])
     // clearAllMocks keeps the failure-suite's mockRejectedValue: restore success
     moveMembersMock.mockResolvedValue({ moved: 1 })
     createMock.mockImplementation(async () => ({ id: `source:new-${createMock.mock.calls.length + 1}` }))

@@ -8,6 +8,7 @@ import {
   NotebookDeleteResponse,
 } from '@/lib/types/api'
 import type { ContextMode, ContextTreeResponse } from '@/lib/types/notebook-context'
+import { artifactsApi, type GenerateArtifactRequest, type ArtifactJob } from './artifacts'
 
 /** One saved per-source chat-context preference for a folder scope. */
 export interface ContextPrefEntry {
@@ -74,6 +75,13 @@ export const notebooksApi = {
   removeSource: async (notebookId: string, sourceId: string) => {
     const response = await apiClient.delete(`/notebooks/${notebookId}/sources/${sourceId}`)
     return response.data
+  },
+
+  generateArtifact: async (
+    notebookId: string,
+    data: GenerateArtifactRequest
+  ): Promise<ArtifactJob> => {
+    return artifactsApi.generate(notebookId, data)
   },
 }
 

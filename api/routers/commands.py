@@ -6,9 +6,12 @@ from pydantic import BaseModel, Field
 from surreal_commands import registry
 
 from api.command_service import CommandService
-from api.models import TaskListResponse
-from api.task_service import list_tasks
-from open_notebook.exceptions import OpenNotebookError
+from api.models import (
+    JobLiveProgressResponse,
+    TaskListResponse,
+)
+from api.task_service import get_live_progress, list_tasks
+from open_notebook.exceptions import NotFoundError, OpenNotebookError
 
 router = APIRouter()
 
@@ -22,7 +25,7 @@ class CommandExecutionRequest(BaseModel):
 
 
 class CommandJobResponse(BaseModel):
-    job_id: str
+    job_id: Optional[str] = None
     status: str
     message: str
 
@@ -98,6 +101,59 @@ async def get_command_job_status(job_id: str):
         )
 
 
+@router.get(
+    "/commands/jobs/{job_id}/live-progress",
+    response_model=JobLiveProgressResponse,
+)
+async def get_command_job_live_progress(job_id: str):
+    """Get real-time live progress telemetry for a command job.
+
+    Returns the real-time stage, stopwatch elapsed time, token stats, and current streaming text.
+    """
+    try:
+        progress_data = await get_live_progress(job_id)
+        return JobLiveProgressResponse(**progress_data)
+
+    except HTTPException:
+        raise
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching live progress for {job_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch job live progress"
+        )
+
+
+@router.post("/commands/jobs/{job_id}/retry", response_model=CommandJobResponse)
+async def retry_command_job(
+    job_id: str,
+    check_recovery: bool = Query(
+        False, description="Skip the replay when the affected entity already recovered"
+    ),
+):
+    """Re-submit a command job with its original arguments as a new job."""
+    try:
+        result = await CommandService.retry_command_job(
+            job_id, check_recovery=check_recovery
+        )
+        return CommandJobResponse(**result)
+
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error retrying command job: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retry command job"
+        )
+
+
 @router.get("/commands/jobs", response_model=TaskListResponse)
 async def list_command_jobs(
     name: Optional[str] = Query(None, description="Filter by command name"),
@@ -117,6 +173,8 @@ async def list_command_jobs(
         raise
     except OpenNotebookError:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error listing command jobs: {str(e)}")
         raise HTTPException(
@@ -135,6 +193,8 @@ async def cancel_command_job(job_id: str):
         raise
     except OpenNotebookError:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error cancelling command job: {str(e)}")
         raise HTTPException(

@@ -120,14 +120,19 @@ class ObjectModel(BaseModel):
                 target_class = cast(Type[T], found_class)
 
             result = await repo_query("SELECT * FROM $id", {"id": ensure_record_id(id)})
-            if result:
-                return target_class(**result[0])
-            else:
+            if not result:
                 raise NotFoundError(f"{table_name} with id {id} not found")
+            return target_class(**result[0])
+        except NotFoundError:
+            raise
         except Exception as e:
+            # Record exists but failed to load (e.g. schema drift): masking this
+            # as NotFoundError makes clients show "not found" for a broken row.
             logger.error(f"Error fetching object with id {id}: {str(e)}")
             logger.exception(e)
-            raise NotFoundError(f"Object with id {id} not found - {str(e)}")
+            raise DatabaseOperationError(
+                f"Failed to load {table_name} with id {id}: {str(e)}"
+            )
 
     @classmethod
     def _get_class_by_table_name(cls, table_name: str) -> Optional[Type["ObjectModel"]]:

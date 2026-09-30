@@ -178,7 +178,10 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
         ProviderSpec(
             name="xiaomi_mimo",
             display_name="Xiaomi MiMo",
-            modalities=_LANGUAGE_ONLY,
+            # The API's model list includes -asr/-tts models, so all four
+            # modalities are declared; audio-endpoint compatibility is verified
+            # at invocation time, not here.
+            modalities=_ALL_MODALITIES,
             required_env=("MIMO_API_KEY",),
             test_model="mimo-v2.6-flash",
             docs_url="https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go",
@@ -187,7 +190,7 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
         ProviderSpec(
             name="xiaomi_mimo_token_plan",
             display_name="Xiaomi MiMo Token Plan",
-            modalities=_LANGUAGE_ONLY,
+            modalities=_ALL_MODALITIES,
             required_env=("MIMO_TOKEN_PLAN_API_KEY",),
             test_model="mimo-v2.6-flash",
             docs_url="https://mimo.mi.com/docs/zh-CN/price/token-plan",

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string).
@@ -20,23 +20,27 @@ vi.mock('@/lib/hooks/use-translation', async (importOriginal) => {
 
 const mockUseImportStatus = vi.fn()
 const mockUploadImport = vi.fn()
+const mockExecuteImport = vi.fn()
 // ExportCard is pulled in for formatBytes; its hooks must exist on the mock.
 vi.mock('@/lib/hooks/use-data-transfer', () => ({
   useImportStatus: (...args: unknown[]) => mockUseImportStatus(...args),
   useUploadImportPackage: () => mockUploadImport(),
+  useExecuteImport: () => mockExecuteImport(),
   useExportStatus: vi.fn(),
   useStartExport: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteExportPackage: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }))
 
 import { ImportCard } from './ImportCard'
-import type { ImportStatusResponse } from '@/lib/api/dataTransfer'
+import type { ImportScanResponse, ImportStatusResponse } from '@/lib/api/dataTransfer'
 
 const uploadSpy = vi.fn()
+const executeSpy = vi.fn()
 
 function mockStatus(data?: ImportStatusResponse) {
   mockUseImportStatus.mockReturnValue({ data })
   mockUploadImport.mockReturnValue({ mutate: uploadSpy, isPending: false })
+  mockExecuteImport.mockReturnValue({ mutate: executeSpy, isPending: false })
 }
 
 function selectFile(name: string, size: number) {
@@ -47,10 +51,48 @@ function selectFile(name: string, size: number) {
   return file
 }
 
+function confirmUpload() {
+  fireEvent.click(screen.getByRole('button', { name: 'dataManagement.import.upload' }))
+  expect(screen.getByText('dataManagement.import.confirmTitle')).toBeInTheDocument()
+  const buttons = screen.getAllByRole('button', { name: 'dataManagement.import.upload' })
+  fireEvent.click(buttons[buttons.length - 1])
+  return uploadSpy.mock.calls[0][1] as {
+    onSuccess: (scan: ImportScanResponse) => void
+  }
+}
+
+const cleanScan: ImportScanResponse = {
+  scan_id: 'scan-1',
+  package_type: 'full',
+  format_version: 2,
+  counts: { notebook: 1 },
+  conflicts: [],
+  decisions_required: 0,
+}
+
+const conflictScan: ImportScanResponse = {
+  scan_id: 'scan-2',
+  package_type: 'models',
+  format_version: 2,
+  counts: { credential: 1, model: 0, default_models: 0 },
+  conflicts: [
+    {
+      kind: 'credential',
+      id: 'credential:c1',
+      local: { name: 'Local', provider: 'openai', api_key: null, model_count: 0 },
+      package: { name: 'Pkg', provider: 'vertex', api_key: '***3210', model_count: 1 },
+      diff_fields: ['name'],
+      default_action: 'skip',
+    },
+  ],
+  decisions_required: 1,
+}
+
 describe('ImportCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     uploadSpy.mockClear()
+    executeSpy.mockClear()
   })
 
   it('renders the idle state with a disabled upload button until a file is chosen', () => {
@@ -77,7 +119,7 @@ describe('ImportCard', () => {
     const buttons = screen.getAllByRole('button', { name: 'dataManagement.import.upload' })
     fireEvent.click(buttons[buttons.length - 1])
     expect(uploadSpy).toHaveBeenCalledTimes(1)
-    expect(uploadSpy).toHaveBeenCalledWith(file)
+    expect(uploadSpy.mock.calls[0][0]).toBe(file)
   })
 
   it('keeps the upload disabled for packages over the 1 GB limit', () => {
@@ -98,19 +140,28 @@ describe('ImportCard', () => {
   it('renders progress with the current stage highlighted and the x/y message', () => {
     mockStatus({
       status: 'running',
-      progress: { stage: 'metadata', percent: 30, message: 'Writing source (4/10)' },
+      progress: {
+        stage: 'metadata',
+        percent: 30,
+        message: 'Writing source (4/10)',
+        detail: { table: 'source', current: 4, total: 10 },
+      },
     })
     render(<ImportCard />)
 
-    expect(screen.getByText('Writing source (4/10)')).toBeInTheDocument()
+    // Structured detail wins: the activity line renders the localized template
+    expect(screen.getByText('dataManagement.activity.writingTable')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.stages.validating')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.stages.precheck')).toBeInTheDocument()
-    expect(screen.getByText('dataManagement.import.stages.metadata')).toBeInTheDocument()
+    expect(screen.getAllByText('dataManagement.import.stages.metadata').length).toBeGreaterThan(0)
+    expect(screen.getByText('dataManagement.import.stages.model_config')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.stages.files')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.stages.embeddings')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.import.stages.relations')).toBeInTheDocument()
 
-    const currentRow = screen.getByText('dataManagement.import.stages.metadata').closest('li')
+    const currentRow = screen
+      .getAllByText('dataManagement.import.stages.metadata')[0]
+      .closest('li')
     expect(currentRow?.className).toContain('bg-muted')
 
     const indicator = document.querySelector('[data-slot="progress-indicator"]')
@@ -175,6 +226,111 @@ describe('ImportCard', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('localizes the defaultModelTargetMissing warning code', () => {
+    mockStatus({
+      status: 'completed',
+      progress: { stage: 'done', percent: 100, message: 'Import complete' },
+      summary: {
+        imported: { default_models: 1 },
+        skipped: {},
+        warnings: ['Default model model:m1 was cleared'],
+        warning_codes: [
+          { code: 'defaultModelTargetMissing', params: { model: 'model:m1' } },
+        ],
+      },
+    })
+    render(<ImportCard />)
+
+    expect(
+      screen.getByText(
+        'localized:dataManagement.warnings.defaultModelTargetMissing|{"model":"model:m1"}'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('auto-executes the import when the scan reports no conflicts', () => {
+    mockStatus({ status: 'none' })
+    render(<ImportCard />)
+
+    selectFile('clean.zip', 2048)
+    const options = confirmUpload()
+    expect(executeSpy).not.toHaveBeenCalled()
+
+    act(() => {
+      options.onSuccess(cleanScan)
+    })
+
+    expect(executeSpy).toHaveBeenCalledTimes(1)
+    expect(executeSpy).toHaveBeenCalledWith({
+      scan_id: 'scan-1',
+      decisions: [],
+    })
+    expect(
+      screen.queryByText('dataManagement.import.conflict.title')
+    ).not.toBeInTheDocument()
+  })
+
+  it('opens the conflict dialog instead of executing when conflicts exist', () => {
+    mockStatus({ status: 'none' })
+    render(<ImportCard />)
+
+    selectFile('conflict.zip', 2048)
+    const options = confirmUpload()
+
+    act(() => {
+      options.onSuccess(conflictScan)
+    })
+
+    expect(
+      screen.getByText('dataManagement.import.conflict.title')
+    ).toBeInTheDocument()
+    expect(executeSpy).not.toHaveBeenCalled()
+  })
+
+  it('sends the full decision list when confirming the conflict dialog', () => {
+    mockStatus({ status: 'none' })
+    render(<ImportCard />)
+
+    selectFile('conflict.zip', 2048)
+    const options = confirmUpload()
+    act(() => {
+      options.onSuccess(conflictScan)
+    })
+
+    // Switch the row to overwrite, then start the import.
+    const row = screen.getByText('credential:c1').closest('div.rounded-md')
+    const overwriteRadio = row!.querySelectorAll('button[role="radio"]')[1]
+    fireEvent.click(overwriteRadio)
+    fireEvent.click(
+      screen.getByText('dataManagement.import.conflict.startImport')
+    )
+
+    expect(executeSpy).toHaveBeenCalledWith({
+      scan_id: 'scan-2',
+      decisions: [
+        { kind: 'credential', id: 'credential:c1', action: 'overwrite' },
+      ],
+    })
+  })
+
+  it('cancel from the conflict dialog returns to the upload panel', () => {
+    mockStatus({ status: 'none' })
+    render(<ImportCard />)
+
+    selectFile('conflict.zip', 2048)
+    const options = confirmUpload()
+    act(() => {
+      options.onSuccess(conflictScan)
+    })
+
+    fireEvent.click(screen.getByText('common.cancel'))
+    expect(
+      screen.queryByText('dataManagement.import.conflict.title')
+    ).not.toBeInTheDocument()
+    expect(screen.getByLabelText('dataManagement.import.chooseFile')).toBeInTheDocument()
+    expect(executeSpy).not.toHaveBeenCalled()
+  })
+
   it('renders the failed state with the backend error passed through', () => {
     mockStatus({
       status: 'failed',
@@ -215,7 +371,7 @@ describe('ImportCard', () => {
       fireEvent.click(screen.getByRole('button', { name: 'dataManagement.import.upload' }))
       const buttons = screen.getAllByRole('button', { name: 'dataManagement.import.upload' })
       fireEvent.click(buttons[buttons.length - 1])
-      expect(uploadSpy).toHaveBeenCalledWith(file)
+      expect(uploadSpy.mock.calls[0][0]).toBe(file)
     }
   )
 })

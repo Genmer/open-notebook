@@ -14,19 +14,32 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import {
+  useExecuteImport,
   useImportStatus,
   useUploadImportPackage,
 } from '@/lib/hooks/use-data-transfer'
-import type { ImportSummary } from '@/lib/api/dataTransfer'
+import type {
+  ImportDecisionInput,
+  ImportScanResponse,
+  ImportSummary,
+} from '@/lib/api/dataTransfer'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import { formatBytes } from './ExportCard'
-import { TransferStageList, type TransferStage } from './TransferStageList'
+import { ImportConflictDialog } from './ImportConflictDialog'
+import {
+  formatDuration,
+  tableLabel,
+  TransferActivity,
+  TransferStageList,
+  type TransferStage,
+} from './TransferStageList'
 
 export const IMPORT_STAGES: readonly TransferStage[] = [
   { id: 'validating', labelKey: 'dataManagement.import.stages.validating' },
   { id: 'precheck', labelKey: 'dataManagement.import.stages.precheck' },
   { id: 'metadata', labelKey: 'dataManagement.import.stages.metadata' },
+  { id: 'model_config', labelKey: 'dataManagement.import.stages.model_config' },
   { id: 'files', labelKey: 'dataManagement.import.stages.files' },
   { id: 'embeddings', labelKey: 'dataManagement.import.stages.embeddings' },
   { id: 'relations', labelKey: 'dataManagement.import.stages.relations' },
@@ -48,6 +61,7 @@ const WARNING_KEYS: Record<string, string> = {
   fileChecksumMismatch: 'dataManagement.warnings.fileChecksumMismatch',
   edgeEndpointNotImported: 'dataManagement.warnings.edgeEndpointNotImported',
   edgeEndpointUnknown: 'dataManagement.warnings.edgeEndpointUnknown',
+  defaultModelTargetMissing: 'dataManagement.warnings.defaultModelTargetMissing',
 }
 
 // Legacy imports stored plain English messages without codes; recognize them
@@ -151,10 +165,12 @@ export function ImportCard() {
   const { t } = useTranslation()
   const { data } = useImportStatus()
   const uploadImport = useUploadImportPackage()
+  const executeImport = useExecuteImport()
 
   const [file, setFile] = useState<File | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [conflictScan, setConflictScan] = useState<ImportScanResponse | null>(null)
   // Without this the terminal states (completed/failed) have no way back to
   // the upload UI: import state persists server-side with no reset endpoint.
   const [showUploadPanel, setShowUploadPanel] = useState(false)
@@ -163,8 +179,12 @@ export function ImportCard() {
   const progress = data?.progress
   const summary = data?.summary
   const isActive = status === 'queued' || status === 'running'
+  const busy = uploadImport.isPending || executeImport.isPending
+  const stageLabels = Object.fromEntries(
+    IMPORT_STAGES.map((stage) => [stage.id, t(stage.labelKey)])
+  )
   const tooLarge = !!file && file.size > MAX_UPLOAD_BYTES
-  const canUpload = !!file && !tooLarge && !uploadImport.isPending
+  const canUpload = !!file && !tooLarge && !busy
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFile(event.target.files?.[0] ?? null)
@@ -177,6 +197,37 @@ export function ImportCard() {
     if (dropped) setFile(dropped)
   }
 
+  const startExecute = (scanId: string, decisions: ImportDecisionInput[]) => {
+    executeImport.mutate({ scan_id: scanId, decisions })
+  }
+
+  const handleUpload = () => {
+    if (!file) return
+    uploadImport.mutate(file, {
+      onSuccess: (scan) => {
+        setFile(null)
+        setShowUploadPanel(false)
+        if (scan.decisions_required === 0) {
+          startExecute(scan.scan_id, [])
+        } else {
+          setConflictScan(scan)
+        }
+      },
+    })
+  }
+
+  const handleConfirmDecisions = (decisions: ImportDecisionInput[]) => {
+    if (!conflictScan) return
+    const scanId = conflictScan.scan_id
+    setConflictScan(null)
+    startExecute(scanId, decisions)
+  }
+
+  const handleCancelDecisions = () => {
+    setConflictScan(null)
+    setShowUploadPanel(true)
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -186,12 +237,17 @@ export function ImportCard() {
       <CardContent className="space-y-4">
         {isActive && (
           <div className="space-y-3">
-            <TransferStageList stages={IMPORT_STAGES} current={progress?.stage} />
+            <TransferStageList
+              stages={IMPORT_STAGES}
+              current={progress?.stage}
+              stageStats={progress?.stages}
+            />
             <Progress value={progress?.percent ?? 0} className="h-1.5" />
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {progress?.message || t('dataManagement.import.stages.validating')}
-            </p>
+            <TransferActivity
+              progress={progress ?? {}}
+              stageLabels={stageLabels}
+              fallbackLabel={t('dataManagement.import.stages.validating')}
+            />
           </div>
         )}
 
@@ -205,7 +261,10 @@ export function ImportCard() {
                 <ul className="mt-1 space-y-0.5 text-sm">
                   {Object.entries(summary.imported).map(([table, count]) => (
                     <li key={table}>
-                      {t('dataManagement.import.rowFormat', { table, count })}
+                      {t('dataManagement.import.rowFormat', {
+                        table: tableLabel(t, table),
+                        count,
+                      })}
                     </li>
                   ))}
                 </ul>
@@ -217,10 +276,18 @@ export function ImportCard() {
                 <ul className="mt-1 space-y-0.5 text-sm">
                   {Object.entries(summary.skipped).map(([table, count]) => (
                     <li key={table}>
-                      {t('dataManagement.import.rowFormat', { table, count })}
+                      {t('dataManagement.import.rowFormat', {
+                        table: tableLabel(t, table),
+                        count,
+                      })}
                     </li>
                   ))}
                 </ul>
+                {typeof summary.duration_seconds === 'number' && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {formatDuration(summary.duration_seconds, t)}
+                  </p>
+                )}
               </div>
             </div>
             {summary.warnings.length > 0 && (
@@ -287,7 +354,7 @@ export function ImportCard() {
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={() => setConfirmOpen(true)} disabled={!canUpload}>
-                {uploadImport.isPending ? (
+                {busy ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Upload className="mr-2 h-4 w-4" />
@@ -318,10 +385,17 @@ export function ImportCard() {
         confirmText={t('dataManagement.import.upload')}
         onConfirm={() => {
           setConfirmOpen(false)
-          setShowUploadPanel(false)
-          if (file) uploadImport.mutate(file)
+          handleUpload()
         }}
-        isLoading={uploadImport.isPending}
+        isLoading={busy}
+      />
+
+      <ImportConflictDialog
+        open={conflictScan !== null}
+        scan={conflictScan}
+        isLoading={executeImport.isPending}
+        onCancel={handleCancelDecisions}
+        onConfirm={handleConfirmDecisions}
       />
     </Card>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Download, Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,8 +12,20 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { dataTransferApi } from '@/lib/api/dataTransfer'
+import { dataTransferApi, type ExportScope } from '@/lib/api/dataTransfer'
 import {
   useDeleteExportPackage,
   useExportStatus,
@@ -21,7 +33,13 @@ import {
 } from '@/lib/hooks/use-data-transfer'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { TransferStageList, type TransferStage } from './TransferStageList'
+import {
+  formatDuration,
+  tableLabel,
+  TransferActivity,
+  TransferStageList,
+  type TransferStage,
+} from './TransferStageList'
 
 export const EXPORT_STAGES: readonly TransferStage[] = [
   { id: 'collecting', labelKey: 'dataManagement.export.stages.collecting' },
@@ -45,6 +63,8 @@ export function ExportCard() {
   const { toast } = useToast()
 
   const [startOpen, setStartOpen] = useState(false)
+  const [scope, setScope] = useState<ExportScope>('full')
+  const [includeModels, setIncludeModels] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
@@ -52,6 +72,25 @@ export function ExportCard() {
   const progress = data?.progress
   const summary = data?.summary
   const isActive = status === 'queued' || status === 'running'
+  const modelsIncluded = scope === 'models' || includeModels
+  const [showSkippedFiles, setShowSkippedFiles] = useState(false)
+  const stageLabels = Object.fromEntries(
+    EXPORT_STAGES.map((stage) => [stage.id, t(stage.labelKey)])
+  )
+
+  const openStartDialog = () => {
+    setScope('full')
+    setIncludeModels(false)
+    setStartOpen(true)
+  }
+
+  const handleStart = () => {
+    setStartOpen(false)
+    startExport.mutate({
+      scope,
+      include_models: scope === 'full' ? includeModels : false,
+    })
+  }
 
   const handleDownload = async () => {
     setDownloading(true)
@@ -77,18 +116,29 @@ export function ExportCard() {
       <CardContent className="space-y-4">
         {isActive && (
           <div className="space-y-3">
-            <TransferStageList stages={EXPORT_STAGES} current={progress?.stage} />
+            <TransferStageList
+              stages={EXPORT_STAGES}
+              current={progress?.stage}
+              stageStats={progress?.stages}
+            />
             <Progress value={progress?.percent ?? 0} className="h-1.5" />
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {progress?.message || t('dataManagement.export.stages.collecting')}
-            </p>
+            <TransferActivity
+              progress={progress ?? {}}
+              stageLabels={stageLabels}
+              fallbackLabel={t('dataManagement.export.stages.collecting')}
+            />
           </div>
         )}
 
         {status === 'completed' && summary && (
           <div className="space-y-3">
             <div className="text-sm">
+              <span className="text-muted-foreground">
+                {summary.package_type === 'models'
+                  ? t('dataManagement.export.summary.packageTypeModels')
+                  : t('dataManagement.export.summary.packageTypeFull')}
+              </span>
+              {' · '}
               <span className="text-muted-foreground">
                 {t('dataManagement.export.summary.packageSize')}
               </span>
@@ -101,15 +151,60 @@ export function ExportCard() {
               <ul className="mt-1 space-y-0.5 text-sm">
                 {Object.entries(summary.counts).map(([table, count]) => (
                   <li key={table}>
-                    {t('dataManagement.export.summary.counts', { table, count })}
+                    {t('dataManagement.export.summary.counts', {
+                      table: tableLabel(t, table),
+                      count,
+                    })}
                   </li>
                 ))}
               </ul>
+              {typeof summary.duration_seconds === 'number' && (
+                <p className="text-xs text-muted-foreground">
+                  {formatDuration(summary.duration_seconds, t)}
+                </p>
+              )}
             </div>
             {summary.files_skipped > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t('dataManagement.export.summary.filesSkipped', { count: summary.files_skipped })}
-              </p>
+              <div className="rounded-md bg-gold-tint p-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 text-sm font-medium text-gold"
+                  onClick={() => setShowSkippedFiles((open) => !open)}
+                  aria-expanded={showSkippedFiles}
+                >
+                  {showSkippedFiles ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  {t('dataManagement.export.summary.filesSkipped', { count: summary.files_skipped })}
+                </button>
+                {showSkippedFiles && (
+                  <div className="mt-2 space-y-1 text-sm text-gold">
+                    {(summary.skipped_files ?? []).map((entry) => (
+                      <div key={`${entry.source_id}-${entry.file}`} className="font-mono text-xs">
+                        {entry.file}
+                        <span className="ml-2 font-sans text-muted-foreground">
+                          {entry.source_id} ·{' '}
+                          {t(
+                            entry.reason === 'missing_on_disk'
+                              ? 'dataManagement.export.summary.skippedReasonMissing'
+                              : 'dataManagement.export.summary.skippedReasonInvalid'
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                    {(summary.skipped_files?.length ?? 0) < summary.files_skipped && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('dataManagement.export.summary.skippedTruncated', {
+                          shown: summary.skipped_files?.length ?? 0,
+                          total: summary.files_skipped,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={handleDownload} disabled={downloading}>
@@ -126,7 +221,7 @@ export function ExportCard() {
                 <Trash2 className="mr-2 h-4 w-4" />
                 {t('dataManagement.export.deletePackage')}
               </Button>
-              <Button variant="outline" onClick={() => setStartOpen(true)}>
+              <Button variant="outline" onClick={openStartDialog}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 {t('dataManagement.export.start')}
               </Button>
@@ -140,7 +235,7 @@ export function ExportCard() {
               {t('dataManagement.errors.failed')} {progress?.error}
             </p>
             <TransferStageList stages={EXPORT_STAGES} current={progress?.stage} failed />
-            <Button variant="outline" onClick={() => setStartOpen(true)}>
+            <Button variant="outline" onClick={openStartDialog}>
               <RotateCcw className="mr-2 h-4 w-4" />
               {t('dataManagement.export.start')}
             </Button>
@@ -150,7 +245,7 @@ export function ExportCard() {
         {(!status || status === 'none') && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-muted-foreground">{t('dataManagement.export.idle')}</p>
-            <Button onClick={() => setStartOpen(true)} disabled={startExport.isPending}>
+            <Button onClick={openStartDialog} disabled={startExport.isPending}>
               {startExport.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -162,18 +257,72 @@ export function ExportCard() {
         )}
       </CardContent>
 
-      <ConfirmDialog
-        open={startOpen}
-        onOpenChange={setStartOpen}
-        title={t('dataManagement.export.confirmTitle')}
-        description={t('dataManagement.export.confirmDescription')}
-        confirmText={t('dataManagement.export.start')}
-        onConfirm={() => {
-          setStartOpen(false)
-          startExport.mutate()
-        }}
-        isLoading={startExport.isPending}
-      />
+      <AlertDialog open={startOpen} onOpenChange={setStartOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('dataManagement.export.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('dataManagement.export.confirmDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <RadioGroup
+            value={scope}
+            onValueChange={(value) => setScope(value as ExportScope)}
+            className="gap-2"
+          >
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
+              <RadioGroupItem value="full" className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium">
+                  {t('dataManagement.export.scope.full')}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('dataManagement.export.scope.fullDesc')}
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
+              <RadioGroupItem value="models" className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium">
+                  {t('dataManagement.export.scope.models')}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('dataManagement.export.scope.modelsDesc')}
+                </span>
+              </span>
+            </label>
+          </RadioGroup>
+          {scope === 'full' && (
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <Checkbox
+                checked={includeModels}
+                onCheckedChange={(checked) => setIncludeModels(checked === true)}
+                className="mt-0.5"
+              />
+              <span>
+                {t('dataManagement.export.includeModels')}
+                <span className="block text-xs text-muted-foreground">
+                  {t('dataManagement.export.includeModelsHint')}
+                </span>
+              </span>
+            </label>
+          )}
+          {modelsIncluded && (
+            <p className="rounded-md bg-destructive-tint p-3 text-sm text-destructive">
+              {t('dataManagement.export.apiKeyWarning')}
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={startExport.isPending}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleStart} disabled={startExport.isPending}>
+              {t('dataManagement.export.start')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ConfirmDialog
         open={deleteOpen}

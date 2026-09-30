@@ -21,6 +21,7 @@ export const CALL_TYPE_CHOICES = [
   { value: 'ask', labelKey: 'usage.typeAsk' },
   { value: 'source_chat', labelKey: 'usage.typeSourceChat' },
   { value: 'prompt', labelKey: 'usage.typePrompt' },
+  { value: 'qa_explain', labelKey: 'usage.typeQaExplain' },
 ] as const
 
 const ALL_VALUE = '__all__'

@@ -3,6 +3,10 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
+from api.explain_service import RETRYABLE_COMMANDS, _recovery_status
+from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.exceptions import ConflictError, InvalidInputError, NotFoundError
+
 
 class CommandService:
     """Generic service layer for command operations"""
@@ -71,6 +75,13 @@ class CommandService:
             raise
 
     @staticmethod
+    async def get_live_progress(job_id: str) -> Dict[str, Any]:
+        """Get live progress telemetry for a command job"""
+        from api.task_service import get_live_progress
+
+        return await get_live_progress(job_id)
+
+    @staticmethod
     async def list_command_jobs(
         module_filter: Optional[str] = None,
         command_filter: Optional[str] = None,
@@ -84,12 +95,86 @@ class CommandService:
 
     @staticmethod
     async def cancel_command_job(job_id: str) -> bool:
-        """Cancel a running command job"""
+        """Mark a pending/running command row canceled.
+
+        surreal-commands has no cancellation protocol: this removes `new`
+        rows from the worker queue and clears orphaned `running` rows; a
+        task genuinely executing in a worker will overwrite the status with
+        its final result when it finishes. The UPDATE is status-guarded so a
+        job that finishes between the SELECT and the UPDATE can never be
+        rewritten as canceled.
+        """
         try:
-            # Implementation depends on surreal-commands cancellation support
-            # For now, just log the attempt
-            logger.info(f"Attempting to cancel job: {job_id}")
+            rid = ensure_record_id(job_id)
+            rows = await repo_query(
+                "SELECT status FROM command WHERE id = $id", {"id": rid}
+            )
+            if not rows:
+                raise NotFoundError(f"Command job {job_id} not found")
+            status = str(rows[0].get("status") or "")
+            if status in ("completed", "failed", "canceled"):
+                raise ConflictError(f"Command job already {status}")
+            updated = await repo_query(
+                "UPDATE command SET status = 'canceled', "
+                "error_message = $msg, updated = time::now() "
+                "WHERE id = $id AND status NOT IN ['completed', 'failed', 'canceled'] "
+                "RETURN status",
+                {"id": rid, "msg": "Canceled from Task Center"},
+            )
+            if not updated:
+                raise ConflictError(f"Command job {job_id} already finished")
+            logger.info(f"Canceled command job {job_id} (was {status})")
             return True
+        except (NotFoundError, ConflictError):
+            raise
         except Exception as e:
             logger.error(f"Failed to cancel command job: {e}")
+            raise
+
+    @staticmethod
+    async def retry_command_job(
+        job_id: str, check_recovery: bool = False
+    ) -> Dict[str, Any]:
+        """Replay a command's original args as a NEW job; the old row stays as history.
+
+        With check_recovery=True the replay is skipped when the affected entity
+        has already recovered; an undeterminable recovery status (None) still
+        replays — better a redundant retry than a skipped fix.
+        """
+        try:
+            rid = ensure_record_id(job_id)
+            rows = await repo_query(
+                "SELECT name, args FROM command WHERE id = $id", {"id": rid}
+            )
+            if not rows:
+                raise NotFoundError(f"Command job {job_id} not found")
+            name = str(rows[0].get("name") or "")
+            if name not in RETRYABLE_COMMANDS:
+                raise InvalidInputError(f"Command '{name}' is not retryable")
+            args = rows[0].get("args") or {}
+            if check_recovery:
+                recovery = await _recovery_status(name, args)
+                if recovery and recovery.get("recovered"):
+                    detail = str(recovery.get("detail") or "")
+                    logger.info(
+                        f"Skipped retry of command job {job_id} ({name}): {detail}"
+                    )
+                    return {
+                        "job_id": None,
+                        "status": "skipped_recovered",
+                        "message": f"Already recovered: {detail}",
+                    }
+            new_job_id = await CommandService.submit_command_job(
+                "open_notebook", name, args
+            )
+            logger.info(f"Retried command job {job_id} ({name}) as {new_job_id}")
+            return {
+                "job_id": new_job_id,
+                "status": "submitted",
+                "message": f"Command '{name}' re-submitted successfully",
+            }
+        except (NotFoundError, InvalidInputError):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to retry command job {job_id}: {e}")
             raise

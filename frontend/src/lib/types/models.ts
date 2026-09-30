@@ -40,6 +40,7 @@ export interface ModelDefaults {
   default_speech_to_text_model?: string | null
   default_embedding_model?: string | null
   default_tools_model?: string | null
+  default_qa_model?: string | null
 }
 
 export interface ProviderAvailability {

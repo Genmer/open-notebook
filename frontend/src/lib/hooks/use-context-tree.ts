@@ -23,7 +23,7 @@ export function useContextTree(
   return useQuery({
     queryKey: ['contextTree', notebookId, resolvedViewId ?? null],
     queryFn: () => notebooksApi.contextTree(notebookId, resolvedViewId ?? undefined),
-    enabled: enabled && !!notebookId,
+    enabled: enabled && !!notebookId && !!resolvedViewId,
     staleTime: 60 * 1000,
   })
 }

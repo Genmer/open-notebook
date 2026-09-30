@@ -157,6 +157,7 @@ export function DefaultModelSelectors({
     { key: 'default_transformation_model', label: t('models.transformationModelLabel'), description: t('models.transformationModelDesc'), modelType: 'language', fallsBackToChat: true, id: `${generatedId}-transform` },
     { key: 'default_tools_model', label: t('models.toolsModelLabel'), description: t('models.toolsModelDesc'), modelType: 'language', fallsBackToChat: true, id: `${generatedId}-tools` },
     { key: 'large_context_model', label: t('models.largeContextModelLabel'), description: t('models.largeContextModelDesc'), modelType: 'language', fallsBackToChat: true, id: `${generatedId}-large` },
+    { key: 'default_qa_model', label: t('models.qaModelLabel'), description: t('models.qaModelDesc'), modelType: 'language', fallsBackToChat: true, id: `${generatedId}-qa` },
   ]
 
   const defaultConfigs = [...primaryConfigs, ...advancedConfigs]
@@ -232,10 +233,10 @@ export function DefaultModelSelectors({
           ))}
         </div>
 
-        {/* Advanced models: Transformation, Tools, Large Context */}
+        {/* Advanced models: Transformation, Tools, Large Context, QA */}
         <div className="border-t pt-3">
           <p className="text-xs text-muted-foreground mb-3">{t('navigation.advanced')}</p>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {advancedConfigs.map(config => (
                 <DefaultModelSelect
                   key={config.key}

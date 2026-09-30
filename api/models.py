@@ -176,6 +176,7 @@ class DefaultModelsResponse(BaseModel):
     default_speech_to_text_model: Optional[str] = None
     default_embedding_model: Optional[str] = None
     default_tools_model: Optional[str] = None
+    default_qa_model: Optional[str] = None
 
 
 class ProviderAvailabilityResponse(BaseModel):
@@ -1130,13 +1131,23 @@ class TransferProgress(BaseModel):
     percent: int = 0
     message: Optional[str] = None
     error: Optional[str] = None
+    # Structured per-item progress ({table,current,total,item,...}) the frontend
+    # renders with localized templates; None for stages without item detail.
+    detail: Optional[Dict[str, Any]] = None
+    # Last detail per finished stage id, so stage rows keep their result stats
+    # across page refreshes.
+    stages: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 class ExportSummary(BaseModel):
     package_filename: str
     package_size_bytes: int = 0
+    package_type: Literal["full", "models"] = "full"
     counts: Dict[str, int] = {}
     files_skipped: int = 0
+    # First MAX_SKIPPED_FILE_DETAILS entries; files_skipped stays the total.
+    skipped_files: List[Dict[str, str]] = []
+    duration_seconds: Optional[float] = None
     embedding_model_id: Optional[str] = None
     embedding_dimension: Optional[int] = None
     exported_at: Optional[str] = None
@@ -1165,6 +1176,7 @@ class ImportSummary(BaseModel):
     warning_codes: List[TransferWarning] = []
     embedding_model_id: Optional[str] = None
     embedding_dimension: Optional[int] = None
+    duration_seconds: Optional[float] = None
 
 
 class ImportStatusResponse(BaseModel):
@@ -1178,6 +1190,41 @@ class PackageDeleteResponse(BaseModel):
     deleted: bool
 
 
+class ExportStartRequest(BaseModel):
+    # models: only credential/model/default_models (API keys in plain text!)
+    scope: Literal["full", "models"] = "full"
+    include_models: bool = False
+
+
+class ImportScanConflictItem(BaseModel):
+    kind: Literal["credential", "model"]
+    id: str
+    local: Dict[str, Any] = {}
+    package: Dict[str, Any] = {}
+    diff_fields: List[str] = []
+    default_action: Literal["skip", "overwrite"] = "skip"
+
+
+class ImportScanResponse(BaseModel):
+    scan_id: str
+    package_type: Literal["full", "models"]
+    format_version: int
+    counts: Dict[str, int] = {}
+    conflicts: List[ImportScanConflictItem] = []
+    decisions_required: int = 0
+
+
+class ImportDecisionIn(BaseModel):
+    kind: Literal["credential", "model"]
+    id: str
+    action: Literal["skip", "overwrite"]
+
+
+class ImportExecuteRequest(BaseModel):
+    scan_id: str
+    decisions: List[ImportDecisionIn] = []
+
+
 # Task Center (aggregated view over the surreal-commands table)
 class TaskProgress(BaseModel):
     kind: str
@@ -1186,6 +1233,51 @@ class TaskProgress(BaseModel):
     stage: Optional[str] = None
     percent: Optional[int] = None
     message: Optional[str] = None
+    elapsed_seconds: Optional[float] = None
+    stopwatch: Optional[str] = None
+    token_count: Optional[int] = None
+    stream_text: Optional[str] = None
+
+
+class StageInfo(BaseModel):
+    id: str
+    title: str
+    desc: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "pending"
+
+
+class LiveProgressTokenStats(BaseModel):
+    is_model: bool = False
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    tokens_per_sec: float = 0.0
+    tokens_per_second: Optional[float] = None
+    model: Optional[str] = None
+    chunks: Optional[int] = None
+    total_chunks: Optional[int] = None
+
+
+class JobLiveProgressResponse(BaseModel):
+    job_id: str
+    command: str
+    status: str
+    stage: str
+    stage_index: int = 0
+    total_stages: int = 4
+    stages: List[StageInfo] = Field(default_factory=list)
+    percent: int = 0
+    elapsed_seconds: float = 0.0
+    stopwatch: str = "00:00"
+    token_count: int = 0
+    tokens: LiveProgressTokenStats = Field(default_factory=LiveProgressTokenStats)
+    stream_text: Optional[str] = None
+    message: Optional[str] = None
+    logs: List[Dict[str, Any]] = Field(default_factory=list)
+    created: Optional[str] = None
+    updated: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class TaskEntry(BaseModel):
@@ -1194,6 +1286,9 @@ class TaskEntry(BaseModel):
     type: str = Field(..., description="Task bucket: insight/embedding/…")
     target: Optional[str] = Field(None, description="Resource title the task acts on")
     status: str
+    retryable: bool = Field(
+        ..., description="Whether the retry endpoint accepts this command"
+    )
     progress: Optional[TaskProgress] = None
     error_message: Optional[str] = None
     created: Optional[str] = None
@@ -1260,3 +1355,23 @@ class NotebookContextTreeResponse(BaseModel):
     sources: List[ContextTreeSource] = []
     groups: List[ContextTreeGroup] = []
     memberships: List[ContextTreeMembership] = []
+
+
+class WebSearchRequest(BaseModel):
+    query: str
+    mode: Literal["fast", "deep"] = "fast"
+    limit: int = 5
+
+
+class WebSearchItem(BaseModel):
+    id: str
+    title: str
+    url: str
+    snippet: str
+
+
+class WebSearchResponse(BaseModel):
+    query: str
+    mode: str
+    results: List[WebSearchItem]
+

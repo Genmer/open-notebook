@@ -35,7 +35,9 @@ _EMBEDDING_PROGRESS_FIELDS = (
 class Notebook(ObjectModel):
     table_name: ClassVar[str] = "notebook"
     name: str
-    description: str
+    # Rows created outside the API (scripts, manual inserts) may miss this
+    # field; a default keeps model loads and cascading deletes working on them.
+    description: str = ""
     archived: Optional[bool] = False
     last_viewed_at: Optional[datetime] = None
 

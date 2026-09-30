@@ -32,6 +32,7 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
+    explain,
     insights,
     languages,
     models,
@@ -55,6 +56,7 @@ from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    ConflictError,
     ExternalServiceError,
     InvalidInputError,
     NetworkError,
@@ -314,6 +316,15 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
     )
 
 
+@app.exception_handler(ConflictError)
+async def conflict_error_handler(request: Request, exc: ConflictError):
+    return JSONResponse(
+        status_code=409,
+        content={"detail": str(exc)},
+        headers=_cors_headers(request),
+    )
+
+
 @app.exception_handler(InvalidInputError)
 async def invalid_input_error_handler(request: Request, exc: InvalidInputError):
     return JSONResponse(
@@ -412,6 +423,7 @@ app.include_router(
 )
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
+app.include_router(explain.router, prefix="/api", tags=["explain"])
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
 app.include_router(episode_profiles.router, prefix="/api", tags=["episode-profiles"])
 app.include_router(speaker_profiles.router, prefix="/api", tags=["speaker-profiles"])

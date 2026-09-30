@@ -51,6 +51,21 @@ def get_command_id(input_data: CommandInput) -> str:
     return "unknown"
 
 
+_TXN_CONFLICT_MARKERS = (
+    "read or write conflict",
+    "failed transaction",
+    "transaction can be retried",
+)
+
+
+def _is_transaction_conflict(e: BaseException) -> bool:
+    # The repo layer signals retriable SurrealDB transaction conflicts with a
+    # bare RuntimeError, same type the pipeline uses for exhausted retries -
+    # only distinguishable by message text.
+    msg = str(e).lower()
+    return any(marker in msg for marker in _TXN_CONFLICT_MARKERS)
+
+
 _TERMINAL_COMMAND_STATUSES = {"failed", "canceled", "completed"}
 
 
@@ -500,6 +515,11 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
             await _mark_state(source, status, error=str(e))
             raise
         except RuntimeError as e:
+            if _is_transaction_conflict(e):
+                # SurrealDB transaction conflict (repo layer) is transient -
+                # same handling as the generic transient branch below.
+                await _mark_state(source, "running", error=str(e))
+                raise
             # Batch retries exhausted inside the embedding pipeline - permanent,
             # don't burn the command-level retry budget re-running everything.
             status = "partial" if embedded_so_far > 0 else "failed"

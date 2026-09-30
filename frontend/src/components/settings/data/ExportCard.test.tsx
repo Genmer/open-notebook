@@ -37,6 +37,26 @@ function indicatorStyle(): string | undefined {
   return indicator?.getAttribute('style') ?? undefined
 }
 
+function radio(value: string): HTMLElement {
+  const item = document.querySelector(`button[role="radio"][value="${value}"]`)
+  if (!item) throw new Error(`radio ${value} not found`)
+  return item as HTMLElement
+}
+
+function checkbox(): HTMLElement {
+  const item = document.querySelector('button[role="checkbox"]')
+  if (!item) throw new Error('include-models checkbox not found')
+  return item as HTMLElement
+}
+
+function openStartDialog() {
+  fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.start' }))
+  expect(screen.getByText('dataManagement.export.confirmTitle')).toBeInTheDocument()
+  expect(mutateSpy).not.toHaveBeenCalled()
+  const buttons = screen.getAllByRole('button', { name: 'dataManagement.export.start' })
+  return buttons[buttons.length - 1]
+}
+
 describe('ExportCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -51,34 +71,100 @@ describe('ExportCard', () => {
     expect(screen.getByText('dataManagement.export.title')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.export.idle')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.start' }))
-    expect(screen.getByText('dataManagement.export.confirmTitle')).toBeInTheDocument()
-    expect(mutateSpy).not.toHaveBeenCalled()
+    openStartDialog()
+    // Defaults: full scope with the include-models checkbox, no warning.
+    expect(radio('full').getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByText('dataManagement.export.apiKeyWarning')).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox')).toBeInTheDocument()
+  })
 
-    const buttons = screen.getAllByRole('button', { name: 'dataManagement.export.start' })
-    fireEvent.click(buttons[buttons.length - 1])
-    expect(mutateSpy).toHaveBeenCalledTimes(1)
+  it('defaults to a full export and only includes models when checked', () => {
+    mockStatus({ status: 'none' })
+    render(<ExportCard />)
+
+    let confirm = openStartDialog()
+    fireEvent.click(confirm)
+    expect(mutateSpy).toHaveBeenNthCalledWith(1, {
+      scope: 'full',
+      include_models: false,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.start' }))
+    fireEvent.click(checkbox())
+    expect(screen.getByText('dataManagement.export.apiKeyWarning')).toBeInTheDocument()
+    confirm = screen.getAllByRole('button', { name: 'dataManagement.export.start' }).pop()!
+    fireEvent.click(confirm)
+    expect(mutateSpy).toHaveBeenNthCalledWith(2, {
+      scope: 'full',
+      include_models: true,
+    })
+  })
+
+  it('shows the plain-text API key warning in models-only mode', () => {
+    mockStatus({ status: 'none' })
+    render(<ExportCard />)
+
+    openStartDialog()
+    expect(screen.queryByText('dataManagement.export.apiKeyWarning')).not.toBeInTheDocument()
+
+    fireEvent.click(radio('models'))
+    expect(screen.getByText('dataManagement.export.apiKeyWarning')).toBeInTheDocument()
+    // The include-models checkbox only applies to the full scope.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+
+    const confirm = screen.getAllByRole('button', { name: 'dataManagement.export.start' }).pop()!
+    fireEvent.click(confirm)
+    expect(mutateSpy).toHaveBeenCalledWith({ scope: 'models', include_models: false })
   })
 
   it('renders progress with the current stage highlighted, x/y message and percent', () => {
     mockStatus({
       status: 'running',
-      progress: { stage: 'copying_files', percent: 52, message: 'Copying files (3/5)' },
+      progress: {
+        stage: 'exporting_embeddings',
+        percent: 72,
+        message: 'Exporting embeddings (100/5812)',
+        detail: { current: 100, total: 5812 },
+        stages: {
+          copying_files: { current: 41, total: 41, item: 'report.pdf' },
+          exporting_embeddings: { current: 100, total: 5812 },
+        },
+      },
     })
     render(<ExportCard />)
 
-    expect(screen.getByText('Copying files (3/5)')).toBeInTheDocument()
+    // Structured detail wins: the activity line renders the localized template
+    expect(screen.getByText('dataManagement.activity.exportingEmbeddings')).toBeInTheDocument()
+    // Finished file stage keeps its result stat on the row
+    expect(screen.getByText('dataManagement.activity.statFiles')).toBeInTheDocument()
+    // Current stage row shows live x/y
+    expect(screen.getByText('100/5812')).toBeInTheDocument()
     // All five stage labels are listed
     expect(screen.getByText('dataManagement.export.stages.collecting')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.export.stages.exporting_tables')).toBeInTheDocument()
-    expect(screen.getByText('dataManagement.export.stages.copying_files')).toBeInTheDocument()
+    expect(screen.getAllByText('dataManagement.export.stages.copying_files').length).toBeGreaterThan(0)
     expect(screen.getByText('dataManagement.export.stages.exporting_embeddings')).toBeInTheDocument()
     expect(screen.getByText('dataManagement.export.stages.packaging')).toBeInTheDocument()
     // The current stage row is the highlighted one
-    const currentRow = screen.getByText('dataManagement.export.stages.copying_files').closest('li')
+    const currentRow = screen
+      .getByText('dataManagement.export.stages.exporting_embeddings')
+      .closest('li')
     expect(currentRow?.className).toContain('bg-muted')
     // Percent reaches the progress indicator transform
-    expect(indicatorStyle()).toContain('translateX(-48%)')
+    expect(indicatorStyle()).toContain('translateX(-28%)')
+  })
+
+  it('falls back to the localized stage label when progress has no detail', () => {
+    mockStatus({
+      status: 'running',
+      progress: { stage: 'packaging', percent: 92, message: 'Packaging' },
+    })
+    render(<ExportCard />)
+
+    // Stage list row + the fallback activity line
+    expect(screen.getAllByText('dataManagement.export.stages.packaging').length).toBe(2)
+    // No stats recorded for packaging: no x/y fragment anywhere
+    expect(screen.queryByText(/^\d+\/\d+$/)).not.toBeInTheDocument()
   })
 
   it('renders the completed summary, downloads and deletes the package', () => {
@@ -90,11 +176,13 @@ describe('ExportCard', () => {
         package_size_bytes: 1536,
         counts: { source: 2, note: 1 },
         files_skipped: 0,
+        duration_seconds: 12.4,
       },
     })
     render(<ExportCard />)
 
     expect(screen.getByText('dataManagement.export.summary.packageSize')).toBeInTheDocument()
+    expect(screen.getByText('dataManagement.activity.durationSec')).toBeInTheDocument()
     expect(screen.getAllByText('dataManagement.export.summary.counts').length).toBe(2)
     expect(screen.getByText('1.5 KB')).toBeInTheDocument()
 

@@ -104,7 +104,9 @@ export const sourcesApi = {
   upload: async (file: File, notebook_id: string) => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('notebook_id', notebook_id)
+    // Plural field (preferred); the deprecated singular notebook_id form
+    // field is folded into notebooks by the API model for compatibility.
+    formData.append('notebooks', JSON.stringify([notebook_id]))
     formData.append('type', 'upload')
     formData.append('async_processing', 'true')
     

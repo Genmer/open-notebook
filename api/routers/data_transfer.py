@@ -1,6 +1,7 @@
 """Data export/import endpoints (/api/data-transfer/*)."""
 
 import os
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -9,7 +10,10 @@ from loguru import logger
 import api.data_transfer_service as data_transfer_service
 from api.models import (
     DataTransferStartResponse,
+    ExportStartRequest,
     ExportStatusResponse,
+    ImportExecuteRequest,
+    ImportScanResponse,
     ImportStatusResponse,
     PackageDeleteResponse,
 )
@@ -19,10 +23,13 @@ router = APIRouter()
 
 
 @router.post("/data-transfer/export", response_model=DataTransferStartResponse)
-async def start_export():
-    """Queue a full-data export job (single zip: tables + files + vectors)."""
+async def start_export(request: Optional[ExportStartRequest] = None):
+    """Queue an export job; scope=models packages only the model configuration."""
+    payload = request or ExportStartRequest()
     try:
-        command_id = await data_transfer_service.start_export()
+        command_id = await data_transfer_service.start_export(
+            payload.scope, payload.include_models
+        )
         return DataTransferStartResponse(
             command_id=command_id,
             message="Export started. Poll /data-transfer/export/status for progress.",
@@ -82,12 +89,13 @@ async def delete_export_package():
         raise HTTPException(status_code=500, detail=f"Failed to delete package: {e}")
 
 
-@router.post("/data-transfer/import", response_model=DataTransferStartResponse)
+@router.post("/data-transfer/import", response_model=ImportScanResponse)
 async def upload_import_package(file: UploadFile = File(...)):
-    """Upload a package zip and queue the import job.
+    """Upload a package zip and scan its model configuration for conflicts.
 
     The request body is capped by the 1 GB upload middleware by default (see
     tests/test_max_body_size_middleware.py); oversized uploads get a 413 there.
+    Returns the scan result; POST /data-transfer/import/execute starts the job.
     """
     try:
         path = await data_transfer_service.save_import_upload(file)
@@ -98,7 +106,20 @@ async def upload_import_package(file: UploadFile = File(...)):
         logger.exception(e)
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
     try:
-        command_id = await data_transfer_service.start_import(path)
+        return await data_transfer_service.scan_import_package(path)
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to scan import package: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to scan package: {e}")
+
+
+@router.post("/data-transfer/import/execute", response_model=DataTransferStartResponse)
+async def execute_import(request: ImportExecuteRequest):
+    """Start the import job for a previously scanned package."""
+    try:
+        command_id = await data_transfer_service.execute_import(request)
     except OpenNotebookError:
         raise
     except Exception as e:

@@ -50,7 +50,7 @@ AIFactory.register_openai_compatible_profile(
         base_url="https://api.xiaomimimo.com/v1",
         api_key_env="MIMO_API_KEY",
         base_url_env="XIAOMI_MIMO_API_BASE",
-        capabilities={"language"},
+        capabilities={"language", "embedding"},
         display_name="Xiaomi MiMo",
         owned_by="Xiaomi",
         default_models={},
@@ -62,9 +62,40 @@ AIFactory.register_openai_compatible_profile(
         base_url="https://token-plan-cn.xiaomimimo.com/v1",
         api_key_env="MIMO_TOKEN_PLAN_API_KEY",
         base_url_env="XIAOMI_MIMO_TOKEN_PLAN_API_BASE",
-        capabilities={"language"},
+        capabilities={"language", "embedding"},
         display_name="Xiaomi MiMo Token Plan",
         owned_by="Xiaomi",
         default_models={},
     )
 )
+
+# Audio modalities for xiaomi_mimo are served on chat/completions (the
+# /audio/* endpoints 404), so they must NOT go into the profile — create_tts/stt
+# consults profiles first and would route to the OpenAI-compatible /audio/*
+# classes. register_openai_compatible_profile only wires /audio/*-style classes,
+# hence the direct private-table registration; _import_provider_class normalizes
+# underscores to hyphens, so keys use hyphens.
+AIFactory._provider_modules["text_to_speech"]["xiaomi-mimo"] = (
+    "open_notebook.ai.xiaomi_audio:XiaomiMimoTextToSpeechModel"
+)
+AIFactory._provider_modules["text_to_speech"]["xiaomi-mimo-token-plan"] = (
+    "open_notebook.ai.xiaomi_audio:XiaomiTokenPlanTextToSpeechModel"
+)
+AIFactory._provider_modules["speech_to_text"]["xiaomi-mimo"] = (
+    "open_notebook.ai.xiaomi_audio:XiaomiMimoSpeechToTextModel"
+)
+AIFactory._provider_modules["speech_to_text"]["xiaomi-mimo-token-plan"] = (
+    "open_notebook.ai.xiaomi_audio:XiaomiTokenPlanSpeechToTextModel"
+)
+
+from open_notebook.ai.callbacks import (
+    OpenNotebookStreamingHandler,
+    StreamingProgress,
+    TextRingBuffer,
+)
+
+__all__ = [
+    "OpenNotebookStreamingHandler",
+    "StreamingProgress",
+    "TextRingBuffer",
+]

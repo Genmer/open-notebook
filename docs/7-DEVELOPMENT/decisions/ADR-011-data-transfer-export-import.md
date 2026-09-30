@@ -1,5 +1,7 @@
 # ADR-011: Data export/import — single zip package, id-skip idempotency, direct SQL writes
 
+> Partially superseded by ADR-014 (model configuration export).
+
 - **Status**: Accepted
 - **Date**: 2026-09
 

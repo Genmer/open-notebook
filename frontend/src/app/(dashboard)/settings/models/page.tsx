@@ -116,7 +116,9 @@ export default function ApiKeysPage() {
 
           {/* Default Model Selectors */}
           {models && defaults && (
-            <DefaultModelSelectors models={models} defaults={defaults} />
+            <div id="default-models">
+              <DefaultModelSelectors models={models} defaults={defaults} />
+            </div>
           )}
 
           {/* Provider Cards */}
@@ -127,7 +129,7 @@ export default function ApiKeysPage() {
               <AlertDescription>{t('apiKeys.providersLoadFailedDescription')}</AlertDescription>
             </Alert>
           ) : (
-            <div className="grid gap-4">
+            <div className="grid gap-4" id="provider-credentials">
               {sortedProviders.map(provider => (
                 <ProviderSection
                   key={provider.name}

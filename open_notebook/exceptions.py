@@ -28,6 +28,12 @@ class NotFoundError(OpenNotebookError):
     pass
 
 
+class ConflictError(OpenNotebookError):
+    """Raised when a request conflicts with the current resource state."""
+
+    pass
+
+
 class AuthenticationError(OpenNotebookError):
     """Raised when there's an authentication problem."""
 

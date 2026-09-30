@@ -33,6 +33,11 @@ GROUP_ID = "source_group:g1"
 INSIGHT_ID = "source_insight:si1"
 EMB_IDS = ["source_embedding:e1", "source_embedding:e2"]
 TRANSFORMATION_ID = "transformation:t1"
+CREDENTIAL_ID = "credential:c1"
+MODEL_ID = "model:m1"
+CIPHER_KEY_ENV = "test-encryption-key"
+# Deterministic ciphertext for CIPHER_KEY_ENV; setup in the encryption fixture.
+CREDENTIAL_CIPHER = "placeholder-set-by-fixture"
 
 _PAGE_RE = re.compile(
     r"^SELECT (.+?) FROM ([a-z_]+)(?: WHERE (.+?))? ORDER BY id LIMIT \$limit$"
@@ -105,6 +110,34 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
             "id": "open_notebook:default_prompts",
             "transformation_instructions": "Custom prompt test",
         }],
+        "credential": [{
+            "id": CREDENTIAL_ID,
+            "name": "Main",
+            "provider": "openai",
+            "modalities": ["language", "embedding"],
+            "api_key": CREDENTIAL_CIPHER,
+            "base_url": None,
+            "config": {"num_ctx": 8192},
+            "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
+            "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
+        }],
+        "model": [
+            {"id": MODEL_ID, "name": "GPT", "provider": "openai", "type": "language",
+             "credential": CREDENTIAL_ID, "price_input_per_m": 0.5,
+             "price_output_per_m": 1.5, "price_source": "manual",
+             "price_matched_key": None, "price_fetched_at": None},
+        ],
+        "default_models": [{
+            "id": "open_notebook:default_models",
+            "default_chat_model": MODEL_ID,
+            "default_transformation_model": None,
+            "large_context_model": None,
+            "default_text_to_speech_model": None,
+            "default_speech_to_text_model": None,
+            "default_embedding_model": None,
+            "default_tools_model": None,
+            "default_qa_model": None,
+        }],
     }
 
 
@@ -146,12 +179,15 @@ class TransferRecorder:
         if sql.startswith("UPSERT open_notebook:"):
             self.writes.append((sql, params))
             return []
-        if sql.startswith(("CREATE", "RELATE")) or sql.startswith("UPDATE $id SET asset"):
+        if sql.startswith(("CREATE", "RELATE")) or sql.startswith("UPDATE $id SET"):
             self.writes.append((sql, params))
             return []
         if "SELECT VALUE count()" in sql:
             table = sql.split("FROM ")[1].split()[0]
             return [{"count": len(self.tables.get(table, []))}]
+        if sql in ("SELECT * FROM credential", "SELECT * FROM model"):
+            table = sql[len("SELECT * FROM ") :]
+            return list(self.tables.get(table, []))
         if "SELECT VALUE id FROM model" in sql:
             return list(self.models)
         if "SELECT VALUE id FROM " in sql:
@@ -197,7 +233,33 @@ class TransferRecorder:
 _DEFAULTS = SimpleNamespace(default_embedding_model="model:emb")
 
 
-async def _run_export(recorder, exports, uploads, include_files=True):
+@pytest.fixture
+def encryption_key(monkeypatch):
+    """Real OPEN_NOTEBOOK_ENCRYPTION_KEY with the module-level cache reset
+    (encryption.py caches the key on first use, so env changes are otherwise
+    ignored within one test session)."""
+    import open_notebook.utils.encryption as enc
+
+    monkeypatch.setenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", CIPHER_KEY_ENV)
+    monkeypatch.setattr(enc, "_ENCRYPTION_KEY", None)
+    monkeypatch.setitem(
+        globals(), "CREDENTIAL_CIPHER", enc.encrypt_value("sk-secret-1234")
+    )
+    yield CIPHER_KEY_ENV
+
+
+@pytest.fixture
+def no_encryption_key(monkeypatch):
+    """Force the 'no key configured' path even if .env carries one."""
+    import open_notebook.utils.encryption as enc
+
+    monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE", raising=False)
+    monkeypatch.setattr(enc, "_ENCRYPTION_KEY", None)
+    yield None
+
+
+async def _run_export(recorder, exports, uploads, include_files=True, **input_kwargs):
     with patch.multiple(
         "commands.data_transfer_commands",
         repo_query=recorder,
@@ -206,10 +268,12 @@ async def _run_export(recorder, exports, uploads, include_files=True):
     ), patch.object(
         dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
     ):
-        return await export_data_command(ExportDataInput(include_files=include_files))
+        return await export_data_command(
+            ExportDataInput(include_files=include_files, **input_kwargs)
+        )
 
 
-async def _run_import(recorder, uploads, package_path):
+async def _run_import(recorder, uploads, package_path, **input_kwargs):
     with patch.multiple(
         "commands.data_transfer_commands",
         repo_query=recorder,
@@ -220,7 +284,9 @@ async def _run_import(recorder, uploads, package_path):
         "commands.data_transfer_commands.ensure_default_views",
         new=AsyncMock(return_value=None),
     ):
-        return await import_data_command(ImportDataInput(package_path=str(package_path)))
+        return await import_data_command(
+            ImportDataInput(package_path=str(package_path), **input_kwargs)
+        )
 
 
 def _build_package(
@@ -325,7 +391,8 @@ class TestExport:
             assert "files/s1/report.pdf" in names
 
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 1
+            assert manifest["format_version"] == 2
+            assert manifest["package_type"] == "full"
             assert manifest["counts"]["source"] == 1
             assert manifest["counts"]["source_embedding"] == 2
             assert manifest["counts"]["files"] == 1
@@ -378,12 +445,13 @@ class TestExport:
         assert not [p for p in os.listdir(exports) if p.startswith(".export_")]
 
     @pytest.mark.asyncio
-    async def test_export_never_queries_sensitive_tables(self, tmp_path):
+    async def test_export_without_models_never_queries_sensitive_tables(self, tmp_path):
         recorder = TransferRecorder()
         await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
 
         forbidden = [
             "credential",
+            "FROM model",
             "provider_configs",
             "model_usage",
             "chat_session",
@@ -396,6 +464,18 @@ class TestExport:
                 continue
             for word in forbidden:
                 assert word not in sql, f"sensitive table {word!r} in query: {sql[:120]}"
+
+    @pytest.mark.asyncio
+    async def test_export_without_models_writes_no_model_members(self, tmp_path):
+        recorder = TransferRecorder()
+        output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            names = zf.namelist()
+        for table in dtc.MODEL_CONFIG_TABLES:
+            assert f"data/{table}.ndjson" not in names
+        assert "credential" not in output.counts
+        assert "model" not in output.counts
 
     @pytest.mark.asyncio
     async def test_export_stage_sequence_monotonic(self, tmp_path):
@@ -446,8 +526,28 @@ class TestExport:
         output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
 
         assert output.files_skipped == 1
+        assert output.skipped_files == [
+            {
+                "source_id": SOURCE_ID,
+                "file": str(tmp_path / "missing.pdf"),
+                "reason": "missing_on_disk",
+            }
+        ]
         with zipfile.ZipFile(output.package_path) as zf:
             assert not [n for n in zf.namelist() if n.startswith("files/")]
+
+    @pytest.mark.asyncio
+    async def test_export_records_invalid_path_skip_details(self, tmp_path):
+        tables = _default_rows()
+        # A trailing slash yields an empty basename -> invalid_path branch.
+        tables["source"] = [_source_row(file_path=str(tmp_path) + "/")]
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
+
+        assert output.files_skipped == 1
+        assert output.skipped_files[0]["reason"] == "invalid_path"
+        assert output.skipped_files[0]["source_id"] == SOURCE_ID
 
 
 class TestRoundTrip:
@@ -504,6 +604,35 @@ class TestRoundTrip:
             "UPSERT open_notebook:content_settings MERGE $data;",
             "UPSERT open_notebook:default_prompts MERGE $data;",
         ]
+
+
+class TestModelRoundTrip:
+    @pytest.mark.asyncio
+    async def test_full_export_with_models_reimports_into_empty_env(
+        self, tmp_path, encryption_key
+    ):
+        import open_notebook.utils.encryption as enc
+
+        recorder = TransferRecorder()
+        output = await _run_export(
+            recorder, str(tmp_path / "exports"), str(tmp_path), include_models=True
+        )
+        assert output.success is True
+
+        import_recorder = TransferRecorder(tables={"credential": [], "model": []})
+        result = await _run_import(
+            import_recorder, str(tmp_path), output.package_path
+        )
+
+        assert result.success is True
+        assert result.imported["notebook"] == 1
+        assert result.imported["credential"] == 1
+        assert result.imported["model"] == 1
+        assert result.imported["default_models"] == 1
+        assert result.warnings == []
+
+        cred_params = _params_of(import_recorder, "CREATE credential:c1 SET")
+        assert enc.decrypt_value(cred_params["p0_api_key"]) == "sk-secret-1234"
 
 
 class TestImport:
@@ -929,3 +1058,499 @@ def _params_of(recorder: TransferRecorder, prefix: str) -> Dict[str, Any]:
         if prefix in sql:
             return params or {}
     raise AssertionError(f"No write matching {prefix!r}")
+
+
+def _model_package_rows() -> Dict[str, List[Dict[str, Any]]]:
+    """v2 model-configuration members; api_key is stored in plain text."""
+    return {
+        "credential": [
+            {
+                "id": CREDENTIAL_ID,
+                "name": "Imported",
+                "provider": "vertex",
+                "modalities": ["language"],
+                "api_key": "sk-package-key-99",
+                "config": {"num_ctx": 4096},
+            }
+        ],
+        "model": [
+            {
+                "id": MODEL_ID,
+                "name": "Gemini",
+                "provider": "vertex",
+                "type": "language",
+                "credential": CREDENTIAL_ID,
+                "price_input_per_m": 1.25,
+                "price_output_per_m": 5.0,
+                "price_source": "litellm",
+                "price_matched_key": "gemini",
+                "price_fetched_at": "2026-09-01T00:00:00+00:00",
+            }
+        ],
+        "default_models": [
+            {
+                "id": "open_notebook:default_models",
+                "default_chat_model": MODEL_ID,
+                "default_transformation_model": None,
+                "large_context_model": None,
+                "default_text_to_speech_model": None,
+                "default_speech_to_text_model": None,
+                "default_embedding_model": "model:missing",
+                "default_tools_model": None,
+                "default_qa_model": None,
+            }
+        ],
+    }
+
+
+def _build_v2_package(path, rows, package_type="models"):
+    _build_package(
+        path,
+        rows,
+        {},
+        format_version=2,
+        manifest_overrides={
+            "package_type": package_type,
+            "embedding": {"model_id": None, "dominant_dimension": None},
+        },
+    )
+
+
+class TestModelExport:
+    @pytest.mark.asyncio
+    async def test_models_scope_packages_only_model_config(self, tmp_path, encryption_key):
+        recorder = TransferRecorder()
+        exports = str(tmp_path / "exports")
+
+        output = await _run_export(
+            recorder, exports, str(tmp_path), include_files=False, scope="models"
+        )
+
+        assert output.success is True
+        filename = os.path.basename(output.package_path)
+        assert filename.startswith("open_notebook_models_")
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            names = zf.namelist()
+            assert names == [
+                "data/credential.ndjson",
+                "data/model.ndjson",
+                "data/default_models.ndjson",
+                "manifest.json",
+            ]
+            manifest = json.loads(zf.read("manifest.json"))
+            assert manifest["format_version"] == 2
+            assert manifest["package_type"] == "models"
+            assert manifest["counts"] == {"credential": 1, "model": 1, "default_models": 1}
+            assert "embedding" not in manifest
+            assert "files" not in manifest
+
+            cred_row = json.loads(
+                zf.read("data/credential.ndjson").decode().splitlines()[0]
+            )
+            # D1: the package carries the decrypted key.
+            assert cred_row["api_key"] == "sk-secret-1234"
+            assert cred_row["config"] == {"num_ctx": 8192}
+            assert cred_row["modalities"] == ["language", "embedding"]
+            assert "decryption_error" not in cred_row
+
+            model_row = json.loads(zf.read("data/model.ndjson").decode().splitlines()[0])
+            assert model_row["id"] == MODEL_ID
+            assert model_row["credential"] == CREDENTIAL_ID
+
+            dm_row = json.loads(
+                zf.read("data/default_models.ndjson").decode().splitlines()[0]
+            )
+            assert dm_row["id"] == "open_notebook:default_models"
+            assert dm_row["default_chat_model"] == MODEL_ID
+
+        assert output.counts == {"credential": 1, "model": 1, "default_models": 1}
+
+    @pytest.mark.asyncio
+    async def test_full_export_with_models_has_all_members(self, tmp_path, encryption_key):
+        recorder = TransferRecorder()
+        output = await _run_export(
+            recorder, str(tmp_path / "exports"), str(tmp_path), include_models=True
+        )
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            names = zf.namelist()
+            manifest = json.loads(zf.read("manifest.json"))
+        assert manifest["package_type"] == "full"
+        for table in ("notebook", "source", "source_embedding", *dtc.MODEL_CONFIG_TABLES):
+            assert f"data/{table}.ndjson" in names
+        assert manifest["counts"]["credential"] == 1
+        assert manifest["counts"]["model"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "export_kwargs",
+        [
+            {"include_files": False, "scope": "models"},
+            {"include_files": True, "include_models": True},
+        ],
+    )
+    async def test_models_export_fails_fast_on_decrypt_error(
+        self, tmp_path, encryption_key, export_kwargs
+    ):
+        recorder = TransferRecorder()
+        exports = str(tmp_path / "exports")
+
+        with patch(
+            "commands.data_transfer_commands.decrypt_value",
+            side_effect=ValueError("decryption failed: wrong key"),
+        ):
+            with pytest.raises(ValueError):
+                await _run_export(recorder, exports, str(tmp_path), **export_kwargs)
+
+        assert recorder.state_stages("export")[-1] == "failed"
+        # No package (not even a half-written tmp zip) survives the failure.
+        assert os.listdir(exports) == []
+
+    @pytest.mark.asyncio
+    async def test_models_export_includes_model_without_credential(
+        self, tmp_path, encryption_key
+    ):
+        tables = _default_rows()
+        tables["model"] = tables["model"] + [
+            {
+                "id": "model:m2",
+                "name": "Local Fallback",
+                "provider": "ollama",
+                "type": "language",
+                "credential": None,
+                "price_input_per_m": None,
+                "price_output_per_m": None,
+                "price_source": None,
+                "price_matched_key": None,
+                "price_fetched_at": None,
+            }
+        ]
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(
+            recorder, str(tmp_path / "exports"), str(tmp_path),
+            include_files=False, scope="models",
+        )
+
+        assert output.success is True
+        with zipfile.ZipFile(output.package_path) as zf:
+            model_rows = [
+                json.loads(line)
+                for line in zf.read("data/model.ndjson").decode().splitlines()
+            ]
+        assert [r["id"] for r in model_rows] == [MODEL_ID, "model:m2"]
+        assert model_rows[1]["credential"] is None
+
+
+class TestModelImport:
+    @pytest.mark.asyncio
+    async def test_import_model_package_creates_and_reencrypts(self, tmp_path, encryption_key):
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, _model_package_rows())
+        recorder = TransferRecorder(tables={"credential": [], "model": []})
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported == {
+            "credential": 1,
+            "model": 1,
+            "default_models": 1,
+        }
+
+        cred_params = _params_of(recorder, "CREATE credential:c1 SET")
+        import open_notebook.utils.encryption as enc
+
+        assert enc.decrypt_value(cred_params["p0_api_key"]) == "sk-package-key-99"
+        assert cred_params["p0_config"] == {"num_ctx": 4096}
+        assert cred_params["p0_name"] == "Imported"
+
+        model_params = _params_of(recorder, f"CREATE {MODEL_ID} SET")
+        assert model_params["p0_credential"].id == "c1"
+        assert model_params["p0_name"] == "Gemini"
+
+        merge_sql, merge_params = [
+            (sql, p)
+            for sql, p in recorder.writes
+            if "MERGE" in sql and "default_models" in sql
+        ][0]
+        assert merge_params is not None
+        assert merge_sql == "UPSERT open_notebook:default_models MERGE $data;"
+        assert str(merge_params["data"]["default_chat_model"]) == MODEL_ID
+        # Dangling pointer cleared to an explicit None.
+        assert merge_params["data"]["default_embedding_model"] is None
+        assert output.warning_codes[0].code == "defaultModelTargetMissing"
+        assert output.warning_codes[0].params["model"] == "model:missing"
+
+    @pytest.mark.asyncio
+    async def test_import_same_fingerprint_skips_silently(self, tmp_path, encryption_key):
+        import open_notebook.utils.encryption as enc
+
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        local_cred = dict(rows["credential"][0])
+        local_cred["api_key"] = enc.encrypt_value("sk-package-key-99")
+        recorder = TransferRecorder(
+            tables={"credential": [local_cred], "model": [dict(rows["model"][0])]}
+        )
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.imported == {"default_models": 1}
+        assert output.skipped["credential"] == 1
+        assert output.skipped["model"] == 1
+        # Only the dangling default-model pointer warns.
+        assert output.warnings == [
+            "Default model model:missing from the package was not imported; "
+            "the default_embedding_model assignment was cleared"
+        ]
+        assert not [sql for sql, _ in recorder.writes if sql.startswith("CREATE")]
+
+    @pytest.mark.asyncio
+    async def test_import_conflict_without_decision_skips(self, tmp_path, encryption_key):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        local_cred = {
+            "id": CREDENTIAL_ID,
+            "name": "Local",
+            "provider": "openai",
+            "modalities": ["language"],
+            "api_key": "different-local-key",
+        }
+        local_model = {
+            "id": MODEL_ID,
+            "name": "GPT",
+            "provider": "openai",
+            "type": "language",
+        }
+        recorder = TransferRecorder(
+            tables={"credential": [local_cred], "model": [local_model]}
+        )
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.imported == {"default_models": 1}
+        assert output.skipped["credential"] == 1
+        assert output.skipped["model"] == 1
+        assert not [sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))]
+
+    @pytest.mark.asyncio
+    async def test_import_conflict_with_explicit_skip_keeps_local(
+        self, tmp_path, encryption_key
+    ):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        local_cred = {
+            "id": CREDENTIAL_ID,
+            "name": "Local",
+            "provider": "openai",
+            "modalities": ["language"],
+            "api_key": "different-local-key",
+        }
+        local_model = {
+            "id": MODEL_ID,
+            "name": "GPT",
+            "provider": "openai",
+            "type": "language",
+        }
+        recorder = TransferRecorder(
+            tables={"credential": [local_cred], "model": [local_model]}
+        )
+
+        output = await _run_import(
+            recorder,
+            str(tmp_path),
+            package,
+            model_decisions=[
+                {"kind": "credential", "id": CREDENTIAL_ID, "action": "skip"},
+                {"kind": "model", "id": MODEL_ID, "action": "skip"},
+            ],
+        )
+
+        assert output.imported == {"default_models": 1}
+        assert output.skipped["credential"] == 1
+        assert output.skipped["model"] == 1
+        assert not [sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))]
+
+    @pytest.mark.asyncio
+    async def test_import_overwrite_credential_updates_only_secret_fields(
+        self, tmp_path, encryption_key
+    ):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        local_cred = {
+            "id": CREDENTIAL_ID,
+            "name": "Local",
+            "provider": "openai",
+            "modalities": ["language"],
+            "api_key": "different-local-key",
+        }
+        recorder = TransferRecorder(tables={"credential": [local_cred], "model": []})
+
+        output = await _run_import(
+            recorder,
+            str(tmp_path),
+            package,
+            model_decisions=[
+                {"kind": "credential", "id": CREDENTIAL_ID, "action": "overwrite"}
+            ],
+        )
+
+        assert output.imported["credential"] == 1
+        update_sql, update_params = [
+            (sql, p) for sql, p in recorder.writes if sql.startswith("UPDATE $id SET")
+        ][0]
+        assert update_params is not None
+        assert update_sql == (
+            "UPDATE $id SET api_key = $api_key, config = $config, "
+            "modalities = $modalities, updated = $updated;"
+        )
+        import open_notebook.utils.encryption as enc
+
+        assert enc.decrypt_value(update_params["api_key"]) == "sk-package-key-99"
+        assert update_params["config"] == {"num_ctx": 4096}
+        assert update_params["modalities"] == ["language"]
+        # name/provider stay local.
+        assert update_params.get("name") is None
+        assert update_params.get("provider") is None
+
+    @pytest.mark.asyncio
+    async def test_import_overwrite_model_updates_all_business_fields(
+        self, tmp_path, encryption_key
+    ):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        local_model = {
+            "id": MODEL_ID,
+            "name": "GPT",
+            "provider": "openai",
+            "type": "language",
+            "credential": None,
+            "price_input_per_m": None,
+            "price_output_per_m": None,
+            "price_source": None,
+            "price_matched_key": None,
+            "price_fetched_at": None,
+        }
+        recorder = TransferRecorder(tables={"credential": [], "model": [local_model]})
+
+        output = await _run_import(
+            recorder,
+            str(tmp_path),
+            package,
+            model_decisions=[{"kind": "model", "id": MODEL_ID, "action": "overwrite"}],
+        )
+
+        assert output.imported["model"] == 1
+        update_sql, update_params = [
+            (sql, p) for sql, p in recorder.writes if sql.startswith("UPDATE $id SET")
+        ][0]
+        assert update_params is not None
+        for field in dtc.MODEL_OVERWRITE_FIELDS:
+            assert f"{field} = ${field}" in update_sql
+        assert update_params["name"] == "Gemini"
+        assert update_params["provider"] == "vertex"
+        assert update_params["credential"].id == "c1"
+        assert update_params["price_source"] == "litellm"
+        assert "updated = $updated" in update_sql
+
+    @pytest.mark.asyncio
+    async def test_import_decision_outside_package_fails_before_writes(
+        self, tmp_path, encryption_key
+    ):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        recorder = TransferRecorder(tables={"credential": [], "model": []})
+
+        with pytest.raises(ValueError, match="outside the package"):
+            await _run_import(
+                recorder,
+                str(tmp_path),
+                package,
+                model_decisions=[{"kind": "model", "id": "model:ghost", "action": "skip"}],
+            )
+        assert recorder.writes == []
+        assert recorder.state_stages("import")[-1] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_import_duplicate_decision_fails(self, tmp_path, encryption_key):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        recorder = TransferRecorder(tables={"credential": [], "model": []})
+
+        with pytest.raises(ValueError, match="Duplicate model decision"):
+            await _run_import(
+                recorder,
+                str(tmp_path),
+                package,
+                model_decisions=[
+                    {"kind": "model", "id": MODEL_ID, "action": "skip"},
+                    {"kind": "model", "id": MODEL_ID, "action": "overwrite"},
+                ],
+            )
+        assert recorder.writes == []
+
+    @pytest.mark.asyncio
+    async def test_import_with_keys_requires_encryption_key(self, tmp_path, no_encryption_key):
+        rows = _model_package_rows()
+        package = tmp_path / "models.zip"
+        _build_v2_package(package, rows)
+        recorder = TransferRecorder(tables={"credential": [], "model": []})
+
+        with pytest.raises(ValueError, match="OPEN_NOTEBOOK_ENCRYPTION_KEY"):
+            await _run_import(recorder, str(tmp_path), package)
+
+        assert recorder.writes == []
+        assert recorder.state_stages("import")[-1] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_import_v1_package_ignores_model_config_stage(self, tmp_path):
+        # A v1 data package without model members: the model_config stage is a
+        # no-op and behavior stays identical to pre-v2 imports.
+        package = tmp_path / "pkg.zip"
+        _build_package(package, _package_rows(), {})
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported["notebook"] == 1
+        assert "credential" not in output.imported
+        assert not [sql for sql, _ in recorder.writes if "default_models" in sql]
+
+
+class TestValidatePackageVersions:
+    def test_rejects_v1_package_with_model_members(self, tmp_path):
+        package = tmp_path / "v1_with_models.zip"
+        with zipfile.ZipFile(package, "w") as zf:
+            zf.writestr("data/credential.ndjson", '{"id": "credential:c1"}\n')
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"format_version": 1, "counts": {}}),
+            )
+        with zipfile.ZipFile(package) as zf:
+            with pytest.raises(ValueError, match="format_version 2"):
+                dtc._validate_package(zf)
+
+    def test_rejects_models_package_with_data_tables(self, tmp_path):
+        package = tmp_path / "models_mixed.zip"
+        with zipfile.ZipFile(package, "w") as zf:
+            zf.writestr("data/notebook.ndjson", '{"id": "notebook:n1"}\n')
+            zf.writestr("data/credential.ndjson", '{"id": "credential:c1"}\n')
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {"format_version": 2, "package_type": "models", "counts": {}}
+                ),
+            )
+        with zipfile.ZipFile(package) as zf:
+            with pytest.raises(ValueError, match="non-model tables"):
+                dtc._validate_package(zf)

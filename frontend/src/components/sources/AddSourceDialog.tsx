@@ -195,6 +195,17 @@ export function AddSourceDialog({
     }
   }, [open, defaultGroupId, defaultViewId])
 
+  // A folder pick without a notebook is a dead end the user cannot see the
+  // reason for (folders are view-global; an unfiled notebook would be
+  // invisible). When the notebook is inferable, infer it instead of nagging:
+  // the single existing notebook is the only possible answer.
+  useEffect(() => {
+    if (!open || !targetFolder) return
+    if (selectedNotebooks.length > 0) return
+    if (notebooks.length !== 1) return
+    setSelectedNotebooks([notebooks[0].id])
+  }, [open, targetFolder, selectedNotebooks.length, notebooks])
+
   const selectedType = watch('type')
   const watchedUrl = watch('url')
   const watchedContent = watch('content')

@@ -138,6 +138,65 @@ class TestAsyncSourceAssetPersistence:
         assert source.asset is None
 
 
+class TestNotebookIdBackwardCompat:
+    """A request carrying only the deprecated singular `notebook_id` form
+    field must still link the source to its notebook.
+
+    The SourceCreate model folds notebook_id into notebooks, and both
+    creation paths iterate that list — this test pins the contract so a
+    future refactor cannot silently save the source with no reference edge
+    (an orphan invisible in every notebook, as found on the 2026-09-24
+    uploads: 16 files filed into folders but attached to no notebook).
+    """
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    async def test_singular_notebook_id_creates_reference(
+        self, mock_nb_get, mock_add_nb, mock_submit, client
+    ):
+        mock_nb_get.return_value = MagicMock()
+        mock_submit.return_value = "command:123"
+
+        async def capture_save(self_source):
+            self_source.id = "source:fake"
+            self_source.command = None
+
+        with patch.object(Source, "save", autospec=True, side_effect=capture_save):
+            response = client.post(
+                "/api/sources",
+                data={
+                    "type": "link",
+                    "url": "https://example.com/article",
+                    "notebook_id": "notebook:legacy",
+                    "async_processing": "true",
+                },
+            )
+
+        assert response.status_code == 200
+        linked_ids = [str(call.args[-1]) for call in mock_add_nb.await_args_list]
+        assert "notebook:legacy" in linked_ids
+
+    @pytest.mark.asyncio
+    async def test_both_id_forms_rejected(self, client):
+        """Passing both notebook_id and notebooks is rejected up front —
+        the caller must use the plural field only."""
+        response = client.post(
+            "/api/sources",
+            data={
+                "type": "link",
+                "url": "https://example.com/article",
+                "notebook_id": "notebook:legacy",
+                "notebooks": '["notebook:second"]',
+                "async_processing": "true",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "Cannot specify both" in response.json()["detail"]
+
+
 class TestRetrySourceProcessing:
     """POST /sources/{id}/retry must find a source's notebooks via the reference
     edge's in/out columns, not a non-existent `source` column (#861)."""

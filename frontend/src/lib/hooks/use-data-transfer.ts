@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import {
   dataTransferApi,
+  type ExportStartInput,
   type ExportStatusResponse,
+  type ImportExecuteInput,
   type ImportStatusResponse,
 } from '@/lib/api/dataTransfer'
 import { QUERY_KEYS } from '@/lib/api/query-client'
@@ -56,13 +58,39 @@ export function useStartExport() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: () => dataTransferApi.startExport(),
+    mutationFn: (input: ExportStartInput) => dataTransferApi.startExport(input),
     onSuccess: () => {
       toast({
         title: t('common.success'),
         description: t('dataManagement.export.startedToast'),
       })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dataTransferExport })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: isConcurrentError(error)
+          ? t('dataManagement.errors.concurrent')
+          : getApiErrorMessage(error, (key) => t(key), 'dataManagement.errors.failed'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useExecuteImport() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (input: ImportExecuteInput) => dataTransferApi.executeImport(input),
+    onSuccess: () => {
+      toast({
+        title: t('common.success'),
+        description: t('dataManagement.import.startedToast'),
+      })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dataTransferImport })
     },
     onError: (error: unknown) => {
       toast({
@@ -84,10 +112,8 @@ export function useUploadImportPackage() {
   return useMutation({
     mutationFn: (file: File) => dataTransferApi.uploadImport(file),
     onSuccess: () => {
-      toast({
-        title: t('common.success'),
-        description: t('dataManagement.import.startedToast'),
-      })
+      // No success toast: the scan result drives the next UI step (conflict
+      // dialog or automatic execute).
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dataTransferImport })
     },
     onError: (error: unknown) => {
