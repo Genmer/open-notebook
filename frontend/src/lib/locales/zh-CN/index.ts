@@ -282,6 +282,22 @@ export const zhCN = {
     recentlyViewedNotebook: "笔记本",
     recentlyViewedSource: "来源",
     lastViewed: "查看于{{time}}",
+    saveNote: {
+      title: "保存为笔记",
+      description: "为这条回答起个名字，保存到当前笔记本。",
+      nameLabel: "笔记名称",
+      namePlaceholder: "填写笔记名称",
+      submit: "保存",
+    },
+    saveAsSource: {
+      title: "存为来源",
+      action: "存为来源",
+      description: "将此笔记内容转为文本来源，加入当前笔记本。",
+      nameLabel: "来源名称",
+      namePlaceholder: "填写来源名称",
+      noEmbedHint: "将以未嵌入状态加入，并默认计入笔记本对话上下文（可在对话上下文选择器中调整）；如需向量检索，可稍后在来源列表补嵌入。",
+      submit: "加入笔记本",
+    },
   },
   sources: {
     newSource: "新建来源",
@@ -314,7 +330,6 @@ export const zhCN = {
     loadingMore: "正在加载更多...",
     noSourcesYet: "暂无来源",
     allSourcesDescShort: "在此查看所有来源。",
-    cannotSaveNoteNoNotebook: "无法保存笔记：缺少笔记本 ID",
     createFirstSource: "添加您的第一个来源开始构建知识库。",
     deleteSourceConfirm: "确定要删除此来源吗？",
     deleteConfirm: "确定要删除吗？",
@@ -495,6 +510,8 @@ export const zhCN = {
         failed: "失败",
       },
     },
+    copy: "复制",
+    copied: "已复制",
     grouping: {
       aiContentViewName: "按内容",
       aiTitleViewName: "按文件名",
@@ -1605,5 +1622,6 @@ export const zhCN = {
     readOnlyView: "只读预览",
     enterFullscreen: "进入全屏",
     exitFullscreen: "退出全屏",
+    editNote: "编辑笔记",
   },
 } satisfies TranslationShape;

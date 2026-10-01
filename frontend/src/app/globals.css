@@ -599,3 +599,39 @@
     list-style-type: decimal;
   }
 }
+
+/* ============================================================================
+   Gemini notebook workspace grid
+   Plain CSS on purpose: this grid's arbitrary-value responsive grid-cols
+   utilities resolved inconsistently in the embedded webview (the 2xl rule
+   matched freshly created elements but not the hydrated grid). Static
+   class + media queries sidestep that entirely. Keep widths in sync with
+   GeminiNotebookView's three-column layout.
+   ========================================================================== */
+.notebook-workspace-grid {
+  grid-template-columns: 360px minmax(0, 1fr) 360px;
+}
+
+.notebook-workspace-grid--studio-collapsed {
+  grid-template-columns: 360px minmax(0, 1fr) 48px;
+}
+
+@media (min-width: 80rem) {
+  .notebook-workspace-grid {
+    grid-template-columns: 380px minmax(0, 1fr) 420px;
+  }
+
+  .notebook-workspace-grid--studio-collapsed {
+    grid-template-columns: 380px minmax(0, 1fr) 48px;
+  }
+}
+
+@media (min-width: 96rem) {
+  .notebook-workspace-grid {
+    grid-template-columns: 420px minmax(0, 1fr) 460px;
+  }
+
+  .notebook-workspace-grid--studio-collapsed {
+    grid-template-columns: 420px minmax(0, 1fr) 48px;
+  }
+}

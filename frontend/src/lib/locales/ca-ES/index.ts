@@ -282,6 +282,22 @@ export const caES = {
     recentlyViewedNotebook: "Quadern",
     recentlyViewedSource: "Font",
     lastViewed: "Vist {{time}}",
+    saveNote: {
+      title: "Desa com a nota",
+      description: "Posa un nom a aquesta resposta abans de desar-la en aquest quadern.",
+      nameLabel: "Nom de la nota",
+      namePlaceholder: "Introdueix un nom per a la nota",
+      submit: "Desa",
+    },
+    saveAsSource: {
+      title: "Desa com a font",
+      action: "Desa com a font",
+      description: "Crea una font de text amb el contingut d'aquesta nota en aquest quadern.",
+      nameLabel: "Nom de la font",
+      namePlaceholder: "Introdueix un nom per a la font",
+      noEmbedHint: "S'afegeix sense embeddings i s'inclou per defecte al context del xat del quadern (ajustable al selector de context del xat); si necessites cerca vectorial, executa l'embedding més tard des de la llista de fonts.",
+      submit: "Afegeix al quadern",
+    },
   },
   sources: {
     newSource: "Font nova",
@@ -314,7 +330,6 @@ export const caES = {
     loadingMore: "S'està carregant més...",
     noSourcesYet: "Encara no hi ha fonts",
     allSourcesDescShort: "Consulta aquí totes les teves fonts.",
-    cannotSaveNoteNoNotebook: "No es pot desar la nota: l'ID del quadern no està disponible",
     createFirstSource: "Afegeix la primera font per començar a construir la teva base de coneixement.",
     deleteSourceConfirm: "Segur que vols suprimir aquesta font?",
     deleteConfirm: "Segur que vols suprimir aquest element?",
@@ -495,6 +510,8 @@ export const caES = {
         failed: "failed",
       },
     },
+    copy: "Copia",
+    copied: "Copiat",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const caES = {
     readOnlyView: "Vista de només lectura",
     enterFullscreen: "Activa la pantalla completa",
     exitFullscreen: "Surt de la pantalla completa",
+    editNote: "Edita la nota",
   },
 } satisfies TranslationShape;

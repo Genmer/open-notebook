@@ -282,6 +282,22 @@ export const trTR = {
     recentlyViewedNotebook: "Defter",
     recentlyViewedSource: "Kaynak",
     lastViewed: "{{time}} görüntülendi",
+    saveNote: {
+      title: "Not olarak kaydet",
+      description: "Bu yanıtı bu deftere kaydetmeden önce bir ad verin.",
+      nameLabel: "Not adı",
+      namePlaceholder: "Not için bir ad girin",
+      submit: "Kaydet",
+    },
+    saveAsSource: {
+      title: "Kaynak olarak kaydet",
+      action: "Kaynak olarak kaydet",
+      description: "Bu notun içeriğinden bu defterde bir metin kaynağı oluşturur.",
+      nameLabel: "Kaynak adı",
+      namePlaceholder: "Kaynak için bir ad girin",
+      noEmbedHint: "Gömme olmadan eklenir ve varsayılan olarak defterin sohbet bağlamına dahil edilir (sohbet bağlam seçicide ayarlanabilir); vektör araması gerekiyorsa daha sonra kaynak listesinden gömmeyi çalıştırabilirsiniz.",
+      submit: "Deftere ekle",
+    },
   },
   sources: {
     newSource: "Yeni Kaynak",
@@ -314,7 +330,6 @@ export const trTR = {
     loadingMore: "Daha fazla yükleniyor...",
     noSourcesYet: "Henüz kaynak yok",
     allSourcesDescShort: "Tüm kaynaklarınızı burada görüntüleyin.",
-    cannotSaveNoteNoNotebook: "Not kaydedilemiyor: defter kimliği mevcut değil",
     createFirstSource: "Bilgi tabanınızı oluşturmaya başlamak için ilk kaynağınızı ekleyin.",
     deleteSourceConfirm: "Bu kaynağı silmek istediğinizden emin misiniz?",
     deleteConfirm: "Bunu silmek istediğinizden emin misiniz?",
@@ -495,6 +510,8 @@ export const trTR = {
         failed: "failed",
       },
     },
+    copy: "Kopyala",
+    copied: "Kopyalandı",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const trTR = {
     readOnlyView: "Salt okunur görünüm",
     enterFullscreen: "Tam ekran yap",
     exitFullscreen: "Tam ekrandan çık",
+    editNote: "Notu düzenle",
   },
 } satisfies TranslationShape;

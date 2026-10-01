@@ -59,3 +59,62 @@ describe('ArtifactViewDialog fullscreen', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })
+
+describe('ArtifactViewDialog bottom action bar', () => {
+  it('renders edit and save-as-source buttons and fires both callbacks', () => {
+    const onEdit = vi.fn()
+    const onSaveAsSource = vi.fn()
+    render(
+      <ArtifactViewDialog
+        open
+        onOpenChange={vi.fn()}
+        note={note}
+        onEdit={onEdit}
+        onSaveAsSource={onSaveAsSource}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId('artifact-view-edit'))
+    expect(onEdit).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('artifact-view-save-as-source'))
+    expect(onSaveAsSource).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels the buttons through i18n keys', () => {
+    render(
+      <ArtifactViewDialog
+        open
+        onOpenChange={vi.fn()}
+        note={note}
+        onEdit={vi.fn()}
+        onSaveAsSource={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('artifacts.editNote')).toBeInTheDocument()
+    expect(screen.getByText('notebooks.saveAsSource.action')).toBeInTheDocument()
+  })
+
+  it('renders no action bar when no callbacks are provided', () => {
+    render(<ArtifactViewDialog open onOpenChange={vi.fn()} note={note} />)
+
+    expect(screen.queryByTestId('artifact-view-edit')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('artifact-view-save-as-source')).not.toBeInTheDocument()
+  })
+
+  it('still renders the action bar for an empty note (empty notes need the editor most)', () => {
+    render(
+      <ArtifactViewDialog
+        open
+        onOpenChange={vi.fn()}
+        note={{ title: 'Empty', content: null }}
+        onEdit={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('artifact-view-edit')).toBeInTheDocument()
+    // 空内容：不渲染正文块，但操作栏仍在
+    expect(screen.queryByTestId('artifact-view-save-as-source')).not.toBeInTheDocument()
+  })
+})

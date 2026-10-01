@@ -282,6 +282,22 @@ export const itIT = {
     recentlyViewedNotebook: "Quaderno",
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
+    saveNote: {
+      title: "Salva come nota",
+      description: "Dai un nome a questa risposta prima di salvarla in questo quaderno.",
+      nameLabel: "Nome della nota",
+      namePlaceholder: "Inserisci un nome per la nota",
+      submit: "Salva",
+    },
+    saveAsSource: {
+      title: "Salva come fonte",
+      action: "Salva come fonte",
+      description: "Crea una fonte di testo dal contenuto di questa nota in questo quaderno.",
+      nameLabel: "Nome della fonte",
+      namePlaceholder: "Inserisci un nome per la fonte",
+      noEmbedHint: "Verrà aggiunta senza embedding e inclusa per impostazione predefinita nel contesto della chat del quaderno (regolabile nel selettore del contesto); se ti serve la ricerca vettoriale, avvia l'embedding più tardi dall'elenco delle fonti.",
+      submit: "Aggiungi al quaderno",
+    },
   },
   sources: {
     newSource: "Nuova fonte",
@@ -314,7 +330,6 @@ export const itIT = {
     loadingMore: "Caricamento...",
     noSourcesYet: "Ancora nessuna fonte",
     allSourcesDescShort: "Visualizza tutte le tue fonti qui.",
-    cannotSaveNoteNoNotebook: "Impossibile salvare la nota: ID quaderno non disponibile",
     createFirstSource: "Aggiungi la tua prima fonte per iniziare a costruire la tua base di conoscenza.",
     deleteSourceConfirm: "Sei sicuro di voler eliminare questa fonte?",
     deleteConfirm: "Sei sicuro di voler eliminare questo elemento?",
@@ -495,6 +510,8 @@ export const itIT = {
         failed: "failed",
       },
     },
+    copy: "Copia",
+    copied: "Copiato",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const itIT = {
     readOnlyView: "Visualizzazione di sola lettura",
     enterFullscreen: "Attiva schermo intero",
     exitFullscreen: "Esci da schermo intero",
+    editNote: "Modifica nota",
   },
 } satisfies TranslationShape;

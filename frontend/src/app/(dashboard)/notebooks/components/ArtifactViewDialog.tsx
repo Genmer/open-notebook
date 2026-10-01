@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { FilePlus2, Maximize2, Minimize2, Pencil } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
@@ -14,13 +14,17 @@ interface ArtifactViewDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   note?: { title: string | null; content: string | null }
+  /** 打开编辑器改写这条笔记（阅读弹窗由调用方负责关闭）。 */
+  onEdit?: () => void
+  /** 把这条笔记内容转成 text 来源加入笔记本（阅读弹窗由调用方负责关闭）。 */
+  onSaveAsSource?: () => void
 }
 
 /**
  * Read-only rendering for study artifacts stored as notes: flashcard notes
  * render as click-to-flip cards, everything else as Markdown.
  */
-export function ArtifactViewDialog({ open, onOpenChange, note }: ArtifactViewDialogProps) {
+export function ArtifactViewDialog({ open, onOpenChange, note, onEdit, onSaveAsSource }: ArtifactViewDialogProps) {
   const { t } = useTranslation()
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -67,6 +71,36 @@ export function ArtifactViewDialog({ open, onOpenChange, note }: ArtifactViewDia
               <FlashcardViewer cards={flashcards} />
             ) : (
               <MarkdownRenderer>{note.content}</MarkdownRenderer>
+            )}
+          </div>
+        )}
+        {/* 底部操作栏独立于内容条件渲染：空内容笔记也能进编辑器（恰是最需
+            写内容的场景），全屏态自行套 prose 容器与正文对齐。 */}
+        {!!(onEdit || onSaveAsSource) && (
+          <div className={cn('flex gap-2 pt-2', isFullscreen && 'max-w-prose mx-auto w-full')}>
+            {onEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={onEdit}
+                data-testid="artifact-view-edit"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {t('artifacts.editNote')}
+              </Button>
+            )}
+            {onSaveAsSource && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={onSaveAsSource}
+                data-testid="artifact-view-save-as-source"
+              >
+                <FilePlus2 className="h-3.5 w-3.5" />
+                {t('notebooks.saveAsSource.action')}
+              </Button>
             )}
           </div>
         )}

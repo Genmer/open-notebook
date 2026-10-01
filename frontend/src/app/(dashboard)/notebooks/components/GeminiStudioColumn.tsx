@@ -18,6 +18,7 @@ import {
   StickyNote,
   Trash2,
   Edit,
+  FilePlus2,
   Bot,
   User,
   Loader2,
@@ -29,8 +30,10 @@ import { createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import type { NoteResponse, SourceListResponse } from '@/lib/types/api'
 import type { ContextSelections } from '@/lib/types/notebook-context'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { NoteEditorDialog } from './NoteEditorDialog'
 import { ArtifactViewDialog } from './ArtifactViewDialog'
+import { SaveAsSourceDialog } from './SaveAsSourceDialog'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
 import { useDeleteNote } from '@/lib/hooks/use-notes'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -64,6 +67,8 @@ interface GeminiStudioColumnProps {
   isLoading: boolean
   sources?: SourceListResponse[]
   contextSelections?: ContextSelections
+  /** 当前分组浏览范围，用于「存为来源」弹窗预选默认文件夹。 */
+  sourceGrouping?: NotebookSourceFilters
 }
 
 interface StudioTool {
@@ -84,6 +89,7 @@ export function GeminiStudioColumn({
   isLoading,
   sources = [],
   contextSelections,
+  sourceGrouping,
 }: GeminiStudioColumnProps) {
   const { t, language } = useTranslation()
   const { toggleNotes } = useNotebookColumnsStore()
@@ -98,6 +104,8 @@ export function GeminiStudioColumn({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
   const [viewingNote, setViewingNote] = useState<NoteResponse | null>(null)
+  const [saveAsSourceNote, setSaveAsSourceNote] = useState<NoteResponse | undefined>()
+  const [saveAsSourceOpen, setSaveAsSourceOpen] = useState(false)
 
   // 工件生成对话框状态
   const [activeTool, setActiveTool] = useState<StudioTool | null>(null)
@@ -429,6 +437,20 @@ export function GeminiStudioColumn({
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSaveAsSourceNote(note)
+                            setSaveAsSourceOpen(true)
+                          }}
+                          aria-label={t('notebooks.saveAsSource.action')}
+                          title={t('notebooks.saveAsSource.action')}
+                        >
+                          <FilePlus2 className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -486,11 +508,34 @@ export function GeminiStudioColumn({
       />
 
       {/* 笔记全屏阅读弹窗：列表接口带回了 content，直接用统一的只读渲染
-          （Markdown 排版 / 闪卡翻转 / 全屏切换），见 ArtifactViewDialog */}
+          （Markdown 排版 / 闪卡翻转 / 全屏切换），见 ArtifactViewDialog。
+          底部操作栏回调会先关阅读弹窗再开对应弹窗，避免两个 open Dialog 叠开。 */}
       <ArtifactViewDialog
         open={!!viewingNote}
         onOpenChange={(open) => !open && setViewingNote(null)}
         note={viewingNote ?? undefined}
+        onEdit={() => {
+          setEditingNote(viewingNote ?? undefined)
+          setViewingNote(null)
+          setEditorOpen(true)
+        }}
+        onSaveAsSource={() => {
+          const note = viewingNote
+          setViewingNote(null)
+          if (note) {
+            setSaveAsSourceNote(note)
+            setSaveAsSourceOpen(true)
+          }
+        }}
+      />
+
+      {/* 存为来源弹窗：把笔记内容转成 text 来源加入本笔记本 */}
+      <SaveAsSourceDialog
+        open={saveAsSourceOpen}
+        onOpenChange={setSaveAsSourceOpen}
+        notebookId={notebookId}
+        note={saveAsSourceNote}
+        sourceGrouping={sourceGrouping}
       />
 
       {/* Studio 真实工件生成弹窗（提交后切换为进度详情视图） */}

@@ -282,6 +282,22 @@ export const plPL = {
     recentlyViewedNotebook: "Notatnik",
     recentlyViewedSource: "Źródło",
     lastViewed: "Wyświetlono {{time}}",
+    saveNote: {
+      title: "Zapisz jako notatkę",
+      description: "Nadaj tej odpowiedzi nazwę przed zapisaniem jej w tym notatniku.",
+      nameLabel: "Nazwa notatki",
+      namePlaceholder: "Wpisz nazwę notatki",
+      submit: "Zapisz",
+    },
+    saveAsSource: {
+      title: "Zapisz jako źródło",
+      action: "Zapisz jako źródło",
+      description: "Tworzy źródło tekstowe z treści tej notatki w tym notatniku.",
+      nameLabel: "Nazwa źródła",
+      namePlaceholder: "Wpisz nazwę źródła",
+      noEmbedHint: "Zostanie dodane bez osadzeń i domyślnie uwzględnione w kontekście czatu notatnika (możesz to zmienić w wyborze kontekstu czatu); jeśli potrzebujesz wyszukiwania wektorowego, uruchom osadzanie później z listy źródeł.",
+      submit: "Dodaj do notatnika",
+    },
   },
   sources: {
     newSource: "Nowe źródło",
@@ -314,7 +330,6 @@ export const plPL = {
     loadingMore: "Ładowanie kolejnych...",
     noSourcesYet: "Brak źródeł",
     allSourcesDescShort: "Tutaj zobaczysz wszystkie swoje źródła.",
-    cannotSaveNoteNoNotebook: "Nie można zapisać notatki: brak dostępnego identyfikatora notatnika",
     createFirstSource: "Dodaj pierwsze źródło, aby zacząć budować bazę wiedzy.",
     deleteSourceConfirm: "Czy na pewno chcesz usunąć to źródło?",
     deleteConfirm: "Czy na pewno chcesz to usunąć?",
@@ -495,6 +510,8 @@ export const plPL = {
         failed: "failed",
       },
     },
+    copy: "Kopiuj",
+    copied: "Skopiowano",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const plPL = {
     readOnlyView: "Widok tylko do odczytu",
     enterFullscreen: "Włącz pełny ekran",
     exitFullscreen: "Wyłącz pełny ekran",
+    editNote: "Edytuj notatkę",
   },
 } satisfies TranslationShape;

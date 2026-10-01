@@ -282,6 +282,22 @@ export const ptBR = {
     recentlyViewedNotebook: "Caderno",
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
+    saveNote: {
+      title: "Salvar como nota",
+      description: "Dê um nome a esta resposta antes de salvá-la neste caderno.",
+      nameLabel: "Nome da nota",
+      namePlaceholder: "Digite um nome para a nota",
+      submit: "Salvar",
+    },
+    saveAsSource: {
+      title: "Salvar como fonte",
+      action: "Salvar como fonte",
+      description: "Cria uma fonte de texto com o conteúdo desta nota neste caderno.",
+      nameLabel: "Nome da fonte",
+      namePlaceholder: "Digite um nome para a fonte",
+      noEmbedHint: "Será adicionada sem embeddings e incluída por padrão no contexto do chat do caderno (ajuste no seletor de contexto do chat); se precisar de busca vetorial, execute o embedding depois na lista de fontes.",
+      submit: "Adicionar ao caderno",
+    },
   },
   sources: {
     newSource: "Nova Fonte",
@@ -314,7 +330,6 @@ export const ptBR = {
     loadingMore: "Carregando mais...",
     noSourcesYet: "Nenhuma fonte ainda",
     allSourcesDescShort: "Veja todas as suas fontes aqui.",
-    cannotSaveNoteNoNotebook: "Não é possível salvar nota: ID do caderno não disponível",
     createFirstSource: "Adicione sua primeira fonte para começar a construir sua base de conhecimento.",
     deleteSourceConfirm: "Tem certeza que deseja excluir esta fonte?",
     deleteConfirm: "Tem certeza que deseja excluir isto?",
@@ -495,6 +510,8 @@ export const ptBR = {
         failed: "failed",
       },
     },
+    copy: "Copiar",
+    copied: "Copiado",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const ptBR = {
     readOnlyView: "Visualização somente leitura",
     enterFullscreen: "Ativar tela cheia",
     exitFullscreen: "Sair da tela cheia",
+    editNote: "Editar nota",
   },
 } satisfies TranslationShape;

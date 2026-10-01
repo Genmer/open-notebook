@@ -282,6 +282,22 @@ export const zhTW = {
     recentlyViewedNotebook: "筆記本",
     recentlyViewedSource: "來源",
     lastViewed: "檢視於{{time}}",
+    saveNote: {
+      title: "儲存為筆記",
+      description: "為這則回答取個名字，儲存到目前筆記本。",
+      nameLabel: "筆記名稱",
+      namePlaceholder: "填寫筆記名稱",
+      submit: "儲存",
+    },
+    saveAsSource: {
+      title: "存為來源",
+      action: "存為來源",
+      description: "將此筆記內容轉為文字來源，加入目前筆記本。",
+      nameLabel: "來源名稱",
+      namePlaceholder: "填寫來源名稱",
+      noEmbedHint: "將以未嵌入狀態加入，並預設計入筆記本對話上下文（可在對話上下文選擇器中調整）；如需向量檢索，可稍後在來源列表補嵌入。",
+      submit: "加入筆記本",
+    },
   },
   sources: {
     newSource: "新增來源",
@@ -314,7 +330,6 @@ export const zhTW = {
     loadingMore: "正在載入更多...",
     noSourcesYet: "暫無來源",
     allSourcesDescShort: "在此檢視所有來源。",
-    cannotSaveNoteNoNotebook: "無法儲存筆記：缺少筆記本 ID",
     createFirstSource: "新增您的第一個來源開始構建知識庫。",
     deleteSourceConfirm: "確定要刪除此來源嗎？",
     deleteConfirm: "確定要刪除嗎？",
@@ -495,6 +510,8 @@ export const zhTW = {
         failed: "failed",
       },
     },
+    copy: "複製",
+    copied: "已複製",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const zhTW = {
     readOnlyView: "唯讀預覽",
     enterFullscreen: "進入全螢幕",
     exitFullscreen: "退出全螢幕",
+    editNote: "編輯筆記",
   },
 } satisfies TranslationShape;

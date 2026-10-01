@@ -282,6 +282,22 @@ export const frFR = {
     recentlyViewedNotebook: "Carnet",
     recentlyViewedSource: "Source",
     lastViewed: "Consulté {{time}}",
+    saveNote: {
+      title: "Enregistrer en note",
+      description: "Donnez un nom à cette réponse avant de l'enregistrer dans ce carnet.",
+      nameLabel: "Nom de la note",
+      namePlaceholder: "Saisir un nom pour la note",
+      submit: "Enregistrer",
+    },
+    saveAsSource: {
+      title: "Enregistrer comme source",
+      action: "Enregistrer comme source",
+      description: "Crée une source texte à partir du contenu de cette note dans ce carnet.",
+      nameLabel: "Nom de la source",
+      namePlaceholder: "Saisir un nom pour la source",
+      noEmbedHint: "Ajoutée sans embeddings et incluse par défaut dans le contexte de conversation du carnet (ajustable dans le sélecteur de contexte) ; si vous avez besoin de la recherche vectorielle, lancez l'embedding plus tard depuis la liste des sources.",
+      submit: "Ajouter au carnet",
+    },
   },
   sources: {
     newSource: "Nouvelle Source",
@@ -314,7 +330,6 @@ export const frFR = {
     loadingMore: "Chargement...",
     noSourcesYet: "Aucune source pour le moment",
     allSourcesDescShort: "Affichez toutes vos sources ici.",
-    cannotSaveNoteNoNotebook: "Impossible d'enregistrer la note : ID du carnet non disponible",
     createFirstSource: "Ajoutez votre première source pour commencer à bâtir votre base de connaissances.",
     deleteSourceConfirm: "Êtes-vous sûr de vouloir supprimer cette source ?",
     deleteConfirm: "Êtes-vous sûr de vouloir supprimer cet élément ?",
@@ -495,6 +510,8 @@ export const frFR = {
         failed: "failed",
       },
     },
+    copy: "Copier",
+    copied: "Copié",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const frFR = {
     readOnlyView: "Vue en lecture seule",
     enterFullscreen: "Activer le plein écran",
     exitFullscreen: "Quitter le plein écran",
+    editNote: "Modifier la note",
   },
 } satisfies TranslationShape;

@@ -282,6 +282,22 @@ export const ruRU = {
     recentlyViewedNotebook: "Блокнот",
     recentlyViewedSource: "Источник",
     lastViewed: "Просмотрено {{time}}",
+    saveNote: {
+      title: "Сохранить как заметку",
+      description: "Дайте этому ответу название, прежде чем сохранить его в текущий блокнот.",
+      nameLabel: "Название заметки",
+      namePlaceholder: "Введите название заметки",
+      submit: "Сохранить",
+    },
+    saveAsSource: {
+      title: "Сохранить как источник",
+      action: "Сохранить как источник",
+      description: "Создаёт текстовый источник из содержимого этой заметки в текущем блокноте.",
+      nameLabel: "Название источника",
+      namePlaceholder: "Введите название источника",
+      noEmbedHint: "Источник добавляется без эмбеддингов и по умолчанию включается в контекст чата блокнота (можно изменить в выборе контекста чата); если нужен векторный поиск, запустите эмбеддинг позже из списка источников.",
+      submit: "Добавить в блокнот",
+    },
   },
   sources: {
     newSource: "Новый источник",
@@ -314,7 +330,6 @@ export const ruRU = {
     loadingMore: "Загрузка...",
     noSourcesYet: "Пока нет источников",
     allSourcesDescShort: "Просмотр всех ваших источников.",
-    cannotSaveNoteNoNotebook: "Невозможно сохранить заметку: ID блокнота недоступен",
     createFirstSource: "Добавьте первый источник, чтобы начать создание базы знаний.",
     deleteSourceConfirm: "Вы уверены, что хотите удалить этот источник?",
     deleteConfirm: "Вы уверены, что хотите удалить это?",
@@ -495,6 +510,8 @@ export const ruRU = {
         failed: "failed",
       },
     },
+    copy: "Копировать",
+    copied: "Скопировано",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const ruRU = {
     readOnlyView: "Просмотр только для чтения",
     enterFullscreen: "Включить полноэкранный режим",
     exitFullscreen: "Выйти из полноэкранного режима",
+    editNote: "Редактировать заметку",
   },
 } satisfies TranslationShape;

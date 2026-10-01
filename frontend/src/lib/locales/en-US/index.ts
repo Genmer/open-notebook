@@ -280,6 +280,22 @@ export const enUS = {
     recentlyViewedNotebook: "Notebook",
     recentlyViewedSource: "Source",
     lastViewed: "Viewed {{time}}",
+    saveNote: {
+      title: "Save as Note",
+      description: "Give this answer a name before saving it to this notebook.",
+      nameLabel: "Note name",
+      namePlaceholder: "Enter a name for this note",
+      submit: "Save",
+    },
+    saveAsSource: {
+      title: "Save as Source",
+      action: "Save as source",
+      description: "Create a text source from this note's content in this notebook.",
+      nameLabel: "Source name",
+      namePlaceholder: "Enter a name for the source",
+      noEmbedHint: "Added without embeddings and included in the notebook chat context by default — adjust in the chat context picker; run embed later if you need search.",
+      submit: "Add to notebook",
+    },
   },
   sources: {
     title: "Sources",
@@ -312,7 +328,6 @@ export const enUS = {
     loadingMore: "Loading more...",
     noSourcesYet: "No sources yet",
     allSourcesDescShort: "View all your sources here.",
-    cannotSaveNoteNoNotebook: "Cannot save note: notebook ID not available",
     createFirstSource: "Add your first source to start building your knowledge base.",
     deleteSourceConfirm: "Are you sure you want to delete this source?",
     deleteConfirm: "Are you sure you want to delete this?",
@@ -493,6 +508,8 @@ export const enUS = {
         failed: "failed",
       },
     },
+    copy: "Copy",
+    copied: "Copied",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1604,6 +1621,7 @@ export const enUS = {
     readOnlyView: "Read-only view",
     enterFullscreen: "Enter fullscreen",
     exitFullscreen: "Exit fullscreen",
+    editNote: "Edit note",
   },
 }
 

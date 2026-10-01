@@ -282,6 +282,22 @@ export const bnIN = {
     recentlyViewedNotebook: "নোটবুক",
     recentlyViewedSource: "উৎস",
     lastViewed: "{{time}} দেখা হয়েছে",
+    saveNote: {
+      title: "নোট হিসেবে সংরক্ষণ",
+      description: "এই উত্তরটি বর্তমান নোটবুকে সংরক্ষণ করার আগে এটির একটি নাম দিন।",
+      nameLabel: "নোটের নাম",
+      namePlaceholder: "নোটের নাম লিখুন",
+      submit: "সংরক্ষণ",
+    },
+    saveAsSource: {
+      title: "সোর্স হিসেবে সংরক্ষণ",
+      action: "সোর্স হিসেবে সংরক্ষণ",
+      description: "এই নোটের বিষয়বস্তু থেকে বর্তমান নোটবুকে একটি টেক্সট সোর্স তৈরি করে।",
+      nameLabel: "সোর্সের নাম",
+      namePlaceholder: "সোর্সের নাম লিখুন",
+      noEmbedHint: "এমবেডিং ছাড়া যোগ হবে এবং ডিফল্টভাবে নোটবুকের চ্যাট প্রসঙ্গে অন্তর্ভুক্ত থাকবে (চ্যাট প্রসঙ্গ নির্বাচকে পরিবর্তন করা যায়); ভেক্টর অনুসন্ধান দরকার হলে পরে সোর্স তালিকা থেকে এমবেডিং চালান।",
+      submit: "নোটবুকে যোগ করুন",
+    },
   },
   sources: {
     newSource: "নতুন উৎস",
@@ -314,7 +330,6 @@ export const bnIN = {
     loadingMore: "আরো লোড হচ্ছে...",
     noSourcesYet: "এখনও কোন উৎস নেই",
     allSourcesDescShort: "এখানে আপনার সব উৎস দেখুন।",
-    cannotSaveNoteNoNotebook: "নোট সংরক্ষণ করতে পারা যায়নি: নোটবুক ID উপলব্ধ নয়",
     createFirstSource: "আপনার জ্ঞানভান্ডার তৈরি শুরু করতে আপনার প্রথম উৎস যোগ করুন।",
     deleteSourceConfirm: "আপনি কি নিশ্চিত এই উৎসটি মুছে ফেলতে চান?",
     deleteConfirm: "আপনি কি নিশ্চিত এটি মুছে ফেলতে চান?",
@@ -495,6 +510,8 @@ export const bnIN = {
         failed: "failed",
       },
     },
+    copy: "কপি",
+    copied: "কপি হয়েছে",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1606,5 +1623,6 @@ export const bnIN = {
     readOnlyView: "শুধুপড়ার ভিউ",
     enterFullscreen: "পূর্ণস্ক্রিন চালু করুন",
     exitFullscreen: "পূর্ণস্ক্রিন বন্ধ করুন",
+    editNote: "নোট সম্পাদনা",
   },
 } satisfies TranslationShape;

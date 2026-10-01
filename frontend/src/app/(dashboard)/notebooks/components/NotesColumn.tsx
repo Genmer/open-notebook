@@ -277,6 +277,13 @@ export function NotesColumn({
           if (!open) setViewingNote(null)
         }}
         note={viewingNote ?? undefined}
+        onEdit={() => {
+          // 只读查看 → 编辑：先关阅读弹窗再开编辑器，避免两个 open Dialog 叠开
+          const note = viewingNote
+          setViewingNote(null)
+          setEditingNote(note ?? undefined)
+          setEditorOpen(true)
+        }}
       />
 
       <ConfirmDialog

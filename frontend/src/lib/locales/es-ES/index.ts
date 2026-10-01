@@ -282,6 +282,22 @@ export const esES = {
     recentlyViewedNotebook: "Cuaderno",
     recentlyViewedSource: "Fuente",
     lastViewed: "Visto {{time}}",
+    saveNote: {
+      title: "Guardar como nota",
+      description: "Ponle un nombre a esta respuesta antes de guardarla en este cuaderno.",
+      nameLabel: "Nombre de la nota",
+      namePlaceholder: "Introduce un nombre para la nota",
+      submit: "Guardar",
+    },
+    saveAsSource: {
+      title: "Guardar como fuente",
+      action: "Guardar como fuente",
+      description: "Crea una fuente de texto con el contenido de esta nota en este cuaderno.",
+      nameLabel: "Nombre de la fuente",
+      namePlaceholder: "Introduce un nombre para la fuente",
+      noEmbedHint: "Se añade sin embeddings y se incluye por defecto en el contexto del chat del cuaderno (ajústalo en el selector de contexto del chat); si necesitas búsqueda vectorial, ejecuta el embedding más tarde desde la lista de fuentes.",
+      submit: "Añadir al cuaderno",
+    },
   },
   sources: {
     newSource: "Nueva fuente",
@@ -314,7 +330,6 @@ export const esES = {
     loadingMore: "Cargando más...",
     noSourcesYet: "Aún no hay fuentes",
     allSourcesDescShort: "Ve todas tus fuentes aquí.",
-    cannotSaveNoteNoNotebook: "No se puede guardar la nota: ID de cuaderno no disponible",
     createFirstSource: "Agrega tu primera fuente para comenzar a construir tu base de conocimiento.",
     deleteSourceConfirm: "¿Estás seguro de que quieres eliminar esta fuente?",
     deleteConfirm: "¿Estás seguro de que quieres eliminar esto?",
@@ -495,6 +510,8 @@ export const esES = {
         failed: "failed",
       },
     },
+    copy: "Copiar",
+    copied: "Copiado",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1606,5 +1623,6 @@ export const esES = {
     readOnlyView: "Vista de solo lectura",
     enterFullscreen: "Activar pantalla completa",
     exitFullscreen: "Salir de pantalla completa",
+    editNote: "Editar nota",
   },
 } satisfies TranslationShape;

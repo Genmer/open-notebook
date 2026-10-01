@@ -282,6 +282,22 @@ export const jaJP = {
     recentlyViewedNotebook: "ノートブック",
     recentlyViewedSource: "ソース",
     lastViewed: "{{time}}に表示",
+    saveNote: {
+      title: "ノートとして保存",
+      description: "この回答に名前を付けて、現在のノートブックに保存します。",
+      nameLabel: "ノート名",
+      namePlaceholder: "ノート名を入力",
+      submit: "保存",
+    },
+    saveAsSource: {
+      title: "ソースとして保存",
+      action: "ソースとして保存",
+      description: "このノートの内容をテキストソースとして作成し、現在のノートブックに追加します。",
+      nameLabel: "ソース名",
+      namePlaceholder: "ソース名を入力",
+      noEmbedHint: "埋め込みなしで追加され、既定でノートブックの対話コンテキストに含まれます（対話コンテキスト選択で調整できます）。ベクトル検索が必要な場合は、後でソース一覧から埋め込みを実行してください。",
+      submit: "ノートブックに追加",
+    },
   },
   sources: {
     newSource: "新規ソース",
@@ -314,7 +330,6 @@ export const jaJP = {
     loadingMore: "さらに読み込み中...",
     noSourcesYet: "ソースがまだありません",
     allSourcesDescShort: "すべてのソースを表示します。",
-    cannotSaveNoteNoNotebook: "ノートを保存できません：ノートブックIDが利用できません",
     createFirstSource: "最初のソースを追加してナレッジベースの構築を始めましょう。",
     deleteSourceConfirm: "このソースを削除しますか？",
     deleteConfirm: "削除しますか？",
@@ -495,6 +510,8 @@ export const jaJP = {
         failed: "failed",
       },
     },
+    copy: "コピー",
+    copied: "コピーしました",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1605,5 +1622,6 @@ export const jaJP = {
     readOnlyView: "閲覧専用ビュー",
     enterFullscreen: "全画面表示",
     exitFullscreen: "全画面解除",
+    editNote: "ノートを編集",
   },
 } satisfies TranslationShape;

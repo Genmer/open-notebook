@@ -285,6 +285,22 @@ export const deDE = {
     recentlyViewedNotebook: "Notebook",
     recentlyViewedSource: "Quelle",
     lastViewed: "Angesehen {{time}}",
+    saveNote: {
+      title: "Als Notiz speichern",
+      description: "Gib dieser Antwort einen Namen, bevor du sie im aktuellen Notizbuch speicherst.",
+      nameLabel: "Notizname",
+      namePlaceholder: "Namen für die Notiz eingeben",
+      submit: "Speichern",
+    },
+    saveAsSource: {
+      title: "Als Quelle speichern",
+      action: "Als Quelle speichern",
+      description: "Erstellt aus dem Inhalt dieser Notiz eine Textquelle im aktuellen Notizbuch.",
+      nameLabel: "Quellenname",
+      namePlaceholder: "Namen für die Quelle eingeben",
+      noEmbedHint: "Wird ohne Embeddings hinzugefügt und standardmäßig in den Chat-Kontext des Notizbuchs einbezogen (anpassbar über die Kontextauswahl im Chat). Für die Vektorsuche kannst du das Embedding später in der Quellenliste nachholen.",
+      submit: "Zum Notizbuch hinzufügen",
+    },
   },
   sources: {
     newSource: "Neue Quelle",
@@ -317,7 +333,6 @@ export const deDE = {
     loadingMore: "Weitere werden geladen...",
     noSourcesYet: "Noch keine Quellen vorhanden",
     allSourcesDescShort: "Hier findest du alle deine Quellen.",
-    cannotSaveNoteNoNotebook: "Notiz kann nicht gespeichert werden: Notebook-ID nicht verfügbar",
     createFirstSource: "Füge deine erste Quelle hinzu, um deine Wissensbasis aufzubauen.",
     deleteSourceConfirm: "Möchtest du diese Quelle wirklich löschen?",
     deleteConfirm: "Möchtest du das wirklich löschen?",
@@ -498,6 +513,8 @@ export const deDE = {
         failed: "failed",
       },
     },
+    copy: "Kopieren",
+    copied: "Kopiert",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -1608,5 +1625,6 @@ export const deDE = {
     readOnlyView: "Schreibgeschützte Ansicht",
     enterFullscreen: "Vollbild aktivieren",
     exitFullscreen: "Vollbild beenden",
+    editNote: "Notiz bearbeiten",
   },
 } satisfies TranslationShape;

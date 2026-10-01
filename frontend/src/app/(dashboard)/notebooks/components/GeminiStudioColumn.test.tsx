@@ -64,6 +64,29 @@ vi.mock('./NoteEditorDialog', () => ({
     open ? <div data-testid="note-editor-dialog" /> : null,
 }))
 
+// 存为来源弹窗探针：卡片按钮只负责开弹窗，提交逻辑在弹窗自有测试覆盖
+vi.mock('./SaveAsSourceDialog', () => ({
+  SaveAsSourceDialog: ({
+    open,
+    notebookId,
+    note,
+    sourceGrouping,
+  }: {
+    open: boolean
+    notebookId: string
+    note?: { id: string; title: string | null }
+    sourceGrouping?: { viewId?: string; group?: string }
+  }) => (
+    <div
+      data-testid="save-as-source-probe"
+      data-open={String(open)}
+      data-notebook={notebookId}
+      data-note-id={note?.id ?? ''}
+      data-grouping={sourceGrouping ? `${sourceGrouping.viewId ?? ''}:${sourceGrouping.group ?? ''}` : 'none'}
+    />
+  ),
+}))
+
 // ArtifactViewDialog renders note bodies through MarkdownRenderer; keep the
 // test light by asserting on the raw content contract instead.
 vi.mock('@/components/ui/markdown-renderer', () => ({
@@ -278,5 +301,51 @@ describe('GeminiStudioColumn', () => {
     expect(dialogContent).not.toBeNull()
     expect(dialogContent).toHaveTextContent('Study Guide - 核心概念复习')
     expect(dialogContent).toHaveTextContent('整理好的关于核心术语和自测问答的 AI 总结笔记。')
+  })
+
+  it('opens the save-as-source dialog from the card hover action', () => {
+    render(
+      <GeminiStudioColumn
+        notebookId="nb:test"
+        notes={mockNotes}
+        isLoading={false}
+        sources={[]}
+        sourceGrouping={{ viewId: 'view:1', group: 'group:9' }}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    const probe = screen.getByTestId('save-as-source-probe')
+    expect(probe).toHaveAttribute('data-open', 'false')
+
+    // 两张卡片各有一个存为来源按钮，取第一张（note:1）
+    fireEvent.click(screen.getAllByTitle('notebooks.saveAsSource.action')[0])
+
+    expect(probe).toHaveAttribute('data-open', 'true')
+    expect(probe).toHaveAttribute('data-notebook', 'nb:test')
+    expect(probe).toHaveAttribute('data-note-id', 'note:1')
+    expect(probe).toHaveAttribute('data-grouping', 'view:1:group:9')
+  })
+
+  it('hands the note from the read-only view over to the editor via the edit action', () => {
+    render(
+      <GeminiStudioColumn
+        notebookId="nb:test"
+        notes={mockNotes}
+        isLoading={false}
+        sources={[]}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // 打开只读弹窗 → 点「编辑笔记」：阅读弹窗关闭、编辑器打开
+    fireEvent.click(screen.getByText('Study Guide - 核心概念复习'))
+    expect(document.querySelector('[data-slot="dialog-content"]')).not.toBeNull()
+
+    fireEvent.click(screen.getByTestId('artifact-view-edit'))
+
+    expect(screen.getByTestId('note-editor-dialog')).toBeInTheDocument()
+    // 防叠开的核心目的：阅读弹窗必须已关闭
+    expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
   })
 })

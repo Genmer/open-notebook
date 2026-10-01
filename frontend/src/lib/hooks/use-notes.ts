@@ -61,7 +61,11 @@ export function useUpdateNote() {
     mutationFn: ({ id, data }: { id: string; data: UpdateNoteRequest }) =>
       notesApi.update(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notes() })
+      // Prefix invalidation: QUERY_KEYS.notes() evaluates to ['notes', undefined],
+      // which never matches notebook-scoped keys like ['notes', 'notebook:x'] —
+      // the card title would stay stale after a rename. ['notes'] covers every
+      // list + single-note cache (same approach as useDeleteNote below).
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.note(id) })
       toast({
         title: t('common.success'),
