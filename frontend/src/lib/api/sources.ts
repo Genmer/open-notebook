@@ -128,4 +128,13 @@ export const sourcesApi = {
       responseType: 'blob',
     })
   },
+
+  /** Raw bytes of the source's original file, for the in-app PDF viewer. */
+  fetchSourceFileBuffer: async (sourceId: string): Promise<ArrayBuffer> => {
+    const response = await apiClient.get<ArrayBuffer>(
+      `/sources/${sourceId}/download`,
+      { responseType: 'arraybuffer' }
+    )
+    return response.data
+  },
 }

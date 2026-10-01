@@ -86,7 +86,7 @@ export function SaveAsSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !submitting && onOpenChange(o)}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t('notebooks.saveAsSource.title')}</DialogTitle>
           <DialogDescription>{t('notebooks.saveAsSource.description')}</DialogDescription>

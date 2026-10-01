@@ -17,6 +17,7 @@ import {
   Loader2,
   CheckCircle2,
   ExternalLink,
+  Eye,
   BookOpen,
   Folder,
   FolderOpen,
@@ -52,7 +53,8 @@ import {
   useRemoveSourceFromNotebook,
   useUpdateSource,
 } from '@/lib/hooks/use-sources'
-import { useMoveToGroup } from '@/lib/hooks/use-source-views'
+import { useCopyToGroup, useMoveToGroup, useUngroupMembers } from '@/lib/hooks/use-source-views'
+import { EmbedMissingPanel } from '@/components/sources/EmbedMissingPanel'
 import { displayViewName } from '@/lib/utils/view-display'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
@@ -123,7 +125,7 @@ export function GeminiSourcesColumn({
 
   // 右键操作状态（完整移植默认视图能力）
   const [rowAction, setRowAction] = useState<
-    { kind: 'rename' | 'move'; source: SourceListResponse } | null
+    { kind: 'rename' | 'move' | 'copy'; source: SourceListResponse } | null
   >(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null)
@@ -135,6 +137,8 @@ export function GeminiSourcesColumn({
   const removeFromNotebook = useRemoveSourceFromNotebook()
   const updateSource = useUpdateSource()
   const moveToGroup = useMoveToGroup()
+  const copyToGroup = useCopyToGroup()
+  const ungroupMembers = useUngroupMembers()
 
   // 视图列表与当前视图解析
   const { data: views } = useSourceViews() ?? {}
@@ -187,7 +191,10 @@ export function GeminiSourcesColumn({
             id: ts.id,
             title: ts.title,
             insights_count: ts.insights_count,
-            embedded: true,
+            // Real embed state from the context-tree endpoint (derived from the
+            // source_embedding table), never a hardcoded true.
+            embedded: ts.embedded,
+            embedding_status: ts.embedding_status,
             embedded_chunks: 0,
             created: '',
             updated: '',
@@ -270,6 +277,55 @@ export function GeminiSourcesColumn({
       })
       const groupName = (viewGroups ?? []).find((g) => g.id === targetGroupId)?.name ?? ''
       toast.success(t('sources.grouping.moveSuccessWithTarget', { count: 1, group: groupName }))
+      queryClient.invalidateQueries({ queryKey: ['contextTree'] })
+      refetchTree()
+      onRefresh()
+    } catch {
+      // error toast comes from the mutation hook
+    }
+  }
+
+  // 复制到文件夹（与 classic sources 页 handleRowCopy 同语义：created/failed 汇总）
+  const handleCopyConfirm = async (targetGroupId: string | null) => {
+    const target = rowAction
+    setRowAction(null)
+    if (!target || target.kind !== 'copy' || !targetGroupId) return
+    try {
+      const res = await copyToGroup.mutateAsync({
+        groupId: targetGroupId,
+        sourceIds: [target.source.id],
+      })
+      if (res.failed.length === 0) {
+        toast.success(
+          t('sources.grouping.copyCreatedToast', {
+            title: target.source.title || t('sources.untitledSource'),
+          })
+        )
+      } else {
+        toast.warning(
+          t('sources.grouping.bulkPartial', {
+            success: res.created.length,
+            failed: res.failed.length,
+          })
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['contextTree'] })
+      refetchTree()
+      onRefresh()
+    } catch {
+      // error toast comes from the mutation hook
+    }
+  }
+
+  // 移出文件夹（仅对有归属的来源提供；ungroupMembers 只失效 views+sources，这里补齐树刷新）
+  const handleUngroupSource = async (source: SourceListResponse) => {
+    if (!resolvedViewId) return
+    try {
+      await ungroupMembers.mutateAsync({
+        viewId: resolvedViewId,
+        sourceIds: [source.id],
+      })
+      toast.success(t('sources.grouping.ungroupSuccess', { count: 1 }))
       queryClient.invalidateQueries({ queryKey: ['contextTree'] })
       refetchTree()
       onRefresh()
@@ -616,25 +672,40 @@ export function GeminiSourcesColumn({
     const mode = contextSelections[source.id] ?? 'full'
     const isChecked = mode !== 'off'
     const isLink = !!source.asset?.url
+    // 嵌入三态（纯展示，绝不触发 embedding）：failed 红 / 未嵌入琥珀 / 其余不渲染
+    const embedFailed = source.embedding_status === 'failed'
+    const embedUnembedded = source.embedded === false && !embedFailed
+    // 有文件夹归属才提供「移出文件夹」，避免对未归档来源假成功
+    const isGrouped =
+      sourceToGroupMap.has(source.id) ||
+      sourceToGroupMap.has(source.id.replace(/^source:/, ''))
 
     return (
       <ContextMenu key={source.id}>
         <ContextMenuTrigger asChild>
+          {/* 整行可点击打开详情（third arg 供 AI 解析保存链路的 nb 供数）；勾选与 hover 按钮自行 stopPropagation */}
           <div
-            className={`group flex items-center gap-2 p-1.5 px-2 rounded-md border transition-all ${
+            className={`group flex cursor-pointer items-center gap-2 p-1.5 px-2 rounded-md border transition-all ${
               isChecked
                 ? 'bg-card border-border/80 hover:border-primary/40'
                 : 'bg-muted/20 border-border/30 opacity-60'
             }`}
+            onClick={() => openModal('source', source.id, { notebookId })}
           >
-            <Checkbox
-              id={`source-${source.id}`}
-              checked={isChecked}
-              onCheckedChange={(checked) =>
-                onContextModeChange(source.id, checked ? 'full' : 'off')
-              }
-              className="h-3.5 w-3.5 shrink-0"
-            />
+            {/* Checkbox 是唯一的勾选入口：包裹层 stopPropagation 防止点勾选冒泡弹详情 */}
+            <div
+              className="flex items-center shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Checkbox
+                checked={isChecked}
+                onCheckedChange={(checked) =>
+                  onContextModeChange(source.id, checked ? 'full' : 'off')
+                }
+                aria-label={source.title ?? t('sources.untitledSource')}
+                className="h-3.5 w-3.5 shrink-0"
+              />
+            </div>
 
             {isLink ? (
               <LinkIcon className="h-3.5 w-3.5 text-sky-500 shrink-0" />
@@ -642,19 +713,54 @@ export function GeminiSourcesColumn({
               <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             )}
 
-            <label
-              htmlFor={`source-${source.id}`}
-              className="text-xs font-medium text-foreground truncate flex-1 cursor-pointer"
+            <span
+              className="text-xs font-medium text-foreground truncate flex-1 min-w-0 cursor-pointer"
               title={source.title ?? undefined}
             >
-              {source.title || '无标题来源'}
-            </label>
+              {source.title || t('sources.untitledSource')}
+            </span>
+
+            {embedFailed ? (
+              <span
+                role="img"
+                aria-label={t('sources.embedStateDot.failed')}
+                title={t('sources.embedStateDot.failed')}
+                className="h-2 w-2 rounded-full bg-destructive shrink-0"
+              />
+            ) : embedUnembedded ? (
+              <span
+                role="img"
+                aria-label={t('sources.embedStateDot.unembedded')}
+                title={t('sources.embedStateDot.unembedded')}
+                className="h-2 w-2 rounded-full bg-amber-500 shrink-0"
+              />
+            ) : null}
+
+            {/* hover 详情按钮：24px 命中区，悬停/键盘聚焦/组内聚焦时揭示 */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto group-focus-within:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation()
+                openModal('source', source.id, { notebookId })
+              }}
+              aria-label={t('sources.details')}
+              title={t('sources.details')}
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </ContextMenuTrigger>
         <SourceContextMenuContent
-          onOpen={() => openModal('source', source.id)}
+          onOpen={() => openModal('source', source.id, { notebookId })}
           onRename={() => setRowAction({ kind: 'rename', source })}
           onMove={() => setRowAction({ kind: 'move', source })}
+          onCopy={() => setRowAction({ kind: 'copy', source })}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onUngroup={
+            isGrouped ? () => handleUngroupSource(source) : undefined
+          }
           onRemoveFromNotebook={() => {
             setSourceToRemove(source.id)
             setRemoveDialogOpen(true)
@@ -892,26 +998,33 @@ export function GeminiSourcesColumn({
                 <div className="flex items-center gap-1.5">
                   <Database className="h-3.5 w-3.5 text-primary" />
                   <span className="text-xs font-semibold text-foreground">
-                    知识库全局资源概览
+                    {t('sources.overview.title')}
                   </span>
                 </div>
                 <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal text-muted-foreground">
-                  全库 {totalLibraryCount} 篇
+                  {t('sources.overview.totalBadge', { count: totalLibraryCount })}
                 </Badge>
               </div>
+
+              {/* 未嵌入来源补嵌入口（compact 变体；确认后才触发 rebuild，绝不自动） */}
+              <EmbedMissingPanel variant="compact" />
 
               {/* 数据透视指标 */}
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="p-1.5 rounded-md bg-background/80 border border-border/50">
-                  <div className="text-[10px] text-muted-foreground">本笔记本已关联</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t('sources.overview.linkedLabel')}
+                  </div>
                   <div className="text-xs font-semibold text-foreground mt-0.5">
-                    {fullSources.length} 篇
+                    {t('sources.overview.count', { count: fullSources.length })}
                   </div>
                 </div>
                 <div className="p-1.5 rounded-md bg-background/80 border border-border/50">
-                  <div className="text-[10px] text-muted-foreground">待引入文献</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t('sources.overview.pendingLabel')}
+                  </div>
                   <div className="text-xs font-semibold text-primary mt-0.5 flex items-center justify-center gap-1">
-                    <span>{unlinkedCount} 篇</span>
+                    <span>{t('sources.overview.count', { count: unlinkedCount })}</span>
                     {unlinkedCount > 0 && (
                       <span className="flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                     )}
@@ -928,18 +1041,18 @@ export function GeminiSourcesColumn({
                   onClick={() => setAddExistingOpen(true)}
                 >
                   <Link2 className="h-3.5 w-3.5" />
-                  <span>一键引入全库文献 ({unlinkedCount})</span>
+                  <span>{t('sources.overview.importAll', { count: unlinkedCount })}</span>
                 </Button>
               ) : (
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground/70 py-0.5 px-1">
-                  <span>全库文献已全部关联至本笔记本</span>
+                  <span>{t('sources.overview.allLinked')}</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
                     onClick={() => setAddExistingOpen(true)}
                   >
-                    查看全库
+                    {t('sources.overview.viewAll')}
                   </Button>
                 </div>
               )}
@@ -1141,14 +1254,18 @@ export function GeminiSourcesColumn({
         onOpenChange={(open) => !open && setRowAction(null)}
       />
 
-      {/* 移动到文件夹对话框 */}
+      {/* 移动/复制到文件夹对话框（copy 与 classic sources 页同一 GroupPicker 能力） */}
       <GroupPickerDialog
-        open={rowAction?.kind === 'move'}
+        open={rowAction?.kind === 'move' || rowAction?.kind === 'copy'}
         onOpenChange={(open) => !open && setRowAction(null)}
         hideRootOption
-        title={t('sources.grouping.moveToGroupTitle')}
+        title={
+          rowAction?.kind === 'copy'
+            ? t('sources.grouping.copyToGroupTitle')
+            : t('sources.grouping.moveToGroupTitle')
+        }
         description={
-          rowAction?.kind === 'move' && resolvedView
+          (rowAction?.kind === 'move' || rowAction?.kind === 'copy') && resolvedView
             ? `${
                 rowAction.source.title || t('sources.untitledSource')
               } · ${t('sources.grouping.moveTargetViewHint', {
@@ -1157,8 +1274,18 @@ export function GeminiSourcesColumn({
             : undefined
         }
         groups={viewGroups ?? []}
-        confirmText={t('sources.grouping.moveHere')}
-        onConfirm={handleMoveConfirm}
+        confirmText={
+          rowAction?.kind === 'copy'
+            ? t('sources.grouping.copyHere')
+            : t('sources.grouping.moveHere')
+        }
+        onConfirm={(targetGroupId: string | null) => {
+          if (rowAction?.kind === 'copy') {
+            handleCopyConfirm(targetGroupId)
+          } else {
+            handleMoveConfirm(targetGroupId)
+          }
+        }}
       />
 
       {/* 从笔记本移除确认 */}

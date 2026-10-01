@@ -204,7 +204,7 @@ export function NotebookAssociations({
               {isSaving ? (
                 <>
                   <LoaderIcon className="mr-2 h-4 w-4 animate-spin" />
-                  {t('common.saving')}...
+                  {t('common.saving')}
                 </>
               ) : (
                 t('common.saveChanges')

@@ -310,7 +310,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
              </Button>
               <Button type="submit" disabled={isSaving || (isEditing && isLoading)}>
                 {isSaving
-                  ? isEditing ? `${t('common.saving')}...` : `${t('common.creating')}...`
+                  ? isEditing ? t('common.saving') : t('common.creating')
                   : isEditing
                     ? t('common.editTransformation')
                     : t('transformations.createNew')}

@@ -53,6 +53,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { notebooksApi } from '@/lib/api/notebooks'
 import { artifactsApi, type CommandJobStatus } from '@/lib/api/artifacts'
+import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
 import {
   buildArtifactContextConfig,
@@ -96,6 +97,8 @@ export function GeminiStudioColumn({
   const router = useRouter()
   const queryClient = useQueryClient()
   const deleteNote = useDeleteNote()
+  // 全屏阅读侧栏点来源：带 nb 上下文打开详情弹窗（AI 保存链路供数点）。
+  const { openModal } = useModalManager()
 
   // 状态管理
   const [editorOpen, setEditorOpen] = useState(false)
@@ -514,6 +517,11 @@ export function GeminiStudioColumn({
         open={!!viewingNote}
         onOpenChange={(open) => !open && setViewingNote(null)}
         note={viewingNote ?? undefined}
+        notebookId={notebookId}
+        notes={notes}
+        activeNoteId={viewingNote?.id ?? null}
+        onNoteSelect={(n) => setViewingNote(n)}
+        onOpenSource={(id) => openModal('source', id, { notebookId })}
         onEdit={() => {
           setEditingNote(viewingNote ?? undefined)
           setViewingNote(null)

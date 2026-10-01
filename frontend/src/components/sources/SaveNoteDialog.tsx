@@ -35,6 +35,8 @@ interface SaveNoteDialogProps {
   notebookId: string
   /** 当前分组浏览范围，用于「存为来源」模式预选默认文件夹；缺省即无文件夹。 */
   sourceGrouping?: NotebookSourceFilters
+  /** 打开时预选的模式（如 AI 解析结果默认「存为笔记」）；缺省 'source'。 */
+  initialMode?: SaveMode
 }
 
 // 本地生成默认标题：首个非空行去掉常见 Markdown 记号后截前 40 字符（无 AI 调用）。
@@ -60,6 +62,7 @@ export function SaveNoteDialog({
   content,
   notebookId,
   sourceGrouping,
+  initialMode,
 }: SaveNoteDialogProps) {
   const { t } = useTranslation()
   const createNote = useCreateNote()
@@ -72,14 +75,15 @@ export function SaveNoteDialog({
   const [submitting, setSubmitting] = useState(false)
 
   // 组件持续挂载（open=false 也渲染），每次打开按当前内容重新预填，并重置为
-  // 默认的「存为来源」模式与文件夹选择，不留残留（frontend/AGENTS.md 约定
-  // Dialog 不自动重置）。
+  // 默认模式（initialMode，缺省「存为来源」）与文件夹选择，不留残留
+  // （frontend/AGENTS.md 约定 Dialog 不自动重置）。initialMode 必须在 effect
+  // 内消费：useState 初始化器只在首次挂载执行一次，会被这里的 setMode 覆盖。
   useEffect(() => {
     if (!open) return
     setName(defaultNoteTitle(content))
-    setMode('source')
+    setMode(initialMode ?? 'source')
     setFolderTarget(defaultFolderTarget(sourceGrouping))
-  }, [open, content, sourceGrouping])
+  }, [open, content, sourceGrouping, initialMode])
 
   const trimmed = name.trim()
 
@@ -117,7 +121,7 @@ export function SaveNoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !submitting && onOpenChange(o)}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t('notebooks.saveNote.title')}</DialogTitle>
           <DialogDescription>{t('notebooks.saveNote.description')}</DialogDescription>

@@ -308,6 +308,105 @@ describe('SaveNoteDialog', () => {
     expect(sourceModeRadio()).toBeChecked()
   })
 
+  // initialMode 锚点（R3 blocker ①）：组件常驻挂载，模式必须在「打开后的
+  // effect」里初始化——useState 初始化器会被每次 open→true 的 setMode 覆盖。
+  // 这两条用例拦截 setMode('source') 硬编码回归：断言的是打开后的状态。
+  it('honors initialMode="note" after opening (stays note, not overridden to source)', () => {
+    render(
+      <SaveNoteDialog
+        open
+        onOpenChange={vi.fn()}
+        content="AI analysis markdown"
+        notebookId={notebookId}
+        initialMode="note"
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    expect(noteModeRadio()).toBeChecked()
+    expect(sourceModeRadio()).not.toBeChecked()
+    // 笔记模式：无文件夹条、无不嵌入提示
+    expect(screen.queryByTestId('folder-target-bar')).not.toBeInTheDocument()
+    expect(screen.queryByText('notebooks.saveAsSource.noEmbedHint')).not.toBeInTheDocument()
+  })
+
+  it('falls back to source mode when initialMode is omitted', () => {
+    render(
+      <SaveNoteDialog
+        open
+        onOpenChange={vi.fn()}
+        content="Answer body"
+        notebookId={notebookId}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    expect(sourceModeRadio()).toBeChecked()
+    expect(screen.getByTestId('folder-target-bar')).toBeInTheDocument()
+  })
+
+  it('re-applies initialMode on each open instead of keeping the last user mode', () => {
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      <SaveNoteDialog
+        open
+        onOpenChange={onOpenChange}
+        content="Answer body"
+        notebookId={notebookId}
+        initialMode="note"
+      />,
+      { wrapper: createWrapper() }
+    )
+    expect(noteModeRadio()).toBeChecked()
+
+    // 关闭再以缺省 initialMode 打开 → 回到 source 模式
+    rerender(
+      <SaveNoteDialog
+        open={false}
+        onOpenChange={onOpenChange}
+        content="Answer body"
+        notebookId={notebookId}
+        initialMode="note"
+      />
+    )
+    rerender(
+      <SaveNoteDialog
+        open
+        onOpenChange={onOpenChange}
+        content="Answer body"
+        notebookId={notebookId}
+      />
+    )
+    expect(sourceModeRadio()).toBeChecked()
+  })
+
+  it('submits a note directly when opened with initialMode="note"', async () => {
+    const onOpenChange = vi.fn()
+    render(
+      <SaveNoteDialog
+        open
+        onOpenChange={onOpenChange}
+        content="AI analysis markdown"
+        notebookId={notebookId}
+        initialMode="note"
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    fireEvent.click(submitButton())
+
+    await waitFor(() => {
+      expect(createNoteMock).toHaveBeenCalledWith({
+        title: 'AI analysis markdown',
+        content: 'AI analysis markdown',
+        note_type: 'ai',
+        notebook_id: notebookId,
+      })
+    })
+    expect(createSourceMock).not.toHaveBeenCalled()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   describe('submit disable matrix', () => {
     it('disables submit when the name is blank', () => {
       render(

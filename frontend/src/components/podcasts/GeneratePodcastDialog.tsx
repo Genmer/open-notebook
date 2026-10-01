@@ -579,7 +579,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
               )}
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
               <Button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
@@ -592,7 +592,6 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
-                className="w-full"
               >
                 {t('common.cancel')}
               </Button>

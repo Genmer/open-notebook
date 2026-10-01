@@ -77,7 +77,7 @@ export function GroupPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -239,9 +239,10 @@ function PickerOption({
           onChange={onSelect}
         />
         <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="flex-1 truncate">{label}</span>
+        {/* label 保留 flex-1 全宽命中；仅名字限宽，长名截断后 count 紧跟内容 */}
+        <span className="truncate max-w-[14rem]">{label}</span>
         {typeof count === 'number' && (
-          <span className="text-xs text-muted-foreground">{count}</span>
+          <span className="ml-1 shrink-0 text-xs text-muted-foreground">{count}</span>
         )}
       </label>
     </div>

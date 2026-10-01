@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-pdf-worker.js",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-pdf-worker.js",
     "build": "next build",
     "start": "node start-server.js",
     "lint": "eslint src/",
@@ -45,6 +47,7 @@
     "katex": "^0.16.47",
     "lucide-react": "^0.525.0",
     "next": "^16.3.4",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-hook-form": "^7.60.0",

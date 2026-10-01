@@ -132,7 +132,7 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className={cn(
           "sm:max-w-3xl w-full h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col",
-          isEditorFullscreen && "!max-w-screen !max-h-screen border-none w-screen h-screen"
+          isEditorFullscreen && "sm:max-w-none sm:max-h-none border-none w-screen h-screen"
       )}>
         <DialogTitle className="sr-only">
           {isEditing ? t('sources.editNote') : t('sources.createNote')}
@@ -201,7 +201,7 @@ export function NoteEditorDialog({ open, onOpenChange, notebookId, note }: NoteE
               disabled={isSaving || (isEditing && noteLoading)}
             >
               {isSaving
-                ? isEditing ? `${t('common.saving')}...` : `${t('common.creating')}...`
+                ? isEditing ? t('common.saving') : t('common.creating')
                 : isEditing
                   ? t('sources.saveNote')
                   : t('sources.createNoteBtn')}

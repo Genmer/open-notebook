@@ -578,7 +578,11 @@ async def get_notebook_context_tree(
 
         source_rows = (
             await repo_query(
-                "SELECT id, title, updated FROM source WHERE id IN $source_ids "
+                "SELECT id, title, updated, embedding_status, "
+                # Same derived-embedded subquery as the sources list endpoint
+                # (sources.py): the source table has no embedded boolean column.
+                "(SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded "
+                "FROM source WHERE id IN $source_ids "
                 "ORDER BY updated DESC;",
                 {"source_ids": source_ids},
             )
@@ -611,6 +615,8 @@ async def get_notebook_context_tree(
                     id=str(r.get("id")),
                     title=r.get("title"),
                     insights_count=insights_by_source.get(str(r.get("id")), 0),
+                    embedded=bool(r.get("embedded")),
+                    embedding_status=r.get("embedding_status"),
                 )
                 for r in source_rows
             ],

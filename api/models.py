@@ -661,6 +661,31 @@ class CreateSourceInsightRequest(BaseModel):
     )
 
 
+class SourceSectionAnalysisRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    section_title: str = Field(
+        ..., max_length=300, description="Title of the section to analyze"
+    )
+    section_text: str = Field(..., description="Extracted text of the section")
+    page_start: Optional[int] = Field(None, description="1-based first page of the section")
+    page_end: Optional[int] = Field(None, description="1-based last page of the section")
+    locale: str = Field(
+        "en-US", description="UI locale for the answer language"
+    )
+
+
+class SourceSectionAnalysisResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    analysis_markdown: str = Field(..., description="Section analysis as markdown")
+    model_name: Optional[str] = Field(None, description="Name of the model used")
+    provider: Optional[str] = Field(None, description="Provider of the model used")
+    truncated: bool = Field(
+        False, description="True when the section text was truncated before analysis"
+    )
+
+
 # Source status response
 class SourceInsightJob(BaseModel):
     # One run_transformation command for this source (recent ones only; the
@@ -1336,6 +1361,10 @@ class ContextTreeSource(BaseModel):
     id: str
     title: Optional[str] = None
     insights_count: int = 0
+    # Derived from the source_embedding table (source has no embedded column);
+    # drives the row-level embed-state dot in the Gemini sources column.
+    embedded: bool = False
+    embedding_status: Optional[str] = None
 
 
 class ContextTreeGroup(BaseModel):

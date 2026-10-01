@@ -19,7 +19,22 @@ vi.mock('@/lib/api/sources', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     retry: vi.fn(),
+    fetchSourceFileBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
   },
+}))
+
+// PdfSourceViewer is dynamically imported (next/dynamic, ssr:false); a stub
+// keeps the viewer test light and exposes the props SourceDetailContent passes.
+// Like the real component it renders nothing while closed.
+vi.mock('@/components/sources/PdfSourceViewer', () => ({
+  default: (props: { open?: boolean; notebookId?: string; filePath?: string | null }) =>
+    props.open === false ? null : (
+      <div
+        data-testid="pdf-viewer-mock"
+        data-notebook={props.notebookId ?? ''}
+        data-file-path={props.filePath ?? ''}
+      />
+    ),
 }))
 
 vi.mock('@/lib/api/insights', () => ({
@@ -383,5 +398,77 @@ describe('SourceDetailContent transformation titles', () => {
       await screen.findByRole('option', { name: 'sources.transformationTitleDenseSummary' })
     ).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'My Custom Rule' })).toBeInTheDocument()
+  })
+})
+
+describe('SourceDetailContent PDF viewer entry', () => {
+  const pdfSource: SourceDetailResponse = {
+    ...loadedSource,
+    id: 'source:pdf',
+    title: '需求工程.pdf',
+    asset: { file_path: '/data/uploads/需求工程.pdf', url: undefined },
+  }
+  const txtSource: SourceDetailResponse = {
+    ...loadedSource,
+    id: 'source:txt',
+    title: 'notes.txt',
+    asset: { file_path: '/data/uploads/notes.txt', url: undefined },
+  }
+
+  const renderWith = (source: SourceDetailResponse, notebookId?: string) => {
+    mockSourcesGet.mockResolvedValue(source)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <SourceDetailContent sourceId={source.id} notebookId={notebookId} />
+      </QueryClientProvider>
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListInsights.mockResolvedValue([])
+    mockListTransformations.mockResolvedValue([])
+  })
+
+  it('shows the "view original file" button for a PDF source and opens the viewer with its path', async () => {
+    renderWith(pdfSource, 'nb:9')
+
+    fireEvent.click(await screen.findByTestId('open-pdf-viewer'))
+
+    const viewer = await screen.findByTestId('pdf-viewer-mock')
+    expect(viewer).toHaveAttribute('data-file-path', '/data/uploads/需求工程.pdf')
+    // notebookId 从 ?nb= 链路透传，供「保存解析为笔记」使用
+    expect(viewer).toHaveAttribute('data-notebook', 'nb:9')
+  })
+
+  it('hides the button for non-PDF uploads', async () => {
+    renderWith(txtSource)
+
+    await screen.findByText('notes.txt')
+    expect(screen.queryByTestId('open-pdf-viewer')).not.toBeInTheDocument()
+  })
+
+  it('hides the button for sources without an uploaded file', async () => {
+    renderWith(loadedSource)
+
+    await screen.findByText('Loaded source')
+    expect(screen.queryByTestId('open-pdf-viewer')).not.toBeInTheDocument()
+  })
+
+  it('disables the button when the file is unavailable on disk', async () => {
+    renderWith({ ...pdfSource, file_available: false })
+
+    const button = await screen.findByTestId('open-pdf-viewer')
+    await waitFor(() => {
+      expect(button).toBeDisabled()
+    })
+  })
+
+  it('keeps the viewer mounted-but-closed until the button opens it', async () => {
+    renderWith(pdfSource)
+
+    await screen.findByTestId('open-pdf-viewer')
+    expect(screen.queryByTestId('pdf-viewer-mock')).not.toBeInTheDocument()
   })
 })

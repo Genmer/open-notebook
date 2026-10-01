@@ -33,8 +33,20 @@ def _seed_rows():
         ],
         "source_ids": ["source:s1", "source:s2"],
         "sources": [
-            {"id": "source:s2", "title": "范文 A", "updated": "2026-09-20"},
-            {"id": "source:s1", "title": "宝典", "updated": "2026-09-21"},
+            {
+                "id": "source:s2",
+                "title": "范文 A",
+                "updated": "2026-09-20",
+                "embedded": False,
+                "embedding_status": "failed",
+            },
+            {
+                "id": "source:s1",
+                "title": "宝典",
+                "updated": "2026-09-21",
+                "embedded": True,
+                "embedding_status": "completed",
+            },
         ],
         "insights": [{"source": "source:s1", "cnt": 3}],
     }
@@ -43,6 +55,7 @@ def _seed_rows():
 class TestContextTree:
     def test_tree_with_view_groups_and_membership_filtering(self, client):
         rows = _seed_rows()
+        source_queries: list[str] = []
 
         async def repo_query(sql, params=None):
             if "FROM source_group WHERE source_view" in sql:
@@ -54,6 +67,7 @@ class TestContextTree:
             if "FROM source_insight" in sql:
                 return rows["insights"]
             if "FROM source WHERE" in sql:
+                source_queries.append(sql)
                 return rows["sources"]
             raise AssertionError(f"Unexpected query: {sql[:120]!r}")
 
@@ -81,6 +95,20 @@ class TestContextTree:
         assert body["sources"][1]["insights_count"] == 3
         assert body["sources"][0]["insights_count"] == 0
 
+        # Embed-state fields ride along with every source row: the SQL derives
+        # `embedded` from the source_embedding table (no bool column on source),
+        # and embedding_status reflects each source's real state.
+        assert len(source_queries) == 1
+        assert "AS embedded" in source_queries[0]
+        assert "source_embedding" in source_queries[0]
+        assert "embedding_status" in source_queries[0]
+        # s2 failed embedding -> unembedded with 'failed' status
+        assert body["sources"][0]["embedded"] is False
+        assert body["sources"][0]["embedding_status"] == "failed"
+        # s1 embedded -> true with 'completed' status
+        assert body["sources"][1]["embedded"] is True
+        assert body["sources"][1]["embedding_status"] == "completed"
+
     def test_tree_without_view_has_no_groups(self, client):
         rows = _seed_rows()
 
@@ -104,6 +132,9 @@ class TestContextTree:
         assert body["groups"] == []
         assert body["memberships"] == []
         assert len(body["sources"]) == 1
+        # Embed-state passthrough without a view: s2 is the failed/unembedded one
+        assert body["sources"][0]["embedded"] is False
+        assert body["sources"][0]["embedding_status"] == "failed"
 
     def test_empty_notebook_returns_groups_only(self, client):
         async def repo_query(sql, params=None):

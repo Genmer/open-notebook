@@ -85,7 +85,7 @@ export function BatchRenameDialog({ open, sources, onApply, onOpenChange }: Batc
 
   return (
     <Dialog open={open} onOpenChange={(o) => !applying && onOpenChange(o)}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('sources.grouping.batchRenameTitle')}</DialogTitle>
           <DialogDescription>
