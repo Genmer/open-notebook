@@ -232,7 +232,7 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 
 ### Advanced Features
 - **⚡ Reasoning Model Support**: Full support for thinking models like DeepSeek-R1 and Qwen3
-- **🛠️ Task Center & Live Progress**: Every async job (insights, embeddings, imports, podcasts) in one place, with live streaming inspection, token rate and multi-stage progress
+- **🛠️ Task Center & Live Progress**: Every async job (insights, embeddings, imports, podcasts) in one place, with live progress inspection, token rate and multi-stage progress
 - **🎓 Study Artifacts**: One-click study guides, FAQs, flashcards and essay drafts generated from your sources and saved back as notes
 - **💾 Full-Library Export / Import**: One-click backup and restore of notebooks, sources, notes, vectors and files, with conflict-aware import and model-configuration migration
 - **🔌 Built-in MCP Server**: Expose your notebooks to coding agents via `python -m open_notebook.mcp_server` — see [MCP server docs](docs/5-CONFIGURATION/mcp-server.md)
@@ -252,14 +252,14 @@ Everything below is added by this fork on top of upstream. Each item links to th
 
 | Enhancement | What you get |
 |-------------|--------------|
-| [Gemini-style Studio workspace](#-key-features) | NotebookLM-like three-column view (folder tree / chat / studio) alongside the classic view, switchable in settings |
-| [Task Center & Live Inspector](#-key-features) | All async operations in one page; live model-output streaming, token rate, multi-stage progress |
+| [Gemini-style Studio workspace](docs/3-USER-GUIDE/gemini-workspace.md) | NotebookLM-like three-column view (folder tree / chat / studio) alongside the classic view, switchable in settings |
+| [Task Center & Live Inspector](docs/3-USER-GUIDE/task-center.md) | All async operations in one page; live progress terminal with stage status, token rate, multi-stage progress |
 | [Study Artifacts](#-key-features) | Study guides, FAQs, flashcards, essay drafts — generated asynchronously and saved back as notes |
 | [AI Task Diagnostics](#-key-features) | Failed jobs get a four-part explanation (what / why / how to fix / next actions) with recovery detection and retry |
-| [Full-Library Export / Import v2](#-key-features) | Backup & migrate everything (including model configs and API keys, conflict-confirmed) across instances |
+| [Full-Library Export / Import v2](docs/3-USER-GUIDE/data-migration.md) | Backup & migrate everything (including model configs and API keys, conflict-confirmed) across instances |
 | [Built-in MCP Server](docs/5-CONFIGURATION/mcp-server.md) | Let Claude Code and other MCP clients search and chat with your notebooks |
-| [Folders & multi-view organization](#-key-features) | Nested source folders, AI content/filename classification, file-type views, bulk operations |
-| [Usage, cost & storage dashboards](#-key-features) | Token trends, heatmaps, per-model cost estimates (CNY), storage analytics with export-size estimation |
+| [Folders & multi-view organization](docs/3-USER-GUIDE/folders.md) | Nested source folders, AI content/filename classification, file-type views, bulk operations |
+| [Usage, cost & storage dashboards](docs/3-USER-GUIDE/storage-usage.md) | Token trends, heatmaps, per-model cost estimates (CNY), storage analytics with export-size estimation |
 | [New providers](#provider-support-matrix) | Zhipu (BigModel), Xiaomi MiMo & MiMo Token Plan (full modality incl. chat-audio), DashScope embeddings |
 | Detailed fork changelog | Every batch of fork changes, in Chinese: [本地定制记录](#本地定制记录) |
 
@@ -284,6 +284,11 @@ Everything below is added by this fork on top of upstream. Each item links to th
 - **[📝 Working with Notes](docs/3-USER-GUIDE/working-with-notes.md)** - Creating and managing notes
 - **[💬 Chatting Effectively](docs/3-USER-GUIDE/chat-effectively.md)** - AI conversations
 - **[🔍 Search](docs/3-USER-GUIDE/search.md)** - Finding information
+- **[✨ Gemini Workspace](docs/3-USER-GUIDE/gemini-workspace.md)** - NotebookLM-style three-column view
+- **[📋 Task Center](docs/3-USER-GUIDE/task-center.md)** - Tracking background operations
+- **[📤 Data Migration](docs/3-USER-GUIDE/data-migration.md)** - Export and import your library
+- **[🗂️ Folders](docs/3-USER-GUIDE/folders.md)** - Organizing sources with folders
+- **[💾 Storage Usage](docs/3-USER-GUIDE/storage-usage.md)** - Understanding what takes up space
 
 ### Advanced Topics
 - **[🎙️ Podcast Generation](docs/2-CORE-CONCEPTS/podcasts-explained.md)** - Create professional podcasts

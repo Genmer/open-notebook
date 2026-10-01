@@ -1318,6 +1318,8 @@ export const ruRU = {
       cancel: "Отменить задачу",
       cancelSuccess: "Задача отменена",
       cancelFailed: "Не удалось отменить задачу. Попробуйте ещё раз.",
+      viewLiveProgress: "Открыть живой прогресс",
+      viewDetails: "Подробнее",
       filter: {
         all: "All",
         active: "In progress",

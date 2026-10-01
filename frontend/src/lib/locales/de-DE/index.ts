@@ -1321,6 +1321,8 @@ export const deDE = {
       cancel: "Auftrag abbrechen",
       cancelSuccess: "Auftrag abgebrochen",
       cancelFailed: "Auftrag konnte nicht abgebrochen werden. Bitte erneut versuchen.",
+      viewLiveProgress: "Live-Fortschritt anzeigen",
+      viewDetails: "Details",
       filter: {
         all: "All",
         active: "In progress",

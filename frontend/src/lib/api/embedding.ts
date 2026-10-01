@@ -60,7 +60,12 @@ export interface RebuildStats {
 
 export interface RebuildStatusResponse {
   command_id: string
-  status: 'queued' | 'running' | 'completed' | 'failed'
+  /**
+   * Mirrors the backend CommandStatus enum in surreal_commands (single-L
+   * 'canceled'); the endpoint passes it through verbatim. 'queued' is kept as
+   * a tolerated legacy value. If the backend enum changes, update this union.
+   */
+  status: 'new' | 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
   progress?: RebuildProgress
   stats?: RebuildStats
   started_at?: string

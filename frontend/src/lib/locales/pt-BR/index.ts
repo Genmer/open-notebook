@@ -1318,6 +1318,8 @@ export const ptBR = {
       cancel: "Cancelar tarefa",
       cancelSuccess: "Tarefa cancelada",
       cancelFailed: "Não foi possível cancelar a tarefa. Tente novamente.",
+      viewLiveProgress: "Ver progresso ao vivo",
+      viewDetails: "Detalhes",
       filter: {
         all: "All",
         active: "In progress",

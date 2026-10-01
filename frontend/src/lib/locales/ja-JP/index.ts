@@ -1318,6 +1318,8 @@ export const jaJP = {
       cancel: "タスクをキャンセル",
       cancelSuccess: "タスクをキャンセルしました",
       cancelFailed: "タスクのキャンセルに失敗しました。やり直してください。",
+      viewLiveProgress: "ライブ進捗を見る",
+      viewDetails: "実行詳細",
       filter: {
         all: "All",
         active: "In progress",

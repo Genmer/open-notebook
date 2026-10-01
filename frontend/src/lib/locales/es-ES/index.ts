@@ -1319,6 +1319,8 @@ export const esES = {
       cancel: "Cancelar tarea",
       cancelSuccess: "Tarea cancelada",
       cancelFailed: "No se pudo cancelar la tarea. Inténtalo de nuevo.",
+      viewLiveProgress: "Ver el progreso en vivo",
+      viewDetails: "Detalles",
       filter: {
         all: "All",
         active: "In progress",

@@ -1318,6 +1318,8 @@ export const itIT = {
       cancel: "Annulla attività",
       cancelSuccess: "Attività annullata",
       cancelFailed: "Impossibile annullare l'attività. Riprova.",
+      viewLiveProgress: "Visualizza avanzamento in tempo reale",
+      viewDetails: "Dettagli",
       filter: {
         all: "All",
         active: "In progress",

@@ -1318,6 +1318,8 @@ export const plPL = {
       cancel: "Anuluj zadanie",
       cancelSuccess: "Zadanie anulowane",
       cancelFailed: "Nie udało się anulować zadania. Spróbuj ponownie.",
+      viewLiveProgress: "Zobacz postęp na żywo",
+      viewDetails: "Szczegóły",
       filter: {
         all: "All",
         active: "In progress",

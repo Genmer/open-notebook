@@ -1318,6 +1318,8 @@ export const trTR = {
       cancel: "Görevi iptal et",
       cancelSuccess: "Görev iptal edildi",
       cancelFailed: "Görev iptal edilemedi. Tekrar deneyin.",
+      viewLiveProgress: "Canlı ilerlemeyi görüntüle",
+      viewDetails: "Ayrıntılar",
       filter: {
         all: "All",
         active: "In progress",

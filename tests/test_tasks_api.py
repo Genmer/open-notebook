@@ -1,5 +1,6 @@
 """Unit tests for the Task Center aggregation (api.task_service + router)."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -215,7 +216,7 @@ async def test_list_tasks_count_query_reuses_filters(repo_query):
 )
 async def test_list_tasks_total_falls_back_to_offset_plus_rows(repo_query, count_result):
     """Without a usable count, total must include the skipped offset, not just this page."""
-    rows = [
+    rows: list[dict[str, Any]] = [
         {
             "id": f"command:{i}",
             "name": "export_data",

@@ -1318,6 +1318,8 @@ export const zhCN = {
       cancel: "取消任务",
       cancelSuccess: "任务已取消",
       cancelFailed: "取消任务失败，请重试。",
+      viewLiveProgress: "查看实时进展",
+      viewDetails: "执行详情",
       filter: {
         all: "全部",
         active: "进行中",

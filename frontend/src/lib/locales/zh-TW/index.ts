@@ -1318,6 +1318,8 @@ export const zhTW = {
       cancel: "取消任務",
       cancelSuccess: "任務已取消",
       cancelFailed: "取消任務失敗，請重試。",
+      viewLiveProgress: "查看即時進展",
+      viewDetails: "執行詳情",
       filter: {
         all: "All",
         active: "In progress",

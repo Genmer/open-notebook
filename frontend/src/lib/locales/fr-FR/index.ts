@@ -1318,6 +1318,8 @@ export const frFR = {
       cancel: "Annuler la tâche",
       cancelSuccess: "Tâche annulée",
       cancelFailed: "Impossible d'annuler la tâche. Réessayez.",
+      viewLiveProgress: "Voir la progression en direct",
+      viewDetails: "Détails",
       filter: {
         all: "All",
         active: "In progress",

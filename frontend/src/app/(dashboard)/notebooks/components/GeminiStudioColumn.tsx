@@ -213,7 +213,9 @@ export function GeminiStudioColumn({
       })
       const startedAt = Date.now()
       setSubmittedJob({ jobId: job.job_id, toolName: activeTool.name, startedAt })
-      setJobStatus({ job_id: job.job_id, status: 'queued' })
+      // Optimistic initial state: the backend CommandStatus enum starts at 'new'
+      // (no 'queued' value exists on this endpoint — see CommandJobStatus).
+      setJobStatus({ job_id: job.job_id, status: 'new' })
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
       toast.error(error.response?.data?.detail || error.message || '生成工件失败')

@@ -2,6 +2,8 @@ import json
 import re
 from typing import AsyncGenerator, List
 
+from esperanto import LanguageModel
+from esperanto.common_types import ChatCompletion
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -282,7 +284,7 @@ async def web_research_search(req: WebSearchRequest):
 
     try:
         chat_model = await model_manager.get_default_model("chat")
-        if chat_model:
+        if isinstance(chat_model, LanguageModel):
             prompt = (
                 f"你是一位专业的研究助理。请针对用户提出的探索研究课题：【{query}】进行智能导源分析。\n"
                 f"请输出 3 到 5 个最权威、最相关的参考网页推荐，包括真实的官方文档、技术规范或行业知名论文/博客。\n"
@@ -291,7 +293,14 @@ async def web_research_search(req: WebSearchRequest):
                 f'  {{"id": "res-1", "title": "网页标题", "url": "https://...", "snippet": "该网页的核心内容提炼与论点摘要（100字以内）"}}\n'
                 f"]"
             )
-            response_text = await chat_model.generate(prompt)
+            # esperanto LanguageModel has no .generate; use the async chat API
+            # (same pattern as open_notebook/ai/connection_tester.py).
+            completion = await chat_model.achat_complete(
+                messages=[{"role": "user", "content": prompt}]
+            )
+            response_text = (
+                completion.content if isinstance(completion, ChatCompletion) else ""
+            )
             cleaned = response_text.strip()
             if cleaned.startswith("```"):
                 cleaned = re.sub(r"^```(?:json)?\n?", "", cleaned)

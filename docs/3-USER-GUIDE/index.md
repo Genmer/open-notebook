@@ -111,6 +111,63 @@ Configure AI provider API keys directly through the Settings UI.
 
 ---
 
+## Fork Features
+
+This fork adds capabilities beyond upstream Open Notebook. These guides cover the ones with their own workflows.
+
+### [Task Center](task-center.md)
+Every background operation in one place — with a live inspector and AI diagnostics for failed jobs.
+
+**Quick links:**
+- Watch a task live (streaming output, token rate, stages)
+- Understand the four-part failure explanation
+- Fix tasks stuck in "Queued"
+
+---
+
+### [Data Migration](data-migration.md)
+Export your whole library to a zip package and import it on another instance — including model configuration.
+
+**Quick links:**
+- Run your first export
+- Import with conflict confirmation
+- Read import warnings (they follow your interface language)
+
+---
+
+### [Folders](folders.md)
+Organize sources with nested folder sets, AI classification and folder-scoped chat context.
+
+**Quick links:**
+- Create your first folder
+- File sources by hand, by drag-and-drop or by AI
+- Limit what chat sees to one folder
+
+---
+
+### [Gemini Workspace](gemini-workspace.md)
+A NotebookLM-style three-column notebook view (folder tree / chat / Studio), switchable in Settings → Appearance.
+
+**Quick links:**
+- Switch between classic and Gemini views
+- Tour of the three columns
+- Generate study artifacts from the Studio column
+- Web Research tab
+- Common issues
+
+---
+
+### [Storage Usage](storage-usage.md)
+What takes up space in your library — database estimates and real disk usage — and how to reclaim it.
+
+**Quick links:**
+- Reading the dashboard (stat cards, donut, breakdown, export estimate)
+- What takes up space
+- Freeing up space
+- Common questions
+
+---
+
 ## Which Feature for Which Task?
 
 ```

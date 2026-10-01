@@ -1318,6 +1318,8 @@ export const caES = {
       cancel: "Cancel·la la tasca",
       cancelSuccess: "Tasca cancel·lada",
       cancelFailed: "No s'ha pogut cancel·lar la tasca. Torna-ho a provar.",
+      viewLiveProgress: "Mostra el progrés en directe",
+      viewDetails: "Detalls",
       filter: {
         all: "All",
         active: "In progress",

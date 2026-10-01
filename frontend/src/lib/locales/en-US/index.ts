@@ -1317,6 +1317,8 @@ export const enUS = {
       cancel: "Cancel task",
       cancelSuccess: "Task canceled",
       cancelFailed: "Could not cancel the task. Try again.",
+      viewLiveProgress: "View live progress",
+      viewDetails: "Details",
       filter: {
         all: "All",
         active: "In progress",

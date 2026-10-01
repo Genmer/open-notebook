@@ -1319,6 +1319,8 @@ export const bnIN = {
       cancel: "টাস্ক বাতিল করুন",
       cancelSuccess: "টাস্ক বাতিল করা হয়েছে",
       cancelFailed: "টাস্ক বাতিল করা যায়নি। আবার চেষ্টা করুন।",
+      viewLiveProgress: "লাইভ অগ্রগতি দেখুন",
+      viewDetails: "বিস্তারিত দেখুন",
       filter: {
         all: "All",
         active: "In progress",
