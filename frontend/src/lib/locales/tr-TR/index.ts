@@ -89,7 +89,6 @@ export const trTR = {
     no: "Hayır",
     saving: "Kaydediliyor...",
     description: "Açıklama",
-    saveToNote: "Nota kaydet",
     copyToClipboard: "Panoya kopyala",
     close: "Kapat",
     insights: "İçgörüler",
@@ -283,11 +282,14 @@ export const trTR = {
     recentlyViewedSource: "Kaynak",
     lastViewed: "{{time}} görüntülendi",
     saveNote: {
-      title: "Not olarak kaydet",
-      description: "Bu yanıtı bu deftere kaydetmeden önce bir ad verin.",
-      nameLabel: "Not adı",
-      namePlaceholder: "Not için bir ad girin",
-      submit: "Kaydet",
+      typeLabel: "Kayıt türü",
+      modeSource: "Kaynak olarak kaydet",
+      modeNote: "Not olarak kaydet",
+      title: "Deftere kaydet",
+      description: "Bu içeriğe bir ad verin ve kaynak olarak mı yoksa not olarak mı kaydedileceğini seçin.",
+      nameLabel: "Ad",
+      namePlaceholder: "Bir ad girin",
+      submit: "Kaydet"
     },
     saveAsSource: {
       title: "Kaynak olarak kaydet",

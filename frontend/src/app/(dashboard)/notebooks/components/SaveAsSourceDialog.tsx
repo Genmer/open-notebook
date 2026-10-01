@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -14,11 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { FolderTargetSection, type FolderTargetValue } from '@/components/sources/FolderTargetSection'
+import {
+  FolderTargetSection,
+  defaultFolderTarget,
+  type FolderTargetValue,
+} from '@/components/sources/FolderTargetSection'
 import { useCreateSource, type NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { useInvalidateGrouping } from '@/lib/hooks/use-source-views'
-import { sourceViewsApi } from '@/lib/api/source-views'
-import { FILE_TYPE_VIEW_ID } from '@/lib/stores/source-view-store'
+import { createTextSourceWithFiling } from '@/lib/utils/save-as-source'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { NoteResponse } from '@/lib/types/api'
 
@@ -28,16 +30,6 @@ interface SaveAsSourceDialogProps {
   notebookId: string
   note?: NoteResponse
   sourceGrouping?: NotebookSourceFilters
-}
-
-// 按笔记本当前的分组浏览范围推导默认文件夹：只有具体文件夹（非 'all' /
-// 'ungrouped' 虚拟值、非 file_type 虚拟视图）才预选，其余落到「不放入文件夹」。
-function defaultFolderTarget(sourceGrouping?: NotebookSourceFilters): FolderTargetValue | null {
-  const viewId = sourceGrouping?.viewId
-  const group = sourceGrouping?.group
-  if (!viewId || viewId === FILE_TYPE_VIEW_ID) return null
-  if (!group || group === 'all' || group === 'ungrouped') return null
-  return { viewId, groupId: group }
 }
 
 // 把一条笔记的内容转成 text 来源挂进本笔记本（embed:false 不排队嵌入），
@@ -74,28 +66,16 @@ export function SaveAsSourceDialog({
     if (!trimmed || !note.content?.trim() || submitting) return
     setSubmitting(true)
     try {
-      const created = await createSource.mutateAsync({
-        type: 'text',
+      await createTextSourceWithFiling({
+        createSource,
+        queryClient,
+        invalidateGrouping,
+        t,
+        notebookId,
         title: trimmed,
         content: note.content,
-        notebooks: [notebookId],
-        embed: false,
-        async_processing: true,
+        folderTarget,
       })
-      let movedAny = false
-      if (folderTarget) {
-        try {
-          await sourceViewsApi.moveMembers(folderTarget.groupId, [created.id])
-          movedAny = true
-        } catch (error) {
-          // 来源已创建成功，归档失败只警告不回滚（AddSourceDialog 先例）
-          console.error('Failed to file source into folder:', error)
-          toast.warning(t('sources.grouping.folderAssignFailed', { count: 1 }))
-        }
-      }
-      if (movedAny) invalidateGrouping()
-      // Gemini 左列来源树走独立的 contextTree 缓存，前缀失效一并刷新
-      queryClient.invalidateQueries({ queryKey: ['contextTree'] })
       onOpenChange(false)
     } catch {
       // useCreateSource 已负责错误 toast，弹窗保持打开供重试

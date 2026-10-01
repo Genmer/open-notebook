@@ -8,16 +8,19 @@ vi.mock('./SaveNoteDialog', () => ({
     open,
     content,
     notebookId,
+    sourceGrouping,
   }: {
     open: boolean
     content: string
     notebookId: string
+    sourceGrouping?: unknown
   }) => (
     <div
       data-testid="save-note-probe"
       data-open={String(open)}
       data-content={content}
       data-notebook={notebookId}
+      data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
     />
   ),
 }))
@@ -44,7 +47,7 @@ describe('MessageActions', () => {
   it('opens the save dialog instead of mutating directly when the text save button is clicked', () => {
     render(<MessageActions content="answer" notebookId="nb:1" />)
 
-    const save = screen.getByRole('button', { name: /common\.saveToNote/ })
+    const save = screen.getByRole('button', { name: /common\.save/ })
     expect(save).not.toBeDisabled()
     fireEvent.click(save)
 
@@ -52,6 +55,28 @@ describe('MessageActions', () => {
     expect(probe).toHaveAttribute('data-open', 'true')
     expect(probe).toHaveAttribute('data-content', 'answer')
     expect(probe).toHaveAttribute('data-notebook', 'nb:1')
+  })
+
+  it('passes the grouping scope to the save dialog by reference when provided', () => {
+    const sourceGrouping = { viewId: 'view:1', group: 'group:1' }
+    render(
+      <MessageActions content="answer" notebookId="nb:1" sourceGrouping={sourceGrouping} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /common\.save/ }))
+
+    expect(screen.getByTestId('save-note-probe')).toHaveAttribute(
+      'data-source-grouping',
+      JSON.stringify(sourceGrouping)
+    )
+  })
+
+  it('leaves the grouping scope empty for the save dialog when not provided', () => {
+    render(<MessageActions content="answer" notebookId="nb:1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /common\.save/ }))
+
+    expect(screen.getByTestId('save-note-probe')).toHaveAttribute('data-source-grouping', '')
   })
 
   it('opens the save dialog from the tooltip icon variant', () => {

@@ -89,7 +89,6 @@ export const ruRU = {
     no: "Нет",
     saving: "Сохранение...",
     description: "Описание",
-    saveToNote: "Сохранить в заметку",
     copyToClipboard: "Копировать в буфер обмена",
     close: "Закрыть",
     insights: "Инсайты",
@@ -283,11 +282,14 @@ export const ruRU = {
     recentlyViewedSource: "Источник",
     lastViewed: "Просмотрено {{time}}",
     saveNote: {
-      title: "Сохранить как заметку",
-      description: "Дайте этому ответу название, прежде чем сохранить его в текущий блокнот.",
-      nameLabel: "Название заметки",
-      namePlaceholder: "Введите название заметки",
-      submit: "Сохранить",
+      typeLabel: "Сохранить как",
+      modeSource: "Сохранить как источник",
+      modeNote: "Сохранить как заметку",
+      title: "Сохранить в блокнот",
+      description: "Дайте название этому содержимому и выберите, сохранить его как источник или как заметку.",
+      nameLabel: "Название",
+      namePlaceholder: "Введите название",
+      submit: "Сохранить"
     },
     saveAsSource: {
       title: "Сохранить как источник",

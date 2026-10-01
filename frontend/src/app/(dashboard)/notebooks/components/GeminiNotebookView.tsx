@@ -100,6 +100,7 @@ export function GeminiNotebookView({
                 onOpenContextPicker={() => setContextPickerOpen(true)}
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
+                sourceGrouping={sourceGrouping}
               />
             )}
             {mobileActiveTab === 'studio' && (
@@ -150,6 +151,7 @@ export function GeminiNotebookView({
             onOpenContextPicker={() => setContextPickerOpen(true)}
             sources={sources ?? []}
             sourcesLoading={sourcesLoading}
+            sourceGrouping={sourceGrouping}
           />
         </div>
 

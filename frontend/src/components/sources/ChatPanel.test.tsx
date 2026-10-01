@@ -17,8 +17,19 @@ vi.mock('@/lib/hooks/use-sources', () => ({
 }))
 
 // Keep the message-content deps light for this composer-focused test.
+// Probe: expose the received sourceGrouping so the ChatPanel → memo ChatMessage
+// → MessageActions hand-off is asserted with a same-value check.
 vi.mock('@/components/sources/MessageActions', () => ({
-  MessageActions: () => null,
+  MessageActions: ({
+    sourceGrouping,
+  }: {
+    sourceGrouping?: { viewId?: string; group?: string }
+  }) => (
+    <div
+      data-testid="message-actions-probe"
+      data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
+    />
+  ),
 }))
 
 const mockUseSourceTitles = vi.mocked(useSourceTitles)
@@ -399,5 +410,48 @@ describe('ChatPanel fullscreen toggle', () => {
 
     expect(card.className).toContain('h-full flex-1')
     expect(card.className).not.toContain('fixed')
+  })
+})
+
+describe('ChatPanel message actions grouping hand-off', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  const aiMessage = { id: 'm1', type: 'ai' as const, content: 'Answer body' }
+
+  it('hands sourceGrouping to MessageActions of an AI message unchanged', () => {
+    const sourceGrouping = { viewId: 'view:1', group: 'group:9' }
+    render(
+      <ChatPanel
+        messages={[aiMessage]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="nb:1"
+        sourceGrouping={sourceGrouping}
+      />
+    )
+
+    expect(screen.getByTestId('message-actions-probe')).toHaveAttribute(
+      'data-source-grouping',
+      JSON.stringify(sourceGrouping)
+    )
+  })
+
+  it('leaves MessageActions without grouping when none is given', () => {
+    render(
+      <ChatPanel
+        messages={[aiMessage]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="nb:1"
+      />
+    )
+
+    expect(screen.getByTestId('message-actions-probe')).toHaveAttribute('data-source-grouping', '')
   })
 })

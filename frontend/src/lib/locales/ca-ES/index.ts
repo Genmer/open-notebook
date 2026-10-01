@@ -89,7 +89,6 @@ export const caES = {
     no: "No",
     saving: "S'està desant...",
     description: "Descripció",
-    saveToNote: "Desa a una nota",
     copyToClipboard: "Copia al porta-retalls",
     close: "Tanca",
     insights: "Anàlisis",
@@ -283,11 +282,14 @@ export const caES = {
     recentlyViewedSource: "Font",
     lastViewed: "Vist {{time}}",
     saveNote: {
-      title: "Desa com a nota",
-      description: "Posa un nom a aquesta resposta abans de desar-la en aquest quadern.",
-      nameLabel: "Nom de la nota",
-      namePlaceholder: "Introdueix un nom per a la nota",
-      submit: "Desa",
+      typeLabel: "Desa com a",
+      modeSource: "Desa com a font",
+      modeNote: "Desa com a nota",
+      title: "Desa al quadern",
+      description: "Posa un nom a aquest contingut i tria si desar-lo com a font o com a nota.",
+      nameLabel: "Nom",
+      namePlaceholder: "Introdueix un nom",
+      submit: "Desa"
     },
     saveAsSource: {
       title: "Desa com a font",

@@ -89,7 +89,6 @@ export const ptBR = {
     no: "Não",
     saving: "Salvando...",
     description: "Descrição",
-    saveToNote: "Salvar em nota",
     copyToClipboard: "Copiar para área de transferência",
     close: "Fechar",
     insights: "Insights",
@@ -283,11 +282,14 @@ export const ptBR = {
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
     saveNote: {
-      title: "Salvar como nota",
-      description: "Dê um nome a esta resposta antes de salvá-la neste caderno.",
-      nameLabel: "Nome da nota",
-      namePlaceholder: "Digite um nome para a nota",
-      submit: "Salvar",
+      typeLabel: "Salvar como",
+      modeSource: "Salvar como fonte",
+      modeNote: "Salvar como nota",
+      title: "Salvar no caderno",
+      description: "Dê um nome a este conteúdo e escolha salvá-lo como fonte ou como nota.",
+      nameLabel: "Nome",
+      namePlaceholder: "Digite um nome",
+      submit: "Salvar"
     },
     saveAsSource: {
       title: "Salvar como fonte",

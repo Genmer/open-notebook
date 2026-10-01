@@ -89,7 +89,6 @@ export const frFR = {
     no: "Non",
     saving: "Enregistrement...",
     description: "Description",
-    saveToNote: "Enregistrer dans la note",
     copyToClipboard: "Copier dans le presse-papiers",
     close: "Fermer",
     insights: "Analyses",
@@ -283,11 +282,14 @@ export const frFR = {
     recentlyViewedSource: "Source",
     lastViewed: "Consulté {{time}}",
     saveNote: {
-      title: "Enregistrer en note",
-      description: "Donnez un nom à cette réponse avant de l'enregistrer dans ce carnet.",
-      nameLabel: "Nom de la note",
-      namePlaceholder: "Saisir un nom pour la note",
-      submit: "Enregistrer",
+      typeLabel: "Enregistrer comme",
+      modeSource: "Enregistrer comme source",
+      modeNote: "Enregistrer comme note",
+      title: "Enregistrer dans le carnet",
+      description: "Nommez ce contenu et choisissez de l'enregistrer comme source ou comme note.",
+      nameLabel: "Nom",
+      namePlaceholder: "Saisir un nom",
+      submit: "Enregistrer"
     },
     saveAsSource: {
       title: "Enregistrer comme source",

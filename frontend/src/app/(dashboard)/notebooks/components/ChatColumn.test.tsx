@@ -8,7 +8,16 @@ import { useNotebookChat } from '@/lib/hooks/use-notebook-chat'
 vi.mock('@/lib/hooks/use-notes')
 vi.mock('@/lib/hooks/use-notebook-chat')
 vi.mock('@/components/sources/ChatPanel', () => ({
-  ChatPanel: () => <div data-testid="chat-panel" />
+  ChatPanel: ({
+    sourceGrouping,
+  }: {
+    sourceGrouping?: { viewId?: string; group?: string }
+  }) => (
+    <div
+      data-testid="chat-panel"
+      data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
+    />
+  )
 }))
 
 // Type-safe mock factory for useNotes hook
@@ -60,5 +69,27 @@ describe('ChatColumn', () => {
 
     // Should show chat panel
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
+  })
+
+  it('forwards sourceGrouping to the chat panel unchanged', () => {
+    vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: false }))
+    vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
+
+    const sourceGrouping = { viewId: 'view:1', group: 'group:9' }
+    render(<ChatColumn {...baseProps} sourcesLoading={false} sourceGrouping={sourceGrouping} />)
+
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute(
+      'data-source-grouping',
+      JSON.stringify(sourceGrouping)
+    )
+  })
+
+  it('renders without sourceGrouping (no grouping scope)', () => {
+    vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: false }))
+    vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
+
+    render(<ChatColumn {...baseProps} sourcesLoading={false} />)
+
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-source-grouping', '')
   })
 })

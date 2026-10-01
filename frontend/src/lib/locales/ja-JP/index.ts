@@ -89,7 +89,6 @@ export const jaJP = {
     no: "いいえ",
     saving: "保存中...",
     description: "説明",
-    saveToNote: "ノートに保存",
     copyToClipboard: "クリップボードにコピー",
     close: "閉じる",
     insights: "インサイト",
@@ -283,11 +282,14 @@ export const jaJP = {
     recentlyViewedSource: "ソース",
     lastViewed: "{{time}}に表示",
     saveNote: {
-      title: "ノートとして保存",
-      description: "この回答に名前を付けて、現在のノートブックに保存します。",
-      nameLabel: "ノート名",
-      namePlaceholder: "ノート名を入力",
-      submit: "保存",
+      typeLabel: "保存の種類",
+      modeSource: "ソースとして保存",
+      modeNote: "ノートとして保存",
+      title: "ノートブックに保存",
+      description: "このコンテンツに名前を付け、ソースとして保存するかノートとして保存するかを選択してください。",
+      nameLabel: "名前",
+      namePlaceholder: "名前を入力",
+      submit: "保存"
     },
     saveAsSource: {
       title: "ソースとして保存",

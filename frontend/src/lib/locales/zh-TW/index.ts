@@ -89,7 +89,6 @@ export const zhTW = {
     no: "否",
     saving: "正在儲存...",
     description: "描述",
-    saveToNote: "儲存到筆記",
     copyToClipboard: "複製到剪貼簿",
     close: "關閉",
     insights: "見解",
@@ -283,11 +282,14 @@ export const zhTW = {
     recentlyViewedSource: "來源",
     lastViewed: "檢視於{{time}}",
     saveNote: {
-      title: "儲存為筆記",
-      description: "為這則回答取個名字，儲存到目前筆記本。",
-      nameLabel: "筆記名稱",
-      namePlaceholder: "填寫筆記名稱",
-      submit: "儲存",
+      typeLabel: "儲存類型",
+      modeSource: "存為來源",
+      modeNote: "存為筆記",
+      title: "儲存到筆記本",
+      description: "為這則內容命名，並選擇存為來源或存為筆記。",
+      nameLabel: "名稱",
+      namePlaceholder: "填寫名稱",
+      submit: "儲存"
     },
     saveAsSource: {
       title: "存為來源",

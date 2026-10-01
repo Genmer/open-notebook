@@ -89,7 +89,6 @@ export const itIT = {
     no: "No",
     saving: "Salvataggio...",
     description: "Descrizione",
-    saveToNote: "Salva come nota",
     copyToClipboard: "Copia negli appunti",
     close: "Chiudi",
     insights: "Approfondimenti",
@@ -283,11 +282,14 @@ export const itIT = {
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
     saveNote: {
-      title: "Salva come nota",
-      description: "Dai un nome a questa risposta prima di salvarla in questo quaderno.",
-      nameLabel: "Nome della nota",
-      namePlaceholder: "Inserisci un nome per la nota",
-      submit: "Salva",
+      typeLabel: "Salva come",
+      modeSource: "Salva come fonte",
+      modeNote: "Salva come nota",
+      title: "Salva nel quaderno",
+      description: "Dai un nome a questo contenuto e scegli se salvarlo come fonte o come nota.",
+      nameLabel: "Nome",
+      namePlaceholder: "Inserisci un nome",
+      submit: "Salva"
     },
     saveAsSource: {
       title: "Salva come fonte",

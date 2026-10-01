@@ -89,7 +89,6 @@ export const plPL = {
     no: "Nie",
     saving: "Zapisywanie...",
     description: "Opis",
-    saveToNote: "Zapisz do notatki",
     copyToClipboard: "Kopiuj do schowka",
     close: "Zamknij",
     insights: "Wglądy",
@@ -283,11 +282,14 @@ export const plPL = {
     recentlyViewedSource: "Źródło",
     lastViewed: "Wyświetlono {{time}}",
     saveNote: {
-      title: "Zapisz jako notatkę",
-      description: "Nadaj tej odpowiedzi nazwę przed zapisaniem jej w tym notatniku.",
-      nameLabel: "Nazwa notatki",
-      namePlaceholder: "Wpisz nazwę notatki",
-      submit: "Zapisz",
+      typeLabel: "Zapisz jako",
+      modeSource: "Zapisz jako źródło",
+      modeNote: "Zapisz jako notatkę",
+      title: "Zapisz w notatniku",
+      description: "Nadaj tej treści nazwę i wybierz, czy zapisać ją jako źródło, czy jako notatkę.",
+      nameLabel: "Nazwa",
+      namePlaceholder: "Wpisz nazwę",
+      submit: "Zapisz"
     },
     saveAsSource: {
       title: "Zapisz jako źródło",

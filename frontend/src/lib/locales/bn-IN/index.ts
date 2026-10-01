@@ -89,7 +89,6 @@ export const bnIN = {
     no: "না",
     saving: "সংরক্ষণ করা হচ্ছে...",
     description: "বিবরণ",
-    saveToNote: "নোটে সংরক্ষণ করুন",
     copyToClipboard: "ক্লিপবোর্ডে কপি করুন",
     close: "বন্ধ",
     insights: "অন্তর্দৃষ্টি",
@@ -283,11 +282,14 @@ export const bnIN = {
     recentlyViewedSource: "উৎস",
     lastViewed: "{{time}} দেখা হয়েছে",
     saveNote: {
-      title: "নোট হিসেবে সংরক্ষণ",
-      description: "এই উত্তরটি বর্তমান নোটবুকে সংরক্ষণ করার আগে এটির একটি নাম দিন।",
-      nameLabel: "নোটের নাম",
-      namePlaceholder: "নোটের নাম লিখুন",
-      submit: "সংরক্ষণ",
+      typeLabel: "সংরক্ষণের ধরন",
+      modeSource: "সোর্স হিসেবে সংরক্ষণ",
+      modeNote: "নোট হিসেবে সংরক্ষণ",
+      title: "নোটবুকে সংরক্ষণ",
+      description: "এই বিষয়বস্তুর একটি নাম দিন এবং এটি সোর্স হিসেবে না নোট হিসেবে সংরক্ষণ হবে তা বেছে নিন।",
+      nameLabel: "নাম",
+      namePlaceholder: "একটি নাম লিখুন",
+      submit: "সংরক্ষণ"
     },
     saveAsSource: {
       title: "সোর্স হিসেবে সংরক্ষণ",

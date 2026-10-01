@@ -87,7 +87,6 @@ export const enUS = {
     no: "No",
     saving: "Saving...",
     description: "Description",
-    saveToNote: "Save to note",
     copyToClipboard: "Copy to clipboard",
     close: "Close",
     insights: "Insights",
@@ -281,11 +280,14 @@ export const enUS = {
     recentlyViewedSource: "Source",
     lastViewed: "Viewed {{time}}",
     saveNote: {
-      title: "Save as Note",
-      description: "Give this answer a name before saving it to this notebook.",
-      nameLabel: "Note name",
-      namePlaceholder: "Enter a name for this note",
-      submit: "Save",
+      typeLabel: "Save as",
+      modeSource: "Save as source",
+      modeNote: "Save as note",
+      title: "Save to notebook",
+      description: "Name this content and choose to save it as a source or a note.",
+      nameLabel: "Name",
+      namePlaceholder: "Enter a name",
+      submit: "Save"
     },
     saveAsSource: {
       title: "Save as Source",

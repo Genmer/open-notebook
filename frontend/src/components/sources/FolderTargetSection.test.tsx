@@ -49,7 +49,7 @@ vi.mock('@/lib/hooks/use-source-views', () => ({
   useViewGroups: (viewId?: string | null) => viewGroupsData(viewId),
 }))
 
-import { FolderTargetSection, type FolderTargetValue } from './FolderTargetSection'
+import { FolderTargetSection, defaultFolderTarget, type FolderTargetValue } from './FolderTargetSection'
 
 const defaultGroupsQuery = (viewId?: string | null) => ({
   data: viewId === 'source_view:v1' ? groupsV1 : [],
@@ -195,5 +195,30 @@ describe('FolderTargetSection stale-folder fallback', () => {
     viewGroupsData.mockReturnValue({ data: undefined })
     const props = setup({ value: { viewId: 'source_view:v1', groupId: 'source_group:g1' } })
     expect(props.onChange).not.toHaveBeenCalled()
+  })
+})
+
+// 迁自 SaveAsSourceDialog 的纯函数：按分组浏览范围推导弹窗默认文件夹
+describe('defaultFolderTarget', () => {
+  it('returns null when sourceGrouping is missing (undefined or empty)', () => {
+    expect(defaultFolderTarget()).toBeNull()
+    expect(defaultFolderTarget({})).toBeNull()
+    expect(defaultFolderTarget({ viewId: 'source_view:v1' })).toBeNull()
+  })
+
+  it('returns null for the virtual file_type view', () => {
+    expect(defaultFolderTarget({ viewId: 'file_type', group: 'group:1' })).toBeNull()
+  })
+
+  it('returns null for virtual group values (all / ungrouped)', () => {
+    expect(defaultFolderTarget({ viewId: 'source_view:v1', group: 'all' })).toBeNull()
+    expect(defaultFolderTarget({ viewId: 'source_view:v1', group: 'ungrouped' })).toBeNull()
+  })
+
+  it('returns the view + group pair for a concrete folder', () => {
+    expect(defaultFolderTarget({ viewId: 'source_view:v1', group: 'source_group:g1' })).toEqual({
+      viewId: 'source_view:v1',
+      groupId: 'source_group:g1',
+    })
   })
 })

@@ -25,6 +25,7 @@ import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
@@ -60,6 +61,8 @@ interface ChatPanelProps {
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
   notebookId?: string
+  // 当前来源分组浏览范围：原引用直传给保存弹窗预选默认文件夹
+  sourceGrouping?: NotebookSourceFilters
 }
 
 export function ChatPanel({
@@ -80,7 +83,8 @@ export function ChatPanel({
   contextType = 'source',
   notebookContextStats,
   onOpenContextPicker,
-  notebookId
+  notebookId,
+  sourceGrouping
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
@@ -198,6 +202,7 @@ export function ChatPanel({
                   message={message}
                   notebookId={notebookId}
                   onReferenceClick={handleReferenceClick}
+                  sourceGrouping={sourceGrouping}
                 />
               ))
             )}
@@ -402,12 +407,14 @@ interface ChatMessageProps {
   message: SourceChatMessage
   notebookId?: string
   onReferenceClick: (type: string, id: string) => void
+  sourceGrouping?: NotebookSourceFilters
 }
 
 const ChatMessage = memo(function ChatMessage({
   message,
   notebookId,
-  onReferenceClick
+  onReferenceClick,
+  sourceGrouping
 }: ChatMessageProps) {
   return (
     <div
@@ -443,6 +450,7 @@ const ChatMessage = memo(function ChatMessage({
           <MessageActions
             content={message.content}
             notebookId={notebookId}
+            sourceGrouping={sourceGrouping}
           />
         )}
       </div>

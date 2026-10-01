@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useSourceViews, useViewGroups } from '@/lib/hooks/use-source-views'
 import { FILE_TYPE_VIEW_ID } from '@/lib/stores/source-view-store'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { flattenGroupTree } from '@/lib/utils/group-tree'
 import { displayViewName } from '@/lib/utils/view-display'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -19,6 +20,17 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 export interface FolderTargetValue {
   viewId: string
   groupId: string
+}
+
+// 按来源页/笔记本当前的分组浏览范围推导默认文件夹：只有具体文件夹（非 'all' /
+// 'ungrouped' 虚拟值、非 file_type 虚拟视图）才预选，其余落到「不放入文件夹」。
+// sourceGrouping 缺省（如 Gemini 视图未开分组）即视为「无文件夹」。
+export function defaultFolderTarget(sourceGrouping?: NotebookSourceFilters): FolderTargetValue | null {
+  const viewId = sourceGrouping?.viewId
+  const group = sourceGrouping?.group
+  if (!viewId || viewId === FILE_TYPE_VIEW_ID) return null
+  if (!group || group === 'all' || group === 'ungrouped') return null
+  return { viewId, groupId: group }
 }
 
 interface FolderTargetSectionProps {

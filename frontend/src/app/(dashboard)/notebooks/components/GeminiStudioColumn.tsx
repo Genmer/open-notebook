@@ -329,7 +329,7 @@ export function GeminiStudioColumn({
       </CardHeader>
 
       <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-        <ScrollArea className="flex-1 min-h-0 p-4 space-y-5">
+        <ScrollArea className="notebook-studio-scroll flex-1 min-h-0 p-4 space-y-5">
           {/* 1. 成熟功能卡片网格 (Studio Actions) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">

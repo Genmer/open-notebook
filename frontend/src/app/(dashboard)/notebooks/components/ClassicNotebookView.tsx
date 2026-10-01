@@ -127,6 +127,7 @@ export function ClassicNotebookView({
                 onOpenContextPicker={() => setContextPickerOpen(true)}
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
+                sourceGrouping={sourceGrouping}
               />
             )}
           </div>
@@ -200,6 +201,7 @@ export function ClassicNotebookView({
                 onOpenContextPicker={() => setContextPickerOpen(true)}
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
+                sourceGrouping={sourceGrouping}
               />
             </div>
       </div>

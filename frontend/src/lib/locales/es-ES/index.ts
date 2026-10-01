@@ -89,7 +89,6 @@ export const esES = {
     no: "No",
     saving: "Guardando...",
     description: "Descripción",
-    saveToNote: "Guardar en nota",
     copyToClipboard: "Copiar al portapapeles",
     close: "Cerrar",
     insights: "Análisis",
@@ -283,11 +282,14 @@ export const esES = {
     recentlyViewedSource: "Fuente",
     lastViewed: "Visto {{time}}",
     saveNote: {
-      title: "Guardar como nota",
-      description: "Ponle un nombre a esta respuesta antes de guardarla en este cuaderno.",
-      nameLabel: "Nombre de la nota",
-      namePlaceholder: "Introduce un nombre para la nota",
-      submit: "Guardar",
+      typeLabel: "Guardar como",
+      modeSource: "Guardar como fuente",
+      modeNote: "Guardar como nota",
+      title: "Guardar en el cuaderno",
+      description: "Ponle un nombre a este contenido y elige si guardarlo como fuente o como nota.",
+      nameLabel: "Nombre",
+      namePlaceholder: "Introduce un nombre",
+      submit: "Guardar"
     },
     saveAsSource: {
       title: "Guardar como fuente",

@@ -348,4 +348,55 @@ describe('GeminiStudioColumn', () => {
     // 防叠开的核心目的：阅读弹窗必须已关闭
     expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull()
   })
+
+  it('marks the notes ScrollArea with the notebook-studio-scroll override class', () => {
+    const { container } = render(
+      <GeminiStudioColumn
+        notebookId="nb:test"
+        notes={mockNotes}
+        isLoading={false}
+        sources={[]}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // 定向 CSS 修复（globals.css .notebook-studio-scroll）挂在 ScrollArea 根上
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]')
+    expect(scrollArea).not.toBeNull()
+    expect(scrollArea!.className).toContain('notebook-studio-scroll')
+  })
+
+  it('keeps the three hover action buttons of every note card in the DOM', () => {
+    const threeNotes = [
+      ...mockNotes,
+      {
+        id: 'note:3',
+        title: '多模型对话备忘',
+        content: '与多模型协作的要点记录，第三张卡片用于悬停按钮回归。',
+        note_type: 'human' as const,
+        created: '2026-09-03T00:00:00Z',
+        updated: '2026-09-04T00:00:00Z',
+      },
+    ]
+    render(
+      <GeminiStudioColumn
+        notebookId="nb:test"
+        notes={threeNotes}
+        isLoading={false}
+        sources={[]}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // 每张卡片右上角悬停组：编辑 / 存为来源 / 删除 三个按钮必须存在
+    const saveButtons = screen.getAllByTitle('notebooks.saveAsSource.action')
+    expect(saveButtons).toHaveLength(3)
+    saveButtons.forEach((button) => {
+      expect(button).toHaveAttribute('aria-label', 'notebooks.saveAsSource.action')
+      const card = button.closest('.group')
+      expect(card).not.toBeNull()
+      // 悬停组内恰好三个 ghost 小按钮（编辑 / 存为来源 / 删除）
+      expect(card!.querySelectorAll('button')).toHaveLength(3)
+    })
+  })
 })

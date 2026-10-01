@@ -635,3 +635,19 @@
     grid-template-columns: 420px minmax(0, 1fr) 48px;
   }
 }
+
+/* Studio 列 ScrollArea 的 table 包裹层修复（套用在该 ScrollArea 根元素上）。
+   Radix ScrollArea 的 Viewport 内固定渲染一个行内样式的包裹 div
+  （style="min-width:100%;display:table"，@radix-ui/react-scroll-area@1.2.9；
+   该 div 无 class，只能按 [data-radix-scroll-area-viewport] 直接子元素定位）。
+   CSS table 自动布局以内容固有宽度为表宽下限：Studio 工具按钮网格里工具描述
+   的 max-content 会把它撑宽（实测 573px > 列宽 460px），连带下方笔记卡片一起
+   超出视口，右上角悬停按钮（编辑/存为来源/删除）被裁到屏幕外。
+   display:block 移除 table 布局（引擎无关）；min-width:100% 仍由 Radix 行内
+   样式保留，纵向滚动测量不变。必须 !important：普通作者声明打不过行内样式。
+   本仓库 17 处 ScrollArea 全为纵向滚动，无人依赖 table 的横向撑开特性，故仅
+   用该类定向作用于 Studio 列；若日后在此 ScrollArea 内放横向滚动内容，需自带
+   overflow-x-auto。依赖 Radix 内部 DOM 结构，升级后若修复失效先查这里。 */
+.notebook-studio-scroll [data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}

@@ -89,7 +89,6 @@ export const zhCN = {
     no: "否",
     saving: "正在保存...",
     description: "描述",
-    saveToNote: "保存到笔记",
     copyToClipboard: "复制到剪贴板",
     close: "关闭",
     insights: "见解",
@@ -283,11 +282,14 @@ export const zhCN = {
     recentlyViewedSource: "来源",
     lastViewed: "查看于{{time}}",
     saveNote: {
-      title: "保存为笔记",
-      description: "为这条回答起个名字，保存到当前笔记本。",
-      nameLabel: "笔记名称",
-      namePlaceholder: "填写笔记名称",
-      submit: "保存",
+      typeLabel: "保存类型",
+      modeSource: "存为来源",
+      modeNote: "存为笔记",
+      title: "保存到笔记本",
+      description: "为这条内容命名，并选择存为来源或存为笔记。",
+      nameLabel: "名称",
+      namePlaceholder: "填写名称",
+      submit: "保存"
     },
     saveAsSource: {
       title: "存为来源",

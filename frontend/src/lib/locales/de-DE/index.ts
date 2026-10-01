@@ -92,7 +92,6 @@ export const deDE = {
     no: "Nein",
     saving: "Speichern...",
     description: "Beschreibung",
-    saveToNote: "In Notiz speichern",
     copyToClipboard: "In Zwischenablage kopieren",
     close: "Schließen",
     insights: "Erkenntnisse",
@@ -286,11 +285,14 @@ export const deDE = {
     recentlyViewedSource: "Quelle",
     lastViewed: "Angesehen {{time}}",
     saveNote: {
-      title: "Als Notiz speichern",
-      description: "Gib dieser Antwort einen Namen, bevor du sie im aktuellen Notizbuch speicherst.",
-      nameLabel: "Notizname",
-      namePlaceholder: "Namen für die Notiz eingeben",
-      submit: "Speichern",
+      typeLabel: "Speichern als",
+      modeSource: "Als Quelle speichern",
+      modeNote: "Als Notiz speichern",
+      title: "Im Notizbuch speichern",
+      description: "Gib diesem Inhalt einen Namen und wähle, ob er als Quelle oder als Notiz gespeichert werden soll.",
+      nameLabel: "Name",
+      namePlaceholder: "Namen eingeben",
+      submit: "Speichern"
     },
     saveAsSource: {
       title: "Als Quelle speichern",

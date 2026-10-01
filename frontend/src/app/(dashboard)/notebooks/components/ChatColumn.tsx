@@ -10,6 +10,7 @@ import { AlertCircle } from 'lucide-react'
 import { ContextSelections } from '../[id]/page'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceListResponse } from '@/lib/types/api'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 
 interface ChatColumnProps {
   notebookId: string
@@ -17,6 +18,8 @@ interface ChatColumnProps {
   onOpenContextPicker: () => void
   sources: SourceListResponse[]
   sourcesLoading: boolean
+  /** 原引用直传 ChatPanel，供「保存」弹窗的存为来源模式预选默认文件夹。 */
+  sourceGrouping?: NotebookSourceFilters
 }
 
 export function ChatColumn({
@@ -25,6 +28,7 @@ export function ChatColumn({
   onOpenContextPicker,
   sources,
   sourcesLoading,
+  sourceGrouping,
 }: ChatColumnProps) {
   const { t } = useTranslation()
 
@@ -107,6 +111,7 @@ export function ChatColumn({
       notebookContextStats={contextStats}
       notebookId={notebookId}
       onOpenContextPicker={onOpenContextPicker}
+      sourceGrouping={sourceGrouping}
     />
   )
 }

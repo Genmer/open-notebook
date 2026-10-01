@@ -6,15 +6,23 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Save, Copy, Check, BookmarkPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { SaveNoteDialog } from './SaveNoteDialog'
 
 interface MessageActionsProps {
   content: string
   notebookId?: string
   showTextLabel?: boolean
+  /** 透传给保存弹窗，用于「存为来源」模式预选默认文件夹。 */
+  sourceGrouping?: NotebookSourceFilters
 }
 
-export function MessageActions({ content, notebookId, showTextLabel = true }: MessageActionsProps) {
+export function MessageActions({
+  content,
+  notebookId,
+  showTextLabel = true,
+  sourceGrouping,
+}: MessageActionsProps) {
   const { t } = useTranslation()
   const [copySuccess, setCopySuccess] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
@@ -62,7 +70,7 @@ export function MessageActions({ content, notebookId, showTextLabel = true }: Me
             onClick={() => setSaveOpen(true)}
           >
             <BookmarkPlus className="h-3.5 w-3.5 text-primary" />
-            <span>{t('common.saveToNote')}</span>
+            <span>{t('common.save')}</span>
           </Button>
           <Button
             variant="ghost"
@@ -83,6 +91,7 @@ export function MessageActions({ content, notebookId, showTextLabel = true }: Me
           onOpenChange={setSaveOpen}
           content={content}
           notebookId={notebookId}
+          sourceGrouping={sourceGrouping}
         />
       </>
     )
@@ -104,7 +113,7 @@ export function MessageActions({ content, notebookId, showTextLabel = true }: Me
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{t('common.saveToNote')}</p>
+              <p>{t('common.save')}</p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -133,6 +142,7 @@ export function MessageActions({ content, notebookId, showTextLabel = true }: Me
             onOpenChange={setSaveOpen}
             content={content}
             notebookId={notebookId}
+            sourceGrouping={sourceGrouping}
           />
         )}
       </div>
