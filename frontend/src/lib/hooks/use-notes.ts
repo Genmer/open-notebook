@@ -9,7 +9,10 @@ import { CreateNoteRequest, UpdateNoteRequest } from '@/lib/types/api'
 export function useNotes(notebookId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.notes(notebookId),
-    queryFn: () => notesApi.list({ notebook_id: notebookId }),
+    // The notebook list endpoint omits note content by default; the notebook
+    // views render previews and read-only note dialogs straight from this
+    // list, so always request it.
+    queryFn: () => notesApi.list({ notebook_id: notebookId, include_content: true }),
     enabled: !!notebookId,
   })
 }

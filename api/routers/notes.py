@@ -17,6 +17,14 @@ router = APIRouter()
 @router.get("/notes", response_model=List[NoteResponse])
 async def get_notes(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    include_content: bool = Query(
+        False,
+        description=(
+            "Include note content. Notebook-filtered lists omit it by default "
+            "for payload size; pass true when the client renders previews or "
+            "read-only note views from the list response."
+        ),
+    ),
 ):
     """Get all notes with optional notebook filtering."""
     try:
@@ -25,7 +33,7 @@ async def get_notes(
             from open_notebook.domain.notebook import Notebook
 
             notebook = await Notebook.get(notebook_id)
-            notes = await notebook.get_notes()
+            notes = await notebook.get_notes(include_content=include_content)
         else:
             # Get all notes
             notes = await Note.get_all(order_by="updated desc")

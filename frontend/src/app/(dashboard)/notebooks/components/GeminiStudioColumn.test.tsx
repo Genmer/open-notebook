@@ -64,6 +64,12 @@ vi.mock('./NoteEditorDialog', () => ({
     open ? <div data-testid="note-editor-dialog" /> : null,
 }))
 
+// ArtifactViewDialog renders note bodies through MarkdownRenderer; keep the
+// test light by asserting on the raw content contract instead.
+vi.mock('@/components/ui/markdown-renderer', () => ({
+  MarkdownRenderer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 const mockNotes: NoteResponse[] = [
   {
     id: 'note:1',
@@ -252,5 +258,25 @@ describe('GeminiStudioColumn', () => {
 
     fireEvent.click(screen.getByTitle(/打开进度管理/))
     expect(routerPushMock).toHaveBeenCalledWith('/tasks')
+  })
+
+  it('opens the read-only artifact view with note content when clicking a note card', () => {
+    render(
+      <GeminiStudioColumn
+        notebookId="nb:test"
+        notes={mockNotes}
+        isLoading={false}
+        sources={[]}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // 点击笔记卡片 → 只读弹窗展示标题与正文（列表接口必须带回 content）
+    fireEvent.click(screen.getByText('Study Guide - 核心概念复习'))
+
+    const dialogContent = document.querySelector<HTMLElement>('[data-slot="dialog-content"]')!
+    expect(dialogContent).not.toBeNull()
+    expect(dialogContent).toHaveTextContent('Study Guide - 核心概念复习')
+    expect(dialogContent).toHaveTextContent('整理好的关于核心术语和自测问答的 AI 总结笔记。')
   })
 })

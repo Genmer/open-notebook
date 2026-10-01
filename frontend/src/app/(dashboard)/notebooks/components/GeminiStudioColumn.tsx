@@ -30,6 +30,7 @@ import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import type { NoteResponse, SourceListResponse } from '@/lib/types/api'
 import type { ContextSelections } from '@/lib/types/notebook-context'
 import { NoteEditorDialog } from './NoteEditorDialog'
+import { ArtifactViewDialog } from './ArtifactViewDialog'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
 import { useDeleteNote } from '@/lib/hooks/use-notes'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -484,24 +485,13 @@ export function GeminiStudioColumn({
         isLoading={deleteNote.isPending}
       />
 
-      {/* 笔记全屏阅读弹窗 */}
-      <Dialog open={!!viewingNote} onOpenChange={(open) => !open && setViewingNote(null)}>
-        <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              {viewingNote?.note_type === 'ai' ? (
-                <Bot className="h-4 w-4 text-primary" />
-              ) : (
-                <User className="h-4 w-4" />
-              )}
-              {viewingNote?.title || '笔记详情'}
-            </DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="flex-1 p-2 pr-4 text-sm leading-relaxed whitespace-pre-wrap font-sans">
-            {viewingNote?.content}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+      {/* 笔记全屏阅读弹窗：列表接口带回了 content，直接用统一的只读渲染
+          （Markdown 排版 / 闪卡翻转 / 全屏切换），见 ArtifactViewDialog */}
+      <ArtifactViewDialog
+        open={!!viewingNote}
+        onOpenChange={(open) => !open && setViewingNote(null)}
+        note={viewingNote ?? undefined}
+      />
 
       {/* Studio 真实工件生成弹窗（提交后切换为进度详情视图） */}
       <Dialog open={toolDialogOpen} onOpenChange={setToolDialogOpen}>
