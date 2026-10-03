@@ -2222,5 +2222,18 @@ export const deDE = {
     validationMaxTokens: "Max. Tokens muss eine positive ganze Zahl sein",
     temperatureLabel: "Temp. {{value}}",
     maxTokensLabel: "max. {{value}} Tokens",
+    templateLabel: "Mit einer Vorlage beginnen",
+    templateBlank: "Eigene (leer)",
+    templateCat: {
+      software: "Software",
+      llm: "LLM",
+      business: "Business",
+      education: "Bildung",
+      creative: "Kreativ",
+      general: "Allgemein",
+    },
+    polishPrompt: "Prompt verfeinern",
+    polishing: "Verfeinern…",
+    polishFailed: "Prompt konnte nicht verfeinert werden",
   },
 } satisfies TranslationShape;

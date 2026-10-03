@@ -2219,5 +2219,18 @@ export const jaJP = {
     validationMaxTokens: "最大トークン数は正の整数で指定してください",
     temperatureLabel: "温度 {{value}}",
     maxTokensLabel: "上限 {{value}} トークン",
+    templateLabel: "テンプレートから始める",
+    templateBlank: "カスタム（空欄）",
+    templateCat: {
+      software: "ソフトウェア",
+      llm: "LLM",
+      business: "ビジネス",
+      education: "教育",
+      creative: "クリエイティブ",
+      general: "汎用",
+    },
+    polishPrompt: "プロンプトを磨く",
+    polishing: "磨いています…",
+    polishFailed: "プロンプトの研磨に失敗しました",
   },
 } satisfies TranslationShape;

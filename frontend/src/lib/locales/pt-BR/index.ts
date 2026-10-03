@@ -2219,5 +2219,18 @@ export const ptBR = {
     validationMaxTokens: "Tokens máximos devem ser um inteiro positivo",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "limite {{value}} tokens",
+    templateLabel: "Começar com um modelo",
+    templateBlank: "Personalizado (em branco)",
+    templateCat: {
+      software: "Software",
+      llm: "LLM",
+      business: "Negócios",
+      education: "Educação",
+      creative: "Criativo",
+      general: "Geral",
+    },
+    polishPrompt: "Polir o prompt",
+    polishing: "Polindo…",
+    polishFailed: "Falha ao polir o prompt",
   },
 } satisfies TranslationShape;

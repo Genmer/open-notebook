@@ -259,3 +259,95 @@ def test_domain_rejects_out_of_range_sampling_params():
         _agent(name="   ")
     with pytest.raises(InvalidInputError):
         _agent(system_prompt="  ")
+
+
+# --- POST /api/agents/polish-prompt ---
+
+
+class _FakeAIMessage:
+    content = "<think>scratch</think>\n\n  Polished prompt body.  \n"
+
+
+class _FakeLangchainModel:
+    def __init__(self):
+        self.payloads = []
+
+    async def ainvoke(self, payload):
+        self.payloads.append(payload)
+        return _FakeAIMessage()
+
+
+class _FakeProvisionedModel:
+    def __init__(self, langchain_model):
+        self.langchain_model = langchain_model
+        self.model_name = "gpt-fake"
+
+
+def test_polish_prompt_expands_draft_via_default_model():
+    client = _client()
+    draft = "帮我做一个能解读上市公司财报的分析助手"
+    fake_model = _FakeLangchainModel()
+    provision_calls: list[tuple] = []
+
+    async def fake_provision(content, model_id, default_type, **kwargs):
+        provision_calls.append((content, model_id, default_type, kwargs))
+        return _FakeProvisionedModel(fake_model)
+
+    with (
+        patch("api.routers.agents.Prompter") as mock_prompter_cls,
+        patch(
+            "api.routers.agents.provision_langchain_model_with_info",
+            side_effect=fake_provision,
+        ) as mock_provision,
+    ):
+        mock_prompter_cls.return_value.render.return_value = "RENDERED PROMPT"
+        response = client.post(
+            "/api/agents/polish-prompt",
+            json={
+                "draft": draft,
+                "name": "财报分析师",
+                "description": "解读上市公司财报",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    # thinking block stripped and surrounding whitespace removed
+    assert response.json() == {"polished": "Polished prompt body."}
+
+    mock_prompter_cls.assert_called_once_with(prompt_template="agents/polish")
+    render_kwargs = mock_prompter_cls.return_value.render.call_args.kwargs
+    assert render_kwargs["data"]["draft"] == draft
+    assert render_kwargs["data"]["name"] == "财报分析师"
+    assert render_kwargs["data"]["description"] == "解读上市公司财报"
+
+    # default chat model: no explicit model id, no sampling overrides
+    mock_provision.assert_awaited_once()
+    content, model_id, default_type, kwargs = provision_calls[0]
+    assert content == "RENDERED PROMPT"
+    assert model_id is None
+    assert default_type == "chat"
+    assert kwargs == {}
+    # the model actually sees the rendered prompt
+    assert fake_model.payloads[0][0].content == "RENDERED PROMPT"
+
+
+def test_polish_prompt_rejects_empty_draft():
+    client = _client()
+
+    with patch("api.routers.agents.provision_langchain_model_with_info") as mock_prov:
+        response = client.post("/api/agents/polish-prompt", json={"draft": ""})
+
+    assert response.status_code == 422
+    mock_prov.assert_not_awaited()
+
+
+def test_polish_prompt_rejects_draft_over_8000_chars():
+    client = _client()
+
+    with patch("api.routers.agents.provision_langchain_model_with_info") as mock_prov:
+        response = client.post(
+            "/api/agents/polish-prompt", json={"draft": "a" * 8001}
+        )
+
+    assert response.status_code == 422
+    mock_prov.assert_not_awaited()

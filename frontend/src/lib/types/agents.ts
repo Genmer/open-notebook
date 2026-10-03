@@ -34,3 +34,13 @@ export interface UpdateAgentRequest {
   enabled?: boolean
   sort_order?: number
 }
+
+export interface PolishPromptRequest {
+  draft: string
+  name?: string | null
+  description?: string | null
+}
+
+export interface PolishPromptResponse {
+  polished: string
+}

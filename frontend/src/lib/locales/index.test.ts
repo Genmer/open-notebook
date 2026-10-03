@@ -124,7 +124,10 @@ describe('Unused Key Detection', () => {
   it(
     'all en-US leaf keys should be referenced in source files',
     () => {
-      const srcDir = path.resolve(__dirname, '../../..')
+      // `src/` only — walking up any further sweeps node_modules/.next into
+      // the corpus, which is both pathologically slow (30s+ under load) and
+      // unsound (keys "used" only inside dependency .d.ts files).
+      const srcDir = path.resolve(__dirname, '../..')
       const localesDir = path.resolve(__dirname)
 
       const files = fs.readdirSync(srcDir, { recursive: true }) as string[]

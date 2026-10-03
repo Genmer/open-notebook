@@ -2220,5 +2220,18 @@ export const esES = {
     validationMaxTokens: "Los tokens máximos deben ser un entero positivo",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "límite {{value}} tokens",
+    templateLabel: "Empezar desde una plantilla",
+    templateBlank: "Personalizado (en blanco)",
+    templateCat: {
+      software: "Software",
+      llm: "LLM",
+      business: "Negocios",
+      education: "Educación",
+      creative: "Creativo",
+      general: "General",
+    },
+    polishPrompt: "Pulir el prompt",
+    polishing: "Puliendo…",
+    polishFailed: "Error al pulir el prompt",
   },
 } satisfies TranslationShape;

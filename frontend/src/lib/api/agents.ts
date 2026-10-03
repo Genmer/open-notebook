@@ -2,6 +2,8 @@ import apiClient from './client'
 import {
   Agent,
   CreateAgentRequest,
+  PolishPromptRequest,
+  PolishPromptResponse,
   UpdateAgentRequest,
 } from '@/lib/types/agents'
 
@@ -25,6 +27,14 @@ export const agentsApi = {
 
   update: async (id: string, data: UpdateAgentRequest) => {
     const response = await apiClient.put<Agent>(`/agents/${id}`, data)
+    return response.data
+  },
+
+  polishPrompt: async (data: PolishPromptRequest) => {
+    const response = await apiClient.post<PolishPromptResponse>(
+      '/agents/polish-prompt',
+      data
+    )
     return response.data
   },
 

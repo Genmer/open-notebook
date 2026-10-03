@@ -2219,5 +2219,18 @@ export const itIT = {
     validationMaxTokens: "I token massimi devono essere un intero positivo",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "limite {{value}} token",
+    templateLabel: "Inizia da un modello",
+    templateBlank: "Personalizzato (vuoto)",
+    templateCat: {
+      software: "Software",
+      llm: "LLM",
+      business: "Business",
+      education: "Istruzione",
+      creative: "Creativo",
+      general: "Generale",
+    },
+    polishPrompt: "Rifinisci il prompt",
+    polishing: "Rifinitura…",
+    polishFailed: "Rifinitura del prompt non riuscita",
   },
 } satisfies TranslationShape;

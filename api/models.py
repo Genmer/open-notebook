@@ -1537,3 +1537,22 @@ class AgentResponse(BaseModel):
     in_use_session_count: int = 0
     created: str
     updated: str
+
+
+class PolishPromptRequest(BaseModel):
+    draft: str = Field(
+        ...,
+        min_length=1,
+        max_length=8000,
+        description="Raw system prompt draft, possibly just a one-line idea",
+    )
+    name: Optional[str] = Field(
+        None, max_length=100, description="Optional intended agent name for context"
+    )
+    description: Optional[str] = Field(
+        None, max_length=500, description="Optional intended agent description for context"
+    )
+
+
+class PolishPromptResponse(BaseModel):
+    polished: str = Field(..., description="Polished, ready-to-use system prompt")

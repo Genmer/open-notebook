@@ -2218,6 +2218,19 @@ export const enUS = {
     validationMaxTokens: "Max tokens must be a positive integer",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "cap {{value}} tokens",
+    templateLabel: "Start from a template",
+    templateBlank: "Custom (blank)",
+    templateCat: {
+      software: "Software",
+      llm: "LLM",
+      business: "Business",
+      education: "Education",
+      creative: "Creative",
+      general: "General",
+    },
+    polishPrompt: "Polish prompt",
+    polishing: "Polishing…",
+    polishFailed: "Failed to polish the prompt",
   },
 }
 

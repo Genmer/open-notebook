@@ -2219,5 +2219,18 @@ export const zhCN = {
     validationMaxTokens: "最大 Token 数需为正整数",
     temperatureLabel: "温度 {{value}}",
     maxTokensLabel: "上限 {{value}} tokens",
+    templateLabel: "从模板开始",
+    templateBlank: "自定义（空白）",
+    templateCat: {
+      software: "软件开发",
+      llm: "大模型",
+      business: "商业",
+      education: "教育",
+      creative: "创作",
+      general: "通用",
+    },
+    polishPrompt: "润色提示词",
+    polishing: "润色中",
+    polishFailed: "提示词润色失败",
   },
 } satisfies TranslationShape;

@@ -2219,5 +2219,18 @@ export const caES = {
     validationMaxTokens: "Els tokens màx. han de ser un enter positiu",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "límit {{value}} tokens",
+    templateLabel: "Comença amb una plantilla",
+    templateBlank: "Personalitzat (en blanc)",
+    templateCat: {
+      software: "Programari",
+      llm: "LLM",
+      business: "Negocis",
+      education: "Educació",
+      creative: "Creatiu",
+      general: "General",
+    },
+    polishPrompt: "Poleix el prompt",
+    polishing: "Polint…",
+    polishFailed: "No s'ha pogut polir el prompt",
   },
 } satisfies TranslationShape;

@@ -14,12 +14,29 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ModelSelector } from '@/components/common/ModelSelector'
 import { agentsApi } from '@/lib/api/agents'
+import {
+  AGENT_TEMPLATES,
+  AGENT_TEMPLATE_CATEGORIES,
+  pickTemplateText,
+  type AgentTemplate,
+} from '@/lib/agent-templates'
 import { useCreateAgent, useUpdateAgent } from '@/lib/hooks/use-agents'
+import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { Agent } from '@/lib/types/agents'
-import { Bot } from 'lucide-react'
+import { Bot, Loader2, Sparkles } from 'lucide-react'
 
 type EditorError = 'required' | 'temperature' | 'maxTokens' | 'load' | null
 
@@ -29,6 +46,17 @@ const ERROR_KEYS = {
   maxTokens: 'agents.validationMaxTokens',
   load: 'agents.loadFailed',
 } as const
+
+// Static full-key literals (not a dynamic template string) so each key stays
+// greppable — the locales unused-key test scans sources for exact key text.
+const TEMPLATE_CATEGORY_KEYS: Record<AgentTemplate['category'], string> = {
+  software: 'agents.templateCat.software',
+  llm: 'agents.templateCat.llm',
+  business: 'agents.templateCat.business',
+  education: 'agents.templateCat.education',
+  creative: 'agents.templateCat.creative',
+  general: 'agents.templateCat.general',
+}
 
 interface AgentEditorDialogProps {
   open: boolean
@@ -70,15 +98,20 @@ function toForm(agent: Agent): FormState {
 }
 
 export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDialogProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [error, setError] = useState<EditorError>(null)
+  const [templateKey, setTemplateKey] = useState<string>('blank')
+  const [polishing, setPolishing] = useState(false)
   const createAgent = useCreateAgent()
   const updateAgent = useUpdateAgent()
+  const { toast } = useToast()
 
   useEffect(() => {
     if (!open) return
     setError(null)
+    setTemplateKey('blank')
+    setPolishing(false)
     if (agentId) {
       agentsApi
         .get(agentId)
@@ -94,6 +127,46 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  /** Fill the form from a template (current locale); 'blank' keeps whatever
+   * the user already typed instead of destructively clearing it. */
+  const handleTemplateChange = (value: string) => {
+    setTemplateKey(value)
+    if (value === 'blank') return
+    const template = AGENT_TEMPLATES.find((tpl) => tpl.key === value)
+    if (!template) return
+    setForm((prev) => ({
+      ...prev,
+      name: pickTemplateText(template.name, language),
+      description: pickTemplateText(template.description, language),
+      system_prompt: pickTemplateText(template.systemPrompt, language),
+      temperature: String(template.temperature),
+      max_tokens: String(template.maxTokens),
+      enabled: true,
+    }))
+  }
+
+  const handlePolish = async () => {
+    const draft = form.system_prompt.trim()
+    if (!draft || polishing) return
+    setPolishing(true)
+    try {
+      const { polished } = await agentsApi.polishPrompt({
+        draft,
+        name: form.name.trim() || null,
+        description: form.description.trim() || null,
+      })
+      setField('system_prompt', polished)
+    } catch (polishError) {
+      toast({
+        title: t('agents.polishFailed'),
+        description: getApiErrorMessage(polishError, (key) => t(key)),
+        variant: 'destructive',
+      })
+    } finally {
+      setPolishing(false)
+    }
   }
 
   const handleSubmit = () => {
@@ -148,6 +221,30 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
+          {!agentId && (
+            <div className="grid gap-2">
+              <Label htmlFor="agent-template">{t('agents.templateLabel')}</Label>
+              <Select value={templateKey} onValueChange={handleTemplateChange}>
+                <SelectTrigger id="agent-template" data-testid="agent-form-template">
+                  <SelectValue placeholder={t('agents.templateLabel')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="blank">{t('agents.templateBlank')}</SelectItem>
+                  {AGENT_TEMPLATE_CATEGORIES.map(({ key: category }) => (
+                    <SelectGroup key={category}>
+                      <SelectLabel>{t(TEMPLATE_CATEGORY_KEYS[category])}</SelectLabel>
+                      {AGENT_TEMPLATES.filter((tpl) => tpl.category === category).map((tpl) => (
+                        <SelectItem key={tpl.key} value={tpl.key}>
+                          {pickTemplateText(tpl.name, language)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="grid gap-2">
             <Label htmlFor="agent-name">{t('agents.nameLabel')}</Label>
             <Input
@@ -172,15 +269,34 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
 
           <div className="grid gap-2">
             <Label htmlFor="agent-prompt">{t('agents.promptLabel')}</Label>
-            <Textarea
-              id="agent-prompt"
-              value={form.system_prompt}
-              onChange={(e) => setField('system_prompt', e.target.value)}
-              placeholder={t('agents.promptPlaceholder')}
-              rows={8}
-              className="font-mono text-sm"
-              data-testid="agent-form-prompt"
-            />
+            <div className="relative">
+              <Textarea
+                id="agent-prompt"
+                value={form.system_prompt}
+                onChange={(e) => setField('system_prompt', e.target.value)}
+                placeholder={t('agents.promptPlaceholder')}
+                rows={8}
+                className="font-mono text-sm pb-11"
+                data-testid="agent-form-prompt"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute bottom-2 right-2 size-8"
+                onClick={handlePolish}
+                disabled={polishing || !form.system_prompt.trim()}
+                title={polishing ? t('agents.polishing') : t('agents.polishPrompt')}
+                aria-label={polishing ? t('agents.polishing') : t('agents.polishPrompt')}
+                data-testid="agent-form-polish"
+              >
+                {polishing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">{t('agents.promptHint')}</p>
           </div>
 

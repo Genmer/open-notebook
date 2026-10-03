@@ -2219,5 +2219,18 @@ export const plPL = {
     validationMaxTokens: "Maks. tokenów musi być dodatnią liczbą całkowitą",
     temperatureLabel: "temp. {{value}}",
     maxTokensLabel: "limit {{value}} tokenów",
+    templateLabel: "Zacznij od szablonu",
+    templateBlank: "Własny (pusty)",
+    templateCat: {
+      software: "Oprogramowanie",
+      llm: "LLM",
+      business: "Biznes",
+      education: "Edukacja",
+      creative: "Kreatywne",
+      general: "Ogólne",
+    },
+    polishPrompt: "Wypoleruj prompt",
+    polishing: "Polerowanie…",
+    polishFailed: "Nie udało się wypolerować promptu",
   },
 } satisfies TranslationShape;

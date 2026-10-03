@@ -2219,5 +2219,18 @@ export const zhTW = {
     validationMaxTokens: "最大 Token 數需為正整數",
     temperatureLabel: "溫度 {{value}}",
     maxTokensLabel: "上限 {{value}} tokens",
+    templateLabel: "從範本開始",
+    templateBlank: "自訂（空白）",
+    templateCat: {
+      software: "軟體開發",
+      llm: "大模型",
+      business: "商業",
+      education: "教育",
+      creative: "創作",
+      general: "通用",
+    },
+    polishPrompt: "潤飾提示詞",
+    polishing: "潤飾中",
+    polishFailed: "提示詞潤飾失敗",
   },
 } satisfies TranslationShape;

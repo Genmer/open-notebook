@@ -2219,5 +2219,18 @@ export const ruRU = {
     validationMaxTokens: "Макс. токенов должно быть положительным целым числом",
     temperatureLabel: "темп. {{value}}",
     maxTokensLabel: "лимит {{value}} токенов",
+    templateLabel: "Начать с шаблона",
+    templateBlank: "Свой (пустой)",
+    templateCat: {
+      software: "Разработка ПО",
+      llm: "LLM",
+      business: "Бизнес",
+      education: "Образование",
+      creative: "Творчество",
+      general: "Общие",
+    },
+    polishPrompt: "Улучшить промпт",
+    polishing: "Улучшение…",
+    polishFailed: "Не удалось улучшить промпт",
   },
 } satisfies TranslationShape;

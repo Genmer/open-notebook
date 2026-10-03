@@ -2219,5 +2219,18 @@ export const trTR = {
     validationMaxTokens: "Maks. token pozitif bir tam sayı olmalı",
     temperatureLabel: "sıc. {{value}}",
     maxTokensLabel: "üst sınır {{value}} token",
+    templateLabel: "Bir şablondan başla",
+    templateBlank: "Özel (boş)",
+    templateCat: {
+      software: "Yazılım",
+      llm: "LLM",
+      business: "İş",
+      education: "Eğitim",
+      creative: "Yaratıcı",
+      general: "Genel",
+    },
+    polishPrompt: "İstemi cilala",
+    polishing: "Cilalanıyor…",
+    polishFailed: "İstem cilalanamadı",
   },
 } satisfies TranslationShape;

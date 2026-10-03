@@ -2219,5 +2219,18 @@ export const frFR = {
     validationMaxTokens: "Les tokens max doivent être un entier positif",
     temperatureLabel: "temp {{value}}",
     maxTokensLabel: "plafond {{value}} tokens",
+    templateLabel: "Commencer à partir d'un modèle",
+    templateBlank: "Personnalisé (vide)",
+    templateCat: {
+      software: "Logiciel",
+      llm: "LLM",
+      business: "Affaires",
+      education: "Éducation",
+      creative: "Créatif",
+      general: "Général",
+    },
+    polishPrompt: "Peaufiner le prompt",
+    polishing: "Peaufinage…",
+    polishFailed: "Échec du peaufinage du prompt",
   },
 } satisfies TranslationShape;

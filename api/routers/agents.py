@@ -8,14 +8,25 @@ touches chat_session.
 
 from typing import Any, Dict, List, Optional
 
+from ai_prompter import Prompter
 from fastapi import APIRouter, HTTPException, Query
+from langchain_core.messages import HumanMessage
 from loguru import logger
 
-from api.models import AgentCreate, AgentResponse, AgentUpdate
+from api.models import (
+    AgentCreate,
+    AgentResponse,
+    AgentUpdate,
+    PolishPromptRequest,
+    PolishPromptResponse,
+)
 from open_notebook.ai.models import Model
+from open_notebook.ai.provision import provision_langchain_model_with_info
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.agent import Agent
 from open_notebook.exceptions import InvalidInputError, NotFoundError, OpenNotebookError
+from open_notebook.utils import clean_thinking_content
+from open_notebook.utils.text_utils import extract_text_content
 
 router = APIRouter()
 
@@ -123,6 +134,33 @@ async def create_agent(agent_data: AgentCreate):
     except Exception as e:
         logger.error(f"Error creating agent: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error creating agent: {str(e)}")
+
+
+@router.post("/agents/polish-prompt", response_model=PolishPromptResponse)
+async def polish_prompt(request: PolishPromptRequest):
+    """Polish a raw system-prompt draft (possibly a one-line idea) into a
+    complete, ready-to-use agent system prompt via the default chat model."""
+    try:
+        prompt = Prompter(prompt_template="agents/polish").render(
+            data={
+                "draft": request.draft,
+                "name": request.name,
+                "description": request.description,
+            }
+        )
+        # No explicit model / sampling overrides: the default chat model with
+        # its own defaults decides tone and length.
+        prov = await provision_langchain_model_with_info(prompt, None, "chat")
+        raw = await prov.langchain_model.ainvoke([HumanMessage(content=prompt)])
+        polished = clean_thinking_content(extract_text_content(raw.content)).strip()
+        return PolishPromptResponse(polished=polished)
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error polishing prompt: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error polishing prompt: {str(e)}")
 
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)

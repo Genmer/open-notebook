@@ -2220,5 +2220,18 @@ export const bnIN = {
     validationMaxTokens: "সর্বোচ্চ টোকেন ধনাত্মক পূর্ণসংখ্যা হতে হবে",
     temperatureLabel: "টেম্প {{value}}",
     maxTokensLabel: "সীমা {{value}} টোকেন",
+    templateLabel: "একটি টেমপ্লেট দিয়ে শুরু করুন",
+    templateBlank: "কাস্টম (খালি)",
+    templateCat: {
+      software: "সফটওয়্যার",
+      llm: "এলএলএম",
+      business: "ব্যবসা",
+      education: "শিক্ষা",
+      creative: "সৃজনশীল",
+      general: "সাধারণ",
+    },
+    polishPrompt: "প্রম্পট পরিমার্জন",
+    polishing: "পরিমার্জন চলছে…",
+    polishFailed: "প্রম্পট পরিমার্জন ব্যর্থ হয়েছে",
   },
 } satisfies TranslationShape;
