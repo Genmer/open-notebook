@@ -16,16 +16,19 @@ interface NotebookHeaderProps {
   notebook: NotebookResponse
 }
 
+// Compact single-line header: name + inline description + meta + icon actions.
+// The workspace columns below need the vertical space far more than this bar
+// needs to announce itself — it shrinks from the old ~150px block to ~44px.
 export function NotebookHeader({ notebook }: NotebookHeaderProps) {
   const { t, language } = useTranslation()
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  
+
   const updateNotebook = useUpdateNotebook()
 
   const handleUpdateName = async (name: string) => {
     if (!name || name === notebook.name) return
-    
+
     await updateNotebook.mutateAsync({
       id: notebook.id,
       data: { name }
@@ -34,7 +37,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
 
   const handleUpdateDescription = async (description: string) => {
     if (description === notebook.description) return
-    
+
     await updateNotebook.mutateAsync({
       id: notebook.id,
       data: { description: description || undefined }
@@ -48,73 +51,77 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
     })
   }
 
+  const updatedText = formatDistanceToNow(new Date(notebook.updated), {
+    addSuffix: true,
+    locale: dfLocale
+  })
+  const createdText = formatDistanceToNow(new Date(notebook.created), {
+    addSuffix: true,
+    locale: dfLocale
+  })
+
   return (
     <>
-      <div className="border-b pb-6">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
-              <InlineEdit
-                id="notebook-name"
-                name="notebook-name"
-                value={notebook.name}
-                onSave={handleUpdateName}
-                className="font-display text-2xl font-bold tracking-tight"
-                inputClassName="font-display text-2xl font-bold tracking-tight"
-                placeholder={t('notebooks.namePlaceholder')}
-              />
-              {notebook.archived && (
-                <Badge variant="secondary">{t('notebooks.archived')}</Badge>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleArchiveToggle}
-              >
-                {notebook.archived ? (
-                  <>
-                    <ArchiveRestore className="h-4 w-4 mr-2" />
-                    {t('notebooks.unarchive')}
-                  </>
-                ) : (
-                  <>
-                    <Archive className="h-4 w-4 mr-2" />
-                    {t('notebooks.archive')}
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDeleteDialog(true)}
-                className="text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t('common.delete')}
-              </Button>
-            </div>
-          </div>
-
-          {/* Signature: one short flat fern underline — one hue, no show */}
-          <div aria-hidden className="h-[3px] w-14 rounded-[1px] bg-fern" />
-
+      <div className="border-b px-6 py-2">
+        <div className="flex min-h-8 items-center gap-2.5">
+          <InlineEdit
+            id="notebook-name"
+            name="notebook-name"
+            value={notebook.name}
+            onSave={handleUpdateName}
+            className="font-display text-lg font-bold leading-tight tracking-tight"
+            inputClassName="font-display text-lg font-bold leading-tight tracking-tight"
+            placeholder={t('notebooks.namePlaceholder')}
+          />
+          {notebook.archived && (
+            <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[11px] font-normal">
+              {t('notebooks.archived')}
+            </Badge>
+          )}
+          <span aria-hidden className="hidden shrink-0 text-muted-foreground/40 md:inline">
+            |
+          </span>
           <InlineEdit
             id="notebook-description"
             name="notebook-description"
             value={notebook.description || ''}
             onSave={handleUpdateDescription}
-            className="text-muted-foreground"
-            inputClassName="text-muted-foreground"
+            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+            inputClassName="text-xs text-muted-foreground"
             placeholder={t('notebooks.addDescription')}
-            multiline
             emptyText={t('notebooks.addDescription')}
           />
-          
-          <div className="text-xs text-muted-foreground">
-            {t('common.created', { time: formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }) })} • 
-            {t('common.updated', { time: formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }) })}
+          <span
+            className="hidden shrink-0 text-[11px] text-muted-foreground/70 lg:inline"
+            title={`${t('common.created', { time: createdText })} · ${t('common.updated', { time: updatedText })}`}
+          >
+            {t('common.updated', { time: updatedText })}
+          </span>
+          <div className="flex shrink-0 gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={handleArchiveToggle}
+              aria-label={notebook.archived ? t('notebooks.unarchive') : t('notebooks.archive')}
+              title={notebook.archived ? t('notebooks.unarchive') : t('notebooks.archive')}
+            >
+              {notebook.archived ? (
+                <ArchiveRestore className="h-3.5 w-3.5" />
+              ) : (
+                <Archive className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setShowDeleteDialog(true)}
+              aria-label={t('common.delete')}
+              title={t('common.delete')}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </div>
       </div>

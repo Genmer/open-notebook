@@ -70,6 +70,9 @@ interface GeminiStudioColumnProps {
   contextSelections?: ContextSelections
   /** 当前分组浏览范围，用于「存为来源」弹窗预选默认文件夹。 */
   sourceGrouping?: NotebookSourceFilters
+  /** Embedded mode (fullscreen chat side panel): hides the workspace-column
+   *  collapse button, which would otherwise toggle the page column behind. */
+  embedded?: boolean
 }
 
 interface StudioTool {
@@ -91,6 +94,7 @@ export function GeminiStudioColumn({
   sources = [],
   contextSelections,
   sourceGrouping,
+  embedded = false,
 }: GeminiStudioColumnProps) {
   const { t, language } = useTranslation()
   const { toggleNotes } = useNotebookColumnsStore()
@@ -129,55 +133,55 @@ export function GeminiStudioColumn({
     {
       id: 'audio_overview',
       name: 'Audio Overview',
-      desc: '生成双人主持的深度对谈音频播客（支持真实 TTS 原生合成）',
+      desc: t('geminiStudio.tools.audioOverview.desc'),
       icon: Mic,
-      tag: '播客',
+      tag: t('geminiStudio.tagPodcast'),
       tagColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
       action: 'podcast',
     },
     {
       id: 'study_guide',
       name: 'Study Guide',
-      desc: '提炼核心概念、考试测验问答与系统复习大纲',
+      desc: t('geminiStudio.tools.studyGuide.desc'),
       icon: BookOpen,
-      tag: '快捷工件',
+      tag: t('geminiStudio.tagArtifact'),
       tagColor: 'bg-primary/10 text-primary border-primary/20',
       action: 'artifact',
       artifactType: 'study_guide',
-      defaultInstruction: '请为我整理一份系统的学习指南，包含核心概念术语解析、关键要点总结以及自测选择题与简答题。',
+      defaultInstruction: t('geminiStudio.tools.studyGuide.instruction'),
     },
     {
       id: 'briefing_doc',
       name: 'Briefing Doc',
-      desc: '生成专业执行简报、关键论据、战略启示与结论',
+      desc: t('geminiStudio.tools.briefingDoc.desc'),
       icon: FileCheck2,
-      tag: '快捷工件',
+      tag: t('geminiStudio.tagArtifact'),
       tagColor: 'bg-primary/10 text-primary border-primary/20',
       action: 'artifact',
       artifactType: 'essay_draft',
-      defaultInstruction: '请提炼一份专业的高管项目简报，包含背景摘要、关键支撑事实、潜在风险评估及后续行动建议。',
+      defaultInstruction: t('geminiStudio.tools.briefingDoc.instruction'),
     },
     {
       id: 'faq',
-      name: 'FAQ 问答集',
-      desc: '基于来源提取最关键的常见问答与详细解答',
+      name: 'FAQ',
+      desc: t('geminiStudio.tools.faq.desc'),
       icon: HelpCircle,
-      tag: '快捷工件',
+      tag: t('geminiStudio.tagArtifact'),
       tagColor: 'bg-primary/10 text-primary border-primary/20',
       action: 'artifact',
       artifactType: 'faq',
-      defaultInstruction: '请全面梳理当前资料，整理出读者最常关心的核心问题与翔实解答。',
+      defaultInstruction: t('geminiStudio.tools.faq.instruction'),
     },
     {
       id: 'flashcards',
       name: 'Flashcards',
-      desc: '提取核心知识点与问答对，生成正反面抽认记忆卡片',
+      desc: t('geminiStudio.tools.flashcards.desc'),
       icon: Brain,
-      tag: '快捷工件',
+      tag: t('geminiStudio.tagArtifact'),
       tagColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
       action: 'artifact',
       artifactType: 'flashcards',
-      defaultInstruction: '请提炼核心概念与重要结论，生成便于记忆与抽认自测的问答知识卡片集。',
+      defaultInstruction: t('geminiStudio.tools.flashcards.instruction'),
     },
   ]
 
@@ -230,7 +234,7 @@ export function GeminiStudioColumn({
       setJobStatus({ job_id: job.job_id, status: 'new' })
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }; message?: string }
-      toast.error(error.response?.data?.detail || error.message || '生成工件失败')
+      toast.error(error.response?.data?.detail || error.message || t('geminiStudio.generateFailed'))
     } finally {
       setIsSubmitting(false)
     }
@@ -261,7 +265,7 @@ export function GeminiStudioColumn({
         ) {
           if (status.status === 'completed') {
             await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notes(notebookId) })
-            toast.success(`${submittedJob.toolName} 生成成功，已作为笔记沉淀至笔记本！`)
+            toast.success(t('geminiStudio.generateDone', { tool: submittedJob.toolName }))
           }
           return
         }
@@ -305,48 +309,48 @@ export function GeminiStudioColumn({
 
   return (
     <Card className="h-full flex flex-col border-border/80 shadow-xs bg-card">
-      <CardHeader className="p-4 pb-3 border-b border-border/60">
+      <CardHeader className="p-3 pb-2 border-b border-border/60 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base font-semibold">Studio (工作室)</CardTitle>
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <CardTitle className="text-sm font-semibold">{t('geminiStudio.title')}</CardTitle>
             <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 font-normal">
-              {notes.length} 篇笔记
+              {t('geminiStudio.notesCount', { count: notes.length })}
             </Badge>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Button
               size="sm"
-              className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-none"
+              className="h-7 gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-none"
               onClick={() => {
                 setEditingNote(undefined)
                 setEditorOpen(true)
               }}
             >
               <Plus className="h-3.5 w-3.5" />
-              新建笔记
+              {t('geminiStudio.newNote')}
             </Button>
-            {createCollapseButton(toggleNotes, 'Studio')}
+            {!embedded && createCollapseButton(toggleNotes, 'Studio')}
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-        <ScrollArea className="notebook-studio-scroll flex-1 min-h-0 p-4 space-y-5">
+        <ScrollArea className="notebook-studio-scroll flex-1 min-h-0 p-3 space-y-4">
           {/* 1. 成熟功能卡片网格 (Studio Actions) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                Studio 工具箱 (Notebook Actions)
+                {t('geminiStudio.toolbox')}
               </span>
               <button
                 type="button"
                 onClick={() => router.push('/tasks')}
                 className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
-                title="打开进度管理（任务中心）"
+                title={t('geminiStudio.openTasks')}
               >
                 <ListTodo className="h-3 w-3" />
-                进度管理
+                {t('navigation.tasks')}
                 <ExternalLink className="h-2.5 w-2.5" />
               </button>
             </div>
@@ -384,25 +388,25 @@ export function GeminiStudioColumn({
           <div className="space-y-2 pt-3 border-t border-border/50">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                笔记本卡片流 ({notes.length})
+                {t('geminiStudio.notesStream', { count: notes.length })}
               </span>
               <span className="text-[11px] text-muted-foreground">
-                可从对话一键沉淀
+                {t('geminiStudio.saveHint')}
               </span>
             </div>
 
             {isLoading ? (
               <div className="text-center py-6 text-xs text-muted-foreground">
-                加载笔记中...
+                {t('geminiStudio.loadingNotes')}
               </div>
             ) : notes.length === 0 ? (
               <div className="text-center py-8 px-4 rounded-lg border border-dashed border-border/80">
                 <StickyNote className="h-6 w-6 text-muted-foreground/40 mx-auto mb-2" />
                 <p className="text-xs font-medium text-muted-foreground">
-                  暂无笔记卡片
+                  {t('geminiStudio.emptyNotes')}
                 </p>
                 <p className="text-[11px] text-muted-foreground/70 mt-1">
-                  可在中间对话中点击【保存为笔记】，或划选关键文字一键沉淀至此处。
+                  {t('geminiStudio.emptyNotesHint')}
                 </p>
               </div>
             ) : (
@@ -421,7 +425,7 @@ export function GeminiStudioColumn({
                           <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         )}
                         <h4 className="text-xs font-semibold text-foreground truncate">
-                          {note.title || '无标题笔记'}
+                          {note.title || t('notes.untitledNote')}
                         </h4>
                       </div>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
@@ -467,7 +471,7 @@ export function GeminiStudioColumn({
                     </div>
 
                     <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
-                      {note.content || '无内容'}
+                      {note.content || t('geminiStudio.noContent')}
                     </p>
 
                     <div className="text-[10px] text-muted-foreground/70 pt-1">
@@ -552,11 +556,13 @@ export function GeminiStudioColumn({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              {submittedJob ? `${submittedJob.toolName} · 生成进度` : activeTool?.name}
+              {submittedJob
+                ? t('geminiStudio.jobProgressTitle', { tool: submittedJob.toolName })
+                : activeTool?.name}
             </DialogTitle>
             <DialogDescription className="text-xs">
               {submittedJob
-                ? '任务已在后台异步执行，可实时查看状态或跳转进度管理'
+                ? t('geminiStudio.jobProgressHint')
                 : activeTool?.desc}
             </DialogDescription>
           </DialogHeader>
@@ -579,18 +585,18 @@ export function GeminiStudioColumn({
           ) : (
             <div className="space-y-3 py-2">
               <span className="text-xs font-semibold text-foreground block">
-                生成指令与侧重点 (可选自定义)：
+                {t('geminiStudio.instructionLabel')}
               </span>
               <Textarea
                 value={customInstruction}
                 onChange={(e) => setCustomInstruction(e.target.value)}
-                placeholder="输入给 AI 的定制指令或关注侧重点..."
+                placeholder={t('geminiStudio.instructionPlaceholder')}
                 rows={3}
                 className="text-xs resize-none"
                 disabled={isSubmitting}
               />
               <p className="text-[11px] text-muted-foreground">
-                将基于当前选取的 {includedSourcesCount} 个知识来源及相关笔记进行提炼生成，生成完成后自动沉淀为右侧卡片笔记。
+                {t('geminiStudio.contextHint', { count: includedSourcesCount })}
               </p>
             </div>
           )}
@@ -606,7 +612,7 @@ export function GeminiStudioColumn({
                     setToolDialogOpen(false)
                   }}
                 >
-                  完成
+                  {t('common.done')}
                 </Button>
               ) : (
                 <>
@@ -615,11 +621,11 @@ export function GeminiStudioColumn({
                     size="sm"
                     onClick={() => setToolDialogOpen(false)}
                   >
-                    后台运行，关闭
+                    {t('geminiStudio.runInBackground')}
                   </Button>
                   <Button size="sm" className="gap-1.5" onClick={openTasksCenter}>
                     <ListTodo className="h-3.5 w-3.5" />
-                    打开进度管理
+                    {t('geminiStudio.openTasks')}
                     <ExternalLink className="h-3 w-3" />
                   </Button>
                 </>
@@ -632,7 +638,7 @@ export function GeminiStudioColumn({
                   onClick={() => setToolDialogOpen(false)}
                   disabled={isSubmitting}
                 >
-                  取消
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -643,10 +649,10 @@ export function GeminiStudioColumn({
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                      正在提交任务...
+                      {t('geminiStudio.submitting')}
                     </>
                   ) : (
-                    '立即生成并存为笔记'
+                    t('geminiStudio.generateAndSave')
                   )}
                 </Button>
               </>

@@ -454,23 +454,23 @@ export function GeminiSourcesColumn({
       const mockItems: WebSearchResultItem[] = [
         {
           id: 'res-1',
-          title: `${mockDomain} 核心架构解析与行业实践综述`,
+          title: t('geminiSources.mockTitleInsights', { topic: mockDomain }),
           url: 'https://example.com/research-insights',
-          snippet: `针对 ${mockDomain} 的深度调研，系统剖析核心机制、关键性能指标与工业级部署经验。`,
+          snippet: t('geminiSources.mockSnippetInsights', { topic: mockDomain }),
           selected: true,
         },
         {
           id: 'res-2',
-          title: `${mockDomain} 官方技术白皮书与最佳实践指南`,
+          title: t('geminiSources.mockTitleSpec', { topic: mockDomain }),
           url: 'https://example.org/spec-and-best-practices',
-          snippet: `系统梳理了 ${mockDomain} 的设计决策、数据模型定义及常见性能陷阱防范。`,
+          snippet: t('geminiSources.mockSnippetSpec', { topic: mockDomain }),
           selected: true,
         },
         {
           id: 'res-3',
-          title: `全景评测：${mockDomain} 与主流开源方案的横向对比`,
+          title: t('geminiSources.mockTitleBenchmark', { topic: mockDomain }),
           url: 'https://example.net/benchmark-comparison',
-          snippet: `基于真实吞吐量与长链路并发压力下的评测结论，揭示核心差异与场景选型推荐。`,
+          snippet: t('geminiSources.mockSnippetBenchmark', { topic: mockDomain }),
           selected: false,
         },
       ]
@@ -478,11 +478,11 @@ export function GeminiSourcesColumn({
       setResearchResults(mockItems)
       toast.success(
         researchMode === 'fast'
-          ? 'Fast Research 探索完成，已抓取高质量来源'
-          : 'Deep Research 智能体研读完成，已形成结构化来源'
+          ? t('geminiSources.researchFastDone')
+          : t('geminiSources.researchDeepDone')
       )
     } catch {
-      toast.error('网络搜索与导源失败，请稍后重试')
+      toast.error(t('geminiSources.researchFailed'))
     } finally {
       setIsResearching(false)
     }
@@ -492,7 +492,7 @@ export function GeminiSourcesColumn({
   const handleSaveSelectedSources = async () => {
     const selectedItems = researchResults.filter((item) => item.selected)
     if (selectedItems.length === 0) {
-      toast.error('请至少勾选一个要加入笔记本的网页')
+      toast.error(t('geminiSources.selectAtLeastOne'))
       return
     }
 
@@ -512,12 +512,12 @@ export function GeminiSourcesColumn({
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
       refetchTree()
       onRefresh()
-      toast.success(`成功将 ${added} 个网页作为来源沉淀至笔记本`)
+      toast.success(t('geminiSources.savedPages', { count: added }))
       setResearchResults([])
       setResearchPrompt('')
       setActiveTab('sources')
     } catch {
-      toast.error('添加网页来源失败')
+      toast.error(t('geminiSources.addPagesFailed'))
     } finally {
       setIsAddingSources(false)
     }
@@ -608,8 +608,12 @@ export function GeminiSourcesColumn({
             className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
             title={
               totalCount > allFolderSources.length
-                ? `本笔记本 ${allFolderSources.length} 个 · 知识库共 ${totalCount} 个（${totalCount - allFolderSources.length} 个未加入）`
-                : `本笔记本 ${allFolderSources.length} 个`
+                ? t('geminiSources.folderBadgeMixed', {
+                    local: allFolderSources.length,
+                    total: totalCount,
+                    missing: totalCount - allFolderSources.length,
+                  })
+                : t('geminiSources.folderBadgeLocal', { count: allFolderSources.length })
             }
           >
             {allFolderSources.length}
@@ -625,9 +629,9 @@ export function GeminiSourcesColumn({
             {directSources.length === 0 && node.children.length === 0 ? (
               <div className="flex flex-col gap-1.5 p-2 rounded-md bg-muted/20 border border-dashed border-border/60 text-[11px] text-muted-foreground my-1">
                 <div className="flex items-center justify-between">
-                  <span>该文件夹在当前笔记本中暂无资源</span>
+                  <span>{t('geminiSources.folderEmptyInNotebook')}</span>
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
-                    该文件夹总来源数: {totalCount}
+                    {t('geminiSources.folderTotalCount', { count: totalCount })}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 pt-0.5">
@@ -640,7 +644,7 @@ export function GeminiSourcesColumn({
                     }}
                   >
                     <Link2 className="h-3 w-3" />
-                    从已有添加
+                    {t('geminiSources.addExisting')}
                   </button>
                   <button
                     type="button"
@@ -651,7 +655,7 @@ export function GeminiSourcesColumn({
                     }}
                   >
                     <Plus className="h-3 w-3" />
-                    添加新资源
+                    {t('geminiSources.addNewResource')}
                   </button>
                 </div>
               </div>
@@ -776,41 +780,42 @@ export function GeminiSourcesColumn({
 
   return (
     <Card className="h-full flex flex-col border-border/80 shadow-xs bg-card">
-      <CardHeader className="p-4 pb-3 border-b border-border/60">
+      <CardHeader className="p-3 pb-2 border-b border-border/60 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base font-semibold">
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            <CardTitle className="text-sm font-semibold">
               {t('navigation.sources')}
             </CardTitle>
             <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 font-normal">
               {includedCount}/{sources.length}
             </Badge>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setNewFolderOpen(true)}
-              title="新建文件夹"
+              title={t('geminiSources.newFolder')}
+              aria-label={t('geminiSources.newFolder')}
             >
               <FolderPlus className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setAddExistingOpen(true)}
-              title="从已有添加"
+              title={t('geminiSources.addExisting')}
+              aria-label={t('geminiSources.addExisting')}
             >
               <Link2 className="h-3.5 w-3.5" />
-              <span>从已有添加</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setAddSourceOpen(true)}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -821,7 +826,7 @@ export function GeminiSourcesColumn({
 
         {/* 视图切换下拉选择器 */}
         {views && views.length > 1 && (
-          <div className="mt-2.5">
+          <div className="mt-2">
             <Select
               value={resolvedViewId ?? 'none'}
               onValueChange={(value) =>
@@ -861,16 +866,16 @@ export function GeminiSourcesColumn({
         <Tabs
           value={activeTab}
           onValueChange={(val) => setActiveTab(val as 'sources' | 'research')}
-          className="mt-3 w-full"
+          className="mt-2 w-full"
         >
-          <TabsList className="grid grid-cols-2 w-full h-8 p-0.5 bg-muted/60">
-            <TabsTrigger value="sources" className="text-xs h-7 gap-1.5">
-              <Folder className="h-3.5 w-3.5" />
-              层级资源 ({sources.length})
+          <TabsList className="grid grid-cols-2 w-full h-7 p-0.5 bg-muted/60">
+            <TabsTrigger value="sources" className="text-xs h-6 gap-1.5">
+              <Folder className="h-3 w-3" />
+              {t('geminiSources.tabHierarchical', { count: sources.length })}
             </TabsTrigger>
-            <TabsTrigger value="research" className="text-xs h-7 gap-1.5">
-              <Globe className="h-3.5 w-3.5 text-primary" />
-              网络导源 (Web)
+            <TabsTrigger value="research" className="text-xs h-6 gap-1.5">
+              <Globe className="h-3 w-3 text-primary" />
+              {t('geminiSources.tabWebResearch')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -880,7 +885,7 @@ export function GeminiSourcesColumn({
         {activeTab === 'sources' ? (
           <div className="flex-1 flex flex-col min-h-0">
             {/* 顶栏控制：全选与搜索 */}
-            <div className="p-3 pb-2 border-b border-border/40 flex items-center justify-between gap-2">
+            <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="select-all-sources"
@@ -892,13 +897,13 @@ export function GeminiSourcesColumn({
                   htmlFor="select-all-sources"
                   className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground"
                 >
-                  {allIncluded ? '全不选' : '全选参与对话'}
+                  {allIncluded ? t('geminiSources.deselectAll') : t('geminiSources.selectAllForChat')}
                 </label>
               </div>
               <div className="relative flex-1 max-w-[150px]">
                 <Search className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
                 <Input
-                  placeholder="搜索资源..."
+                  placeholder={t('geminiSources.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-7 text-xs pl-7 pr-2"
@@ -911,13 +916,13 @@ export function GeminiSourcesColumn({
               {isLoading || treeLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  <span className="text-xs">加载资源目录中...</span>
+                  <span className="text-xs">{t('geminiSources.loadingTree')}</span>
                 </div>
               ) : fullSources.length === 0 && groupTree.length === 0 ? (
                 <div className="text-center py-10 px-4">
                   <Folder className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
                   <p className="text-xs text-muted-foreground">
-                    暂无知识资源，可点击右上角添加或通过网络导源探索
+                    {t('geminiSources.empty')}
                   </p>
                 </div>
               ) : (
@@ -971,7 +976,7 @@ export function GeminiSourcesColumn({
                           </div>
 
                           <span className="text-xs font-semibold text-muted-foreground truncate flex-1">
-                            未归档资源 (Ungrouped)
+                            {t('geminiSources.ungrouped')}
                           </span>
 
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
@@ -1065,7 +1070,7 @@ export function GeminiSourcesColumn({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  智能网络导源 (Web Research)
+                  {t('geminiSources.webResearchTitle')}
                 </span>
                 <div className="flex rounded-md border p-0.5 bg-muted/40">
                   <button
@@ -1077,7 +1082,7 @@ export function GeminiSourcesColumn({
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Fast 快速
+                    {t('geminiSources.fastMode')}
                   </button>
                   <button
                     type="button"
@@ -1088,14 +1093,14 @@ export function GeminiSourcesColumn({
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Deep 深度
+                    {t('geminiSources.deepMode')}
                   </button>
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 {researchMode === 'fast'
-                  ? '秒级响应：提取关键词并发检索，清洗正文后一键勾选沉淀为 Sources。'
-                  : '深度智能体：长链路自主规划、多跳检索与交叉验证，输出结构化报告并导入来源。'}
+                  ? t('geminiSources.fastModeDesc')
+                  : t('geminiSources.deepModeDesc')}
               </p>
             </div>
 
@@ -1104,8 +1109,8 @@ export function GeminiSourcesColumn({
                 <Input
                   placeholder={
                     researchMode === 'fast'
-                      ? '输入探索关键词或课题...'
-                      : '输入深度研究主题（如：SurrealDB 2.0 事务机制）...'
+                      ? t('geminiSources.fastPlaceholder')
+                      : t('geminiSources.deepPlaceholder')
                   }
                   value={researchPrompt}
                   onChange={(e) => setResearchPrompt(e.target.value)}
@@ -1133,7 +1138,7 @@ export function GeminiSourcesColumn({
               <div className="space-y-3 pt-2 border-t border-border/50">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-foreground">
-                    已搜寻到的优质来源 ({researchResults.length})
+                    {t('geminiSources.foundSources', { count: researchResults.length })}
                   </span>
                   <Button
                     size="sm"
@@ -1144,12 +1149,12 @@ export function GeminiSourcesColumn({
                     {isAddingSources ? (
                       <>
                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        入库中...
+                        {t('geminiSources.importing')}
                       </>
                     ) : (
                       <>
                         <CheckCircle2 className="h-3 w-3 mr-1" />
-                        批量加入笔记本
+                        {t('geminiSources.bulkAdd')}
                       </>
                     )}
                   </Button>
@@ -1230,7 +1235,7 @@ export function GeminiSourcesColumn({
         onConfirm={async (name: string) => {
           try {
             if (!resolvedViewId) {
-              toast.error('未找到可用视图')
+              toast.error(t('geminiSources.noViewError'))
               return
             }
             await createGroup.mutateAsync({
@@ -1238,10 +1243,10 @@ export function GeminiSourcesColumn({
               viewId: resolvedViewId,
             })
             refetchTree()
-            toast.success('文件夹创建成功')
+            toast.success(t('geminiSources.folderCreated'))
             setNewFolderOpen(false)
           } catch {
-            toast.error('创建文件夹失败')
+            toast.error(t('geminiSources.folderCreateFailed'))
           }
         }}
       />

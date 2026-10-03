@@ -101,6 +101,12 @@ export function GeminiNotebookView({
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
                 sourceGrouping={sourceGrouping}
+                refetchSources={refetchSources}
+                onSourceContextModeChange={handleSourceContextModeChange}
+                onBulkSourceContext={handleBulkSourceContext}
+                onGroupingChange={setSourceGrouping}
+                notes={notes}
+                notesLoading={notesLoading}
               />
             )}
             {mobileActiveTab === 'studio' && (
@@ -152,6 +158,12 @@ export function GeminiNotebookView({
             sources={sources ?? []}
             sourcesLoading={sourcesLoading}
             sourceGrouping={sourceGrouping}
+            refetchSources={refetchSources}
+            onSourceContextModeChange={handleSourceContextModeChange}
+            onBulkSourceContext={handleBulkSourceContext}
+            onGroupingChange={setSourceGrouping}
+            notes={notes}
+            notesLoading={notesLoading}
           />
         </div>
 

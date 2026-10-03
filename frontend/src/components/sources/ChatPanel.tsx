@@ -16,12 +16,17 @@ import {
   SourceChatMessage,
   SourceChatContextIndicator,
   BaseChatSession,
-  NoteResponse
+  NoteResponse,
+  SourceListResponse
 } from '@/lib/types/api'
+import type { ContextMode, ContextSelections } from '@/lib/types/notebook-context'
+import type { SourceBulkAction } from '@/lib/utils/source-context'
 import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
+import { GeminiSourcesColumn } from '@/app/(dashboard)/notebooks/components/GeminiSourcesColumn'
+import { GeminiStudioColumn } from '@/app/(dashboard)/notebooks/components/GeminiStudioColumn'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
@@ -67,6 +72,20 @@ interface ChatPanelProps {
   notebookId?: string
   // 当前来源分组浏览范围：原引用直传给保存弹窗预选默认文件夹
   sourceGrouping?: NotebookSourceFilters
+  // ── Workspace pass-through (notebook chat) ─────────────────────────────
+  // Feeds the fullscreen side panels with the notebook page's real data and
+  // context handlers, so the panels mount the actual workspace columns
+  // (GeminiSourcesColumn / GeminiStudioColumn) instead of a lite clone —
+  // checkbox selections in the panel affect the real chat context.
+  sources?: SourceListResponse[]
+  sourcesLoading?: boolean
+  refetchSources?: () => void
+  contextSelections?: ContextSelections
+  onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkSourceContext?: (action: SourceBulkAction) => void
+  onGroupingChange?: (filters: NotebookSourceFilters) => void
+  notes?: NoteResponse[]
+  notesLoading?: boolean
 }
 
 export function ChatPanel({
@@ -88,7 +107,16 @@ export function ChatPanel({
   notebookContextStats,
   onOpenContextPicker,
   notebookId,
-  sourceGrouping
+  sourceGrouping,
+  sources,
+  sourcesLoading,
+  refetchSources,
+  contextSelections,
+  onSourceContextModeChange,
+  onBulkSourceContext,
+  onGroupingChange,
+  notes,
+  notesLoading
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
@@ -303,6 +331,16 @@ export function ChatPanel({
             setIsFullscreen(false)
           }}
           onOpenSource={(sourceId) => openModal('source', sourceId)}
+          sources={sources}
+          sourcesLoading={sourcesLoading}
+          refetchSources={refetchSources}
+          contextSelections={contextSelections}
+          onSourceContextModeChange={onSourceContextModeChange}
+          onBulkSourceContext={onBulkSourceContext}
+          grouping={sourceGrouping}
+          onGroupingChange={onGroupingChange}
+          notes={notes}
+          notesLoading={notesLoading}
         />
       )}
     </Card>
@@ -316,6 +354,13 @@ export function ChatPanel({
  * chat Card. Split out of ChatPanel so the react-query notes fetch (and its
  * Provider requirement) only exists once the panels actually mount — the
  * chat itself stays renderable without a QueryClient.
+ *
+ * When the workspace pass-through props are present (notebook page chat),
+ * the panels mount the REAL workspace columns — GeminiSourcesColumn on the
+ * left, GeminiStudioColumn on the right — so the fullscreen experience is
+ * pixel-identical to the notebook page, and context checkboxes inside the
+ * panel drive the actual chat context. Without them (no data passed), the
+ * lite ArtifactSidePanels lists are used as a fallback.
  */
 function ChatFullscreenPanels({
   notebookId,
@@ -325,6 +370,16 @@ function ChatFullscreenPanels({
   onRightOpenChange,
   onExitFullscreen,
   onOpenSource,
+  sources,
+  sourcesLoading,
+  refetchSources,
+  contextSelections,
+  onSourceContextModeChange,
+  onBulkSourceContext,
+  grouping,
+  onGroupingChange,
+  notes,
+  notesLoading,
 }: {
   notebookId: string
   leftOpen: boolean
@@ -333,10 +388,48 @@ function ChatFullscreenPanels({
   onRightOpenChange: (open: boolean) => void
   onExitFullscreen: () => void
   onOpenSource: (sourceId: string) => void
+  sources?: SourceListResponse[]
+  sourcesLoading?: boolean
+  refetchSources?: () => void
+  contextSelections?: ContextSelections
+  onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkSourceContext?: (action: SourceBulkAction) => void
+  grouping?: NotebookSourceFilters
+  onGroupingChange?: (filters: NotebookSourceFilters) => void
+  notes?: NoteResponse[]
+  notesLoading?: boolean
 }) {
   const { t } = useTranslation()
   const [readingNote, setReadingNote] = useState<NoteResponse | null>(null)
   const { data: panelNotes = [] } = useNotes(notebookId)
+  const resolvedNotes = notes ?? panelNotes
+  // Real workspace columns mount only when the page passed its data through.
+  const useWorkspaceColumns = Array.isArray(sources)
+
+  const leftSlot = useWorkspaceColumns ? (
+    <GeminiSourcesColumn
+      notebookId={notebookId}
+      sources={sources}
+      isLoading={!!sourcesLoading}
+      onRefresh={refetchSources ?? (() => {})}
+      contextSelections={contextSelections?.sources ?? {}}
+      onContextModeChange={onSourceContextModeChange ?? (() => {})}
+      onBulkContextModeChange={onBulkSourceContext ?? (() => {})}
+      grouping={grouping}
+      onGroupingChange={onGroupingChange}
+    />
+  ) : undefined
+  const rightSlot = useWorkspaceColumns ? (
+    <GeminiStudioColumn
+      notebookId={notebookId}
+      notes={resolvedNotes}
+      isLoading={!!notesLoading}
+      sources={sources}
+      contextSelections={contextSelections}
+      sourceGrouping={grouping}
+      embedded
+    />
+  ) : undefined
 
   return (
     <>
@@ -366,7 +459,7 @@ function ChatFullscreenPanels({
       )}
       <ArtifactSidePanels
         notebookId={notebookId}
-        notes={panelNotes}
+        notes={resolvedNotes}
         leftOpen={leftOpen}
         rightOpen={rightOpen}
         onLeftOpenChange={onLeftOpenChange}
@@ -374,6 +467,8 @@ function ChatFullscreenPanels({
         onExitFullscreen={onExitFullscreen}
         onOpenSource={onOpenSource}
         onNoteSelect={(note) => setReadingNote(note)}
+        leftPanel={leftSlot}
+        rightPanel={rightSlot}
       />
       {/* Note reading dialog opened from the right panel (same experience as
           the PDF fullscreen panels). */}
@@ -382,7 +477,7 @@ function ChatFullscreenPanels({
         onOpenChange={(next) => { if (!next) setReadingNote(null) }}
         note={readingNote ? { title: readingNote.title, content: readingNote.content } : undefined}
         notebookId={notebookId}
-        notes={panelNotes}
+        notes={resolvedNotes}
         activeNoteId={readingNote?.id ?? null}
         onNoteSelect={(note) => setReadingNote(note)}
         onOpenSource={onOpenSource}

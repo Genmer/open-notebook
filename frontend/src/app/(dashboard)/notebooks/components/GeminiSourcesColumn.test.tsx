@@ -247,7 +247,7 @@ describe('GeminiSourcesColumn', () => {
     // 检查文件夹下的来源
     expect(screen.getByText('系统架构设计.pdf')).toBeInTheDocument()
     // 检查未归档资源
-    expect(screen.getByText(/未归档资源/)).toBeInTheDocument()
+    expect(screen.getByText(/geminiSources.ungrouped/)).toBeInTheDocument()
     expect(screen.getByText('SurrealDB 官方白皮书')).toBeInTheDocument()
   })
 
@@ -499,18 +499,18 @@ describe('GeminiSourcesColumn', () => {
     render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
 
     // 切换到 Web Research Tab (Radix TabsTrigger activates on mousedown)
-    const webTab = screen.getByRole('tab', { name: /网络导源/ })
+    const webTab = screen.getByRole('tab', { name: /geminiSources.tabWebResearch/ })
     fireEvent.mouseDown(webTab)
 
-    expect(screen.getByText(/智能网络导源/)).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/输入探索关键词或课题/)).toBeInTheDocument()
+    expect(screen.getByText(/geminiSources.webResearchTitle/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/geminiSources.fastPlaceholder/)).toBeInTheDocument()
   })
 
   it('renders Add Existing button in header and opens AddExistingSourceDialog on click', () => {
     render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
 
     // 顶部操作栏应有【从已有添加】按钮
-    const addExistingBtn = screen.getByRole('button', { name: /从已有添加/ })
+    const addExistingBtn = screen.getByRole('button', { name: /geminiSources.addExisting/ })
     expect(addExistingBtn).toBeInTheDocument()
 
     // 初始状态下弹窗未打开
@@ -635,9 +635,9 @@ describe('GeminiSourcesColumn', () => {
     fireEvent.click(folderHeader)
 
     // 展开后应显示：空提示 + 该文件夹总来源数: 8 + 从已有添加 按钮
-    expect(screen.getByText('该文件夹在当前笔记本中暂无资源')).toBeInTheDocument()
-    expect(screen.getByText('该文件夹总来源数: 8')).toBeInTheDocument()
-    const addFromExistingButtons = screen.getAllByRole('button', { name: /从已有添加/ })
+    expect(screen.getByText('geminiSources.folderEmptyInNotebook')).toBeInTheDocument()
+    expect(screen.getByText('geminiSources.folderTotalCount (count=8)')).toBeInTheDocument()
+    const addFromExistingButtons = screen.getAllByRole('button', { name: /geminiSources.addExisting/ })
     const folderAddExistingBtn = addFromExistingButtons[addFromExistingButtons.length - 1]
     expect(folderAddExistingBtn).toBeInTheDocument()
 

@@ -9,8 +9,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle } from 'lucide-react'
 import { ContextSelections } from '../[id]/page'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { SourceListResponse } from '@/lib/types/api'
+import { SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
+import type { ContextMode } from '@/lib/types/notebook-context'
+import type { SourceBulkAction } from '@/lib/utils/source-context'
 
 interface ChatColumnProps {
   notebookId: string
@@ -20,6 +22,13 @@ interface ChatColumnProps {
   sourcesLoading: boolean
   /** 原引用直传 ChatPanel，供「保存」弹窗的存为来源模式预选默认文件夹。 */
   sourceGrouping?: NotebookSourceFilters
+  /** 全屏侧栏复用真工作区列所需的数据/回调（GeminiSourcesColumn 等）。 */
+  refetchSources?: () => void
+  onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkSourceContext?: (action: SourceBulkAction) => void
+  onGroupingChange?: (filters: NotebookSourceFilters) => void
+  notes?: NoteResponse[]
+  notesLoading?: boolean
 }
 
 export function ChatColumn({
@@ -29,11 +38,19 @@ export function ChatColumn({
   sources,
   sourcesLoading,
   sourceGrouping,
+  refetchSources,
+  onSourceContextModeChange,
+  onBulkSourceContext,
+  onGroupingChange,
+  notes: notesProp,
+  notesLoading: notesLoadingProp,
 }: ChatColumnProps) {
   const { t } = useTranslation()
 
   // Fetch notes for this notebook
-  const { data: notes = [], isLoading: notesLoading } = useNotes(notebookId)
+  const { data: ownNotes = [], isLoading: ownNotesLoading } = useNotes(notebookId)
+  const notes = notesProp ?? ownNotes
+  const notesLoading = notesLoadingProp ?? ownNotesLoading
 
   // Initialize notebook chat hook
   const chat = useNotebookChat({
@@ -112,6 +129,15 @@ export function ChatColumn({
       notebookId={notebookId}
       onOpenContextPicker={onOpenContextPicker}
       sourceGrouping={sourceGrouping}
+      sources={sources}
+      sourcesLoading={sourcesLoading}
+      refetchSources={refetchSources}
+      contextSelections={contextSelections}
+      onSourceContextModeChange={onSourceContextModeChange}
+      onBulkSourceContext={onBulkSourceContext}
+      onGroupingChange={onGroupingChange}
+      notes={notes}
+      notesLoading={notesLoading}
     />
   )
 }

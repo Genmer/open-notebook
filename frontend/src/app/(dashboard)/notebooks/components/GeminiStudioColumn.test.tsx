@@ -134,7 +134,7 @@ describe('GeminiStudioColumn', () => {
     expect(screen.getByText('Audio Overview')).toBeInTheDocument()
     expect(screen.getByText('Study Guide')).toBeInTheDocument()
     expect(screen.getByText('Briefing Doc')).toBeInTheDocument()
-    expect(screen.getByText('FAQ 问答集')).toBeInTheDocument()
+    expect(screen.getByText('FAQ')).toBeInTheDocument()
     expect(screen.getByText('Flashcards')).toBeInTheDocument()
 
     // 检查笔记列表
@@ -172,10 +172,10 @@ describe('GeminiStudioColumn', () => {
     fireEvent.click(screen.getByText('Study Guide'))
 
     // 弹窗出现
-    expect(screen.getByText('立即生成并存为笔记')).toBeInTheDocument()
+    expect(screen.getByText('geminiStudio.generateAndSave')).toBeInTheDocument()
 
     // 点击立即生成
-    fireEvent.click(screen.getByText('立即生成并存为笔记'))
+    fireEvent.click(screen.getByText('geminiStudio.generateAndSave'))
 
     // 验证调用了真实的工件生成提交
     await waitFor(() => {
@@ -224,19 +224,19 @@ describe('GeminiStudioColumn', () => {
     )
 
     fireEvent.click(screen.getByText('Study Guide'))
-    fireEvent.click(screen.getByText('立即生成并存为笔记'))
+    fireEvent.click(screen.getByText('geminiStudio.generateAndSave'))
 
     // 提交后不再是转圈等待，而是进度详情视图
     await waitFor(() => {
-      expect(screen.getByText(/生成进度/)).toBeInTheDocument()
+      expect(screen.getByText(/geminiStudio.jobProgressTitle/)).toBeInTheDocument()
     })
     expect(screen.getByText('tasks.inspector.running')).toBeInTheDocument()
     expect(screen.getByText('tasks.inspector.elapsed')).toBeInTheDocument()
     expect(screen.getByText(/tasks.inspector.taskId/)).toBeInTheDocument()
     // 进度管理入口
-    expect(screen.getByRole('button', { name: /打开进度管理/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /geminiStudio.openTasks/ })).toBeInTheDocument()
     // 后台运行按钮存在（可关闭弹窗任务继续）
-    expect(screen.getByRole('button', { name: /后台运行/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /geminiStudio.runInBackground/ })).toBeInTheDocument()
   })
 
   it('navigates to the task center from the progress view entry', async () => {
@@ -259,12 +259,12 @@ describe('GeminiStudioColumn', () => {
     )
 
     fireEvent.click(screen.getByText('Study Guide'))
-    fireEvent.click(screen.getByText('立即生成并存为笔记'))
+    fireEvent.click(screen.getByText('geminiStudio.generateAndSave'))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /打开进度管理/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /geminiStudio.openTasks/ })).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /打开进度管理/ }))
+    fireEvent.click(screen.getByRole('button', { name: /geminiStudio.openTasks/ }))
     expect(routerPushMock).toHaveBeenCalledWith('/tasks')
   })
 
@@ -279,7 +279,7 @@ describe('GeminiStudioColumn', () => {
       { wrapper: createWrapper() }
     )
 
-    fireEvent.click(screen.getByTitle(/打开进度管理/))
+    fireEvent.click(screen.getByTitle(/geminiStudio.openTasks/))
     expect(routerPushMock).toHaveBeenCalledWith('/tasks')
   })
 
