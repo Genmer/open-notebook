@@ -23,9 +23,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from api.auth import PasswordAuthMiddleware
 from api.middleware import MaxBodySizeMiddleware, get_max_upload_size_bytes
 from api.routers import (
+    agents,
     auth,
     capabilities,
     chat,
+    chat_parallel,
     config,
     credentials,
     data_transfer,
@@ -402,6 +404,7 @@ async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
 
 
 # Include routers
+app.include_router(agents.router, prefix="/api", tags=["agents"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])
@@ -434,6 +437,7 @@ app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
 app.include_router(episode_profiles.router, prefix="/api", tags=["episode-profiles"])
 app.include_router(speaker_profiles.router, prefix="/api", tags=["speaker-profiles"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(chat_parallel.router, prefix="/api", tags=["chat"])
 app.include_router(source_chat.router, prefix="/api", tags=["source-chat"])
 app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(providers.router, prefix="/api", tags=["providers"])

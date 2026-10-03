@@ -70,6 +70,7 @@ const getNavigation = (t: TFunction) => [
     title: t('navigation.manage'),
     items: [
       { name: t('navigation.tasks'), href: '/tasks', icon: ListTodo, iconClass: undefined },
+      { name: t('navigation.agents'), href: '/agents', icon: Bot, iconClass: undefined },
       { name: t('navigation.models'), href: '/settings/models', icon: Bot, iconClass: undefined },
       { name: t('navigation.usage'), href: '/settings/usage', icon: Gauge, iconClass: undefined },
       { name: t('navigation.storage'), href: '/settings/storage', icon: HardDrive, iconClass: undefined },

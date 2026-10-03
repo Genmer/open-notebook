@@ -37,6 +37,20 @@ function createChatMock() {
     charCount: 0,
     sessions: [],
     currentSessionId: null,
+    setAgentOverride: vi.fn(),
+    parallel: {
+      phase: 'idle' as const,
+      runs: [],
+      groupId: null,
+      synthesis: null,
+      isSynthesizing: false,
+      start: vi.fn(),
+      cancel: vi.fn(),
+      reset: vi.fn(),
+      synthesize: vi.fn(),
+    },
+    sendParallelMessage: vi.fn(),
+    synthesizeParallel: vi.fn(),
   } as unknown as ReturnType<typeof useNotebookChat>
 }
 

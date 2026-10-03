@@ -1,0 +1,5 @@
+-- Migration 34 down: drop agent config and session bindings.
+-- Reverse order of the up migration: session field first, then the table.
+REMOVE FIELD IF EXISTS agent ON TABLE chat_session;
+REMOVE INDEX IF EXISTS idx_agent_enabled_sort ON TABLE agent;
+REMOVE TABLE IF EXISTS agent;

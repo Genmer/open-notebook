@@ -118,6 +118,16 @@ export function ChatColumn({
       onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
       modelOverride={chat.currentSession?.model_override ?? chat.pendingModelOverride ?? undefined}
       onModelChange={(model) => chat.setModelOverride(model ?? null)}
+      agent={chat.currentSession?.agent ?? chat.pendingAgentOverride ?? null}
+      onAgentChange={(agentId) => chat.setAgentOverride(agentId ?? null)}
+      parallelChat={{
+        phase: chat.parallel.phase,
+        runs: chat.parallel.runs,
+        synthesis: chat.parallel.synthesis,
+        isSynthesizing: chat.parallel.isSynthesizing,
+        send: (message, runs) => chat.sendParallelMessage(message, runs),
+        synthesize: (participant) => chat.synthesizeParallel(participant),
+      }}
       sessions={chat.sessions}
       currentSessionId={chat.currentSessionId}
       onCreateSession={(title) => chat.createSession(title)}

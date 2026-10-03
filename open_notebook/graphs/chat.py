@@ -26,6 +26,13 @@ class ThreadState(TypedDict):
     context: Optional[str]
     context_config: Optional[dict]
     model_override: Optional[str]
+    # Agent persona resolved by the API layer (PDR-004). Instructions are
+    # injected into the chat/system prompt; sampling params override the
+    # defaults when the bound agent defines them.
+    agent_instructions: Optional[str]
+    agent_name: Optional[str]
+    agent_temperature: Optional[float]
+    agent_max_tokens: Optional[int]
 
 
 def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
@@ -38,6 +45,14 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
             "model_override"
         )
 
+        # Agent sampling params (PDR-004) ride the provisioning kwargs into the
+        # Esperanto config; absent values keep the existing defaults.
+        provision_kwargs: dict = {"max_tokens": 8192}
+        if state.get("agent_temperature") is not None:
+            provision_kwargs["temperature"] = state["agent_temperature"]
+        if state.get("agent_max_tokens") is not None:
+            provision_kwargs["max_tokens"] = state["agent_max_tokens"]
+
         # Handle async model provisioning from sync context
         def run_in_new_loop():
             """Run the async function in a new event loop"""
@@ -46,7 +61,7 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
                 asyncio.set_event_loop(new_loop)
                 return new_loop.run_until_complete(
                     provision_langchain_model_with_info(
-                        str(payload), model_id, "chat", max_tokens=8192
+                        str(payload), model_id, "chat", **provision_kwargs
                     )
                 )
             finally:
@@ -69,7 +84,7 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
                     str(payload),
                     model_id,
                     "chat",
-                    max_tokens=8192,
+                    **provision_kwargs,
                 )
             )
         model = prov.langchain_model
@@ -79,7 +94,18 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
         cleaned_content = clean_thinking_content(content)
-        cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
+        # Run metadata (PDR-004): which model/agent produced this message, so
+        # the UI can badge it. Merged into existing kwargs, not replacing them.
+        extra_kwargs = dict(ai_message.additional_kwargs or {})
+        extra_kwargs.setdefault("model_name", prov.model_name)
+        if state.get("agent_name"):
+            extra_kwargs["agent_name"] = state["agent_name"]
+        cleaned_message = ai_message.model_copy(
+            update={
+                "content": cleaned_content,
+                "additional_kwargs": extra_kwargs,
+            }
+        )
 
         record_llm_usage_sync(
             model=prov,

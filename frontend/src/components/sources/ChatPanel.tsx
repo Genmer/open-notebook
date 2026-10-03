@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2 } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
@@ -22,6 +22,10 @@ import {
 import type { ContextMode, ContextSelections } from '@/lib/types/notebook-context'
 import type { SourceBulkAction } from '@/lib/utils/source-context'
 import { ModelSelector } from './ModelSelector'
+import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelector'
+import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
+import { ParallelLiveCard } from '@/components/chat/ParallelLiveCard'
+import { groupParallelMessages } from '@/lib/utils/parallel-messages'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
@@ -54,6 +58,20 @@ interface ChatPanelProps {
   onSendMessage: (message: string, modelOverride?: string) => void
   modelOverride?: string
   onModelChange?: (model?: string) => void
+  // Agent binding (PDR-04): when onAgentChange is provided the composer swaps
+  // the plain model selector for the agent/model participant picker.
+  agent?: string | null
+  onAgentChange?: (agent: string | null) => void
+  // Parallel answers (PDR-004, notebook chat only): live fan-out state plus
+  // send/synthesize handlers. Absent on source chats.
+  parallelChat?: {
+    phase: 'idle' | 'running' | 'done'
+    runs: import('@/lib/hooks/use-parallel-chat').ParallelRunState[]
+    synthesis: import('@/lib/hooks/use-parallel-chat').SynthesisState | null
+    isSynthesizing: boolean
+    send: (message: string, runs: string[]) => void
+    synthesize: (participant: { agent?: string; model?: string }) => void
+  }
   // Session management props
   sessions?: BaseChatSession[]
   currentSessionId?: string | null
@@ -96,6 +114,9 @@ export function ChatPanel({
   onSendMessage,
   modelOverride,
   onModelChange,
+  agent,
+  onAgentChange,
+  parallelChat,
   sessions = [],
   currentSessionId,
   onCreateSession,
@@ -249,15 +270,33 @@ export function ChatPanel({
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
               </div>
             ) : (
-              messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  notebookId={notebookId}
-                  onReferenceClick={handleReferenceClick}
-                  sourceGrouping={sourceGrouping}
-                />
-              ))
+              groupParallelMessages(messages).map((item) =>
+                item.kind === 'single' && item.message ? (
+                  <ChatMessage
+                    key={item.message.id}
+                    message={item.message}
+                    notebookId={notebookId}
+                    onReferenceClick={handleReferenceClick}
+                    sourceGrouping={sourceGrouping}
+                  />
+                ) : (
+                  <ParallelGroupView
+                    key={item.groupId}
+                    item={item}
+                    notebookId={notebookId}
+                    onReferenceClick={handleReferenceClick}
+                    sourceGrouping={sourceGrouping}
+                  />
+                )
+              )
+            )}
+            {parallelChat && parallelChat.phase === 'running' && (
+              <ParallelLiveCard
+                runs={parallelChat.runs}
+                isSynthesizing={parallelChat.isSynthesizing}
+                synthesis={parallelChat.synthesis}
+                onSynthesize={parallelChat.synthesize}
+              />
             )}
             {isStreaming && (
               <div className="flex gap-3 justify-start">
@@ -316,6 +355,9 @@ export function ChatPanel({
         {/* Input Area */}
         <ChatComposer
           onSendMessage={onSendMessage}
+          agent={agent}
+          onAgentChange={onAgentChange}
+          parallelChat={parallelChat}
           isStreaming={isStreaming}
           modelOverride={modelOverride}
           onModelChange={onModelChange}
@@ -494,13 +536,22 @@ interface ChatComposerProps {
   isStreaming: boolean
   modelOverride?: string
   onModelChange?: (model?: string) => void
+  agent?: string | null
+  onAgentChange?: (agent: string | null) => void
+  parallelChat?: {
+    phase: 'idle' | 'running' | 'done'
+    send: (message: string, runs: string[]) => void
+  }
 }
 
 function ChatComposer({
   onSendMessage,
   isStreaming,
   modelOverride,
-  onModelChange
+  onModelChange,
+  agent,
+  onAgentChange,
+  parallelChat
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -517,6 +568,13 @@ function ChatComposer({
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
       onSendMessage(input.trim(), modelOverride)
+      setInput('')
+    }
+  }
+
+  const handleParallelSend = (runs: string[]) => {
+    if (input.trim() && !isStreaming && parallelChat) {
+      parallelChat.send(input.trim(), runs)
       setInput('')
     }
   }
@@ -550,7 +608,19 @@ function ChatComposer({
     <div className="flex-shrink-0 p-4 space-y-3 border-t">
       {/* Model selector + enter-to-send preference */}
       <div className="flex items-center justify-between gap-2">
-        {onModelChange && (
+        {onAgentChange ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
+            <ChatParticipantSelector
+              value={{ agent: agent ?? null, modelOverride: modelOverride ?? null }}
+              onChange={(participant) => {
+                onAgentChange(participant.agent ?? null)
+                onModelChange?.(participant.modelOverride ?? undefined)
+              }}
+              disabled={isStreaming}
+            />
+          </div>
+        ) : onModelChange && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
             <ModelSelector
@@ -597,6 +667,12 @@ function ChatComposer({
           className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
           rows={1}
         />
+        {parallelChat && (
+          <ParallelRunsPicker
+            disabled={!input.trim() || isStreaming || parallelChat.phase === 'running'}
+            onSend={handleParallelSend}
+          />
+        )}
         <Button
           onClick={handleSend}
           disabled={!input.trim() || isStreaming}
@@ -610,6 +686,81 @@ function ChatComposer({
           )}
         </Button>
       </div>
+    </div>
+  )
+}
+
+// Archived parallel group (PDR-004): the human question renders through the
+// normal ChatMessage row; the answers sit in a responsive grid, with the
+// synthesis conclusion highlighted below.
+function ParallelGroupView({
+  item,
+  notebookId,
+  onReferenceClick,
+  sourceGrouping,
+}: {
+  item: import('@/lib/utils/parallel-messages').MessageListItem<SourceChatMessage>
+  notebookId?: string
+  onReferenceClick: (type: string, id: string) => void
+  sourceGrouping?: NotebookSourceFilters
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-2" data-testid={`parallel-group-${item.groupId}`}>
+      {item.question && (
+        <ChatMessage
+          message={item.question}
+          notebookId={notebookId}
+          onReferenceClick={onReferenceClick}
+          sourceGrouping={sourceGrouping}
+        />
+      )}
+      <div className="grid gap-3 md:grid-cols-2">
+        {(item.answers ?? []).map((answer) => (
+          <div
+            key={answer.id}
+            className="rounded-lg border bg-card p-3 space-y-1.5 min-w-0"
+            data-testid={`parallel-answer-${answer.id}`}
+          >
+            <p className="text-xs font-medium text-muted-foreground truncate">
+              {t('chat.answeredBy', {
+                name: answer.agent_name || answer.model_name || t('chat.groupDefault'),
+              })}
+            </p>
+            <div className="max-h-72 overflow-y-auto text-sm">
+              <AIMessageContent
+                content={answer.content}
+                onReferenceClick={onReferenceClick}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      {item.synthesis && (
+        <div
+          className="rounded-lg border border-gold/40 bg-card p-3 space-y-1.5"
+          data-testid={`parallel-synthesis-${item.groupId}`}
+        >
+          <p className="text-xs font-medium text-gold flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('chat.synthesisResultTitle')}
+            <span className="text-muted-foreground font-normal">
+              {t('chat.answeredBy', {
+                name:
+                  item.synthesis.agent_name ||
+                  item.synthesis.model_name ||
+                  t('chat.groupDefault'),
+              })}
+            </span>
+          </p>
+          <div className="text-sm">
+            <AIMessageContent
+              content={item.synthesis.content}
+              onReferenceClick={onReferenceClick}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { buildChatContextConfig } from '@/lib/utils/source-context'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { chatApi } from '@/lib/api/chat'
+import { useParallelChat } from '@/lib/hooks/use-parallel-chat'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import {
   NotebookChatMessage,
@@ -34,6 +35,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [charCount, setCharCount] = useState<number>(0)
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
+  // Pending agent binding (PDR-004); mutually exclusive with the model override
+  const [pendingAgentOverride, setPendingAgentOverride] = useState<string | null>(null)
+  // Parallel answers (PDR-004): live fan-out state shared with the composer
+  const parallel = useParallelChat()
 
   // Fetch sessions for this notebook
   const {
@@ -152,35 +157,40 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return response.context
   }, [notebookId, sources, notes, contextSelections])
 
+  // Auto-create a session if none exists (shared by the single-run and
+  // parallel send paths); returns null on failure after toasting.
+  const ensureSessionId = useCallback(async (message: string): Promise<string | null> => {
+    if (currentSessionId) return currentSessionId
+    try {
+      const defaultTitle = message.length > 30
+        ? `${message.substring(0, 30)}...`
+        : message
+      const newSession = await chatApi.createSession({
+        notebook_id: notebookId,
+        title: defaultTitle,
+        // Include pending model override when creating session
+        model_override: pendingModelOverride ?? undefined,
+        agent: pendingAgentOverride ?? undefined
+      })
+      setCurrentSessionId(newSession.id)
+      // Clear pending bindings now that they are applied to the session
+      setPendingModelOverride(null)
+      setPendingAgentOverride(null)
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+      })
+      return newSession.id
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
+      return null
+    }
+  }, [currentSessionId, notebookId, pendingModelOverride, pendingAgentOverride, queryClient, t])
+
   // Send message (synchronous, no streaming)
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
-    let sessionId = currentSessionId
-
-    // Auto-create session if none exists
-    if (!sessionId) {
-      try {
-        const defaultTitle = message.length > 30
-          ? `${message.substring(0, 30)}...`
-          : message
-        const newSession = await chatApi.createSession({
-          notebook_id: notebookId,
-          title: defaultTitle,
-          // Include pending model override when creating session
-          model_override: pendingModelOverride ?? undefined
-        })
-        sessionId = newSession.id
-        setCurrentSessionId(sessionId)
-        // Clear pending model override now that it's applied to the session
-        setPendingModelOverride(null)
-        queryClient.invalidateQueries({
-          queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
-        })
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { detail?: string } }, message?: string };
-        toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
-        return
-      }
-    }
+    const sessionId = await ensureSessionId(message)
+    if (!sessionId) return
 
     // Add user message optimistically
     const userMessage: NotebookChatMessage = {
@@ -199,7 +209,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         session_id: sessionId,
         message,
         context,
-        model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
+        model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+        agent_override: currentSession?.agent ?? undefined
       })
 
       // Update messages with API response
@@ -217,15 +228,30 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       setIsSending(false)
     }
   }, [
-    notebookId,
-    currentSessionId,
     currentSession,
-    pendingModelOverride,
+    ensureSessionId,
     buildContext,
     refetchCurrentSession,
-    queryClient,
     t
   ])
+
+  // Parallel answers (PDR-004): fan one question out to 2-5 participants.
+  // The live cards come from the parallel hook; the archived group lands in
+  // the session history and a refetch renders the authoritative copy.
+  const sendParallelMessage = useCallback(async (message: string, runs: string[]) => {
+    const sessionId = await ensureSessionId(message)
+    if (!sessionId) return
+    const context = await buildContext()
+    await parallel.start(sessionId, message, runs, context, refetchCurrentSession)
+  }, [ensureSessionId, buildContext, parallel, refetchCurrentSession])
+
+  const synthesizeParallel = useCallback(
+    (participant: { agent?: string; model?: string }, instruction?: string) => {
+      if (!currentSessionId) return Promise.resolve()
+      return parallel.synthesize(currentSessionId, participant, instruction)
+    },
+    [currentSessionId, parallel]
+  )
 
   // Switch session
   const switchSession = useCallback((sessionId: string) => {
@@ -253,7 +279,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return deleteSessionMutation.mutate(sessionId)
   }, [deleteSessionMutation])
 
-  // Set model override - handles both existing sessions and pending state
+  // Set model override - handles both existing sessions and pending state.
+  // The backend clears the session's agent binding when a model is set
+  // (mutual exclusion); the pending branch mirrors that locally.
   const setModelOverride = useCallback((model: string | null) => {
     if (currentSessionId) {
       // Session exists - update it directly
@@ -264,6 +292,21 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     } else {
       // No session yet - store as pending
       setPendingModelOverride(model)
+      setPendingAgentOverride(null)
+    }
+  }, [currentSessionId, updateSessionMutation])
+
+  // Set agent binding (PDR-004) - mirrors setModelOverride; the backend
+  // clears model_override when an agent is set.
+  const setAgentOverride = useCallback((agent: string | null) => {
+    if (currentSessionId) {
+      updateSessionMutation.mutate({
+        sessionId: currentSessionId,
+        data: { agent }
+      })
+    } else {
+      setPendingAgentOverride(agent)
+      setPendingModelOverride(null)
     }
   }, [currentSessionId, updateSessionMutation])
 
@@ -290,6 +333,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     tokenCount,
     charCount,
     pendingModelOverride,
+    pendingAgentOverride,
 
     // Actions
     createSession,
@@ -298,6 +342,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     switchSession,
     sendMessage,
     setModelOverride,
+    setAgentOverride,
+    parallel,
+    sendParallelMessage,
+    synthesizeParallel,
     refetchSessions
   }
 }

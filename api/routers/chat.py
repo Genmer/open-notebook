@@ -12,6 +12,7 @@ from api.routers._chat_shared import (
     SuccessResponse,
     extract_chat_messages,
     get_session_or_404,
+    resolve_agent_binding,
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Notebook
@@ -34,12 +35,18 @@ class CreateSessionRequest(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Optional model override for this session"
     )
+    agent: Optional[str] = Field(
+        None, description="Optional agent binding for this session (PDR-004)"
+    )
 
 
 class UpdateSessionRequest(BaseModel):
     title: Optional[str] = Field(None, description="New session title")
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
+    )
+    agent: Optional[str] = Field(
+        None, description="Agent binding for this session; null clears it (PDR-004)"
     )
 
 
@@ -54,6 +61,9 @@ class ChatSessionResponse(BaseModel):
     )
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
+    )
+    agent: Optional[str] = Field(
+        None, description="Agent binding for this session (PDR-004)"
     )
 
 
@@ -71,6 +81,9 @@ class ExecuteChatRequest(BaseModel):
     )
     model_override: Optional[str] = Field(
         None, description="Optional model override for this message"
+    )
+    agent_override: Optional[str] = Field(
+        None, description="Optional agent for this message (PDR-004)"
     )
 
 
@@ -118,6 +131,7 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
                     updated=str(session.updated),
                     message_count=msg_count,
                     model_override=getattr(session, "model_override", None),
+                    agent=getattr(session, "agent", None),
                 )
             )
 
@@ -149,6 +163,7 @@ async def create_session(request: CreateSessionRequest):
             title=request.title
             or f"Chat Session {asyncio.get_event_loop().time():.0f}",
             model_override=request.model_override,
+            agent=request.agent,
         )
         await session.save()
 
@@ -163,6 +178,7 @@ async def create_session(request: CreateSessionRequest):
             updated=str(session.updated),
             message_count=0,
             model_override=session.model_override,
+            agent=session.agent,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
@@ -221,6 +237,7 @@ async def get_session(session_id: str):
             message_count=len(messages),
             messages=messages,
             model_override=getattr(session, "model_override", None),
+            agent=getattr(session, "agent", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -245,8 +262,17 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         if "title" in update_data:
             session.title = update_data["title"]
 
+        # Agent/model are mutually exclusive session bindings (PDR-004):
+        # setting one clears the other unless the same payload sets both
+        # explicitly (explicit values win, enabling direct API migrations).
+        if "agent" in update_data:
+            session.agent = update_data["agent"]
+            if "model_override" not in update_data:
+                session.model_override = None
         if "model_override" in update_data:
             session.model_override = update_data["model_override"]
+            if "agent" not in update_data:
+                session.agent = None
 
         await session.save()
 
@@ -268,6 +294,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             updated=str(session.updated),
             message_count=msg_count,
             model_override=session.model_override,
+            agent=session.agent,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -317,12 +344,24 @@ async def execute_chat(request: ExecuteChatRequest):
         if notebook_query:
             notebook = await Notebook.get(notebook_query[0]["out"])
 
-        # Determine model override (per-request override takes precedence over session-level)
+        # Resolve agent persona (PDR-004): per-request override wins over the
+        # session binding; dangling/disabled ids degrade to the default
+        # assistant inside resolve_agent_binding.
+        agent = await resolve_agent_binding(
+            request.agent_override
+            if request.agent_override is not None
+            else getattr(session, "agent", None)
+        )
+
+        # Determine model override: per-request > session-level > agent's
+        # bound model > provisioning default. Explicit model choices keep
+        # precedence over agent.model for API callers; the UI keeps agent and
+        # model mutually exclusive so users never see both applied at once.
         model_override = (
             request.model_override
             if request.model_override is not None
             else getattr(session, "model_override", None)
-        )
+        ) or (agent.model_id if agent else None)
 
         # Get current state
         # Use sync get_state() in a thread since SqliteSaver doesn't support async
@@ -337,6 +376,10 @@ async def execute_chat(request: ExecuteChatRequest):
         state_values["context"] = request.context
         state_values["notebook"] = notebook
         state_values["model_override"] = model_override
+        state_values["agent_instructions"] = agent.system_prompt if agent else None
+        state_values["agent_name"] = agent.name if agent else None
+        state_values["agent_temperature"] = agent.temperature if agent else None
+        state_values["agent_max_tokens"] = agent.max_tokens if agent else None
 
         # Add user message to state
         from langchain_core.messages import HumanMessage

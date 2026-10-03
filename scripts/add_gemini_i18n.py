@@ -1,6 +1,7 @@
 # One-off: insert geminiSources/geminiStudio namespaces into all 14 locales.
 # Anchored at the trailing "  },\n} satisfies TranslationShape;" block.
-import io, os
+import io
+import os
 
 LOCALES = ["zh-CN","zh-TW","en-US","ja-JP","de-DE","es-ES","fr-FR","it-IT","pl-PL","pt-BR","ru-RU","tr-TR","ca-ES","bn-IN"]
 
@@ -84,7 +85,7 @@ def esc(s):
     return s.replace('\\', '\\\\').replace('"', '\\"')
 
 def build_block(locale):
-    top = {}
+    top: dict = {}
     for dotted, table in KEYS:
         parts = dotted.split('.')
         node = top
@@ -104,7 +105,6 @@ def build_block(locale):
                 out.append(f'{pad}{k}: "{esc(v)}",')
         return out
 
-    lines = ["  geminiSources: {" ] if "geminiSources" in top else []
     # render both namespaces as siblings
     out = []
     for ns in ("geminiSources", "geminiStudio"):
@@ -128,7 +128,7 @@ for loc in LOCALES:
         # en-US defines the shape itself: insert before the closing "}" of
         # `export const enUS = { ... }` (the last line that is exactly "}").
         lines = text.split("\n")
-        close = max(i for i, l in enumerate(lines) if l == "}")
+        close = max(i for i, ln in enumerate(lines) if ln == "}")
         block = build_block(loc).split("\n")
         lines = lines[:close] + block + lines[close:]
         text = "\n".join(lines)

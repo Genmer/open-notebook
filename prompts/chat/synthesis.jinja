@@ -1,0 +1,25 @@
+# SYNTHESIS ROLE
+You are given one question and several independent answers produced by different AI participants. Your job is to synthesize them into a single, best final answer.
+
+# METHOD
+- Merge points of agreement; resolve conflicts by weighing the reasoning quality of each side.
+- Preserve the citation markers (e.g. [source:...], [note:...]) from the original answers wherever the underlying claim survives into your answer. Do not invent new citations.
+- Do not introduce claims that none of the answers support.
+- Answer in the same language as the question.
+{% if instruction %}
+# ADDITIONAL INSTRUCTIONS FROM THE USER
+
+{{instruction}}
+{% endif %}
+# QUESTION
+
+{{question}}
+
+# ANSWERS
+
+{% for answer in answers %}
+## {{answer.label}}
+
+{{answer.content}}
+
+{% endfor %}

@@ -275,6 +275,7 @@ export interface BaseChatSession {
   updated: string
   message_count?: number
   model_override?: string | null
+  agent?: string | null
 }
 
 export interface SourceChatSession extends BaseChatSession {
@@ -287,6 +288,12 @@ export interface SourceChatMessage {
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  // Run metadata (PDR-004): only notebook chat messages carry these; the
+  // parallel group renderer reads them off the shared message shape.
+  model_name?: string | null
+  agent_name?: string | null
+  run_role?: string | null
+  group_id?: string | null
 }
 
 export interface SourceChatContextIndicator {
@@ -334,6 +341,10 @@ export interface NotebookChatMessage {
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  model_name?: string | null
+  agent_name?: string | null
+  run_role?: string | null
+  group_id?: string | null
 }
 
 export interface NotebookChatSessionWithMessages extends NotebookChatSession {
@@ -344,11 +355,13 @@ export interface CreateNotebookChatSessionRequest {
   notebook_id: string
   title?: string
   model_override?: string
+  agent?: string
 }
 
 export interface UpdateNotebookChatSessionRequest {
   title?: string
   model_override?: string | null
+  agent?: string | null
 }
 
 export interface SendNotebookChatMessageRequest {
@@ -359,6 +372,7 @@ export interface SendNotebookChatMessageRequest {
     notes: Array<Record<string, unknown>>
   }
   model_override?: string
+  agent_override?: string
 }
 
 export interface BuildContextRequest {

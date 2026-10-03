@@ -1493,3 +1493,47 @@ class WebSearchResponse(BaseModel):
     mode: str
     results: List[WebSearchItem]
 
+
+
+# Agents API models (PDR-004)
+class AgentCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: str = Field(..., max_length=100, description="Unique agent name")
+    system_prompt: str = Field(..., description="Persona injected into the chat system prompt")
+    description: Optional[str] = Field(None, max_length=500)
+    model: Optional[str] = Field(None, description="Model record id, e.g. 'model:abc'")
+    temperature: Optional[float] = Field(None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(None, gt=0)
+    enabled: bool = True
+    sort_order: int = Field(0, ge=0)
+
+
+class AgentUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: Optional[str] = Field(None, max_length=100)
+    system_prompt: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=500)
+    model: Optional[str] = Field(None, description="Null clears the model binding")
+    temperature: Optional[float] = Field(None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(None, gt=0)
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = Field(None, ge=0)
+
+
+class AgentResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    id: str
+    name: str
+    system_prompt: str
+    description: Optional[str] = None
+    model_id: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    enabled: bool
+    sort_order: int
+    in_use_session_count: int = 0
+    created: str
+    updated: str
