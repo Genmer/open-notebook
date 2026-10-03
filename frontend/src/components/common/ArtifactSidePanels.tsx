@@ -65,7 +65,7 @@ export function ArtifactSidePanels({
           data-testid="artifact-panel-sources"
         >
           <div className="flex h-12 shrink-0 items-center justify-between gap-1 border-b px-3">
-            <span className="truncate text-sm font-semibold">{t('artifacts.sourcesPanelTitle')}</span>
+            <span className="truncate text-xs font-semibold">{t('artifacts.sourcesPanelTitle')}</span>
             <div className="flex shrink-0 items-center gap-0.5">
               <Button
                 variant="ghost"
@@ -102,12 +102,12 @@ export function ArtifactSidePanels({
                     <li key={source.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent/50"
+                        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[10px] leading-tight hover:bg-accent/50"
                         onClick={() => onOpenSource?.(source.id)}
                         title={source.title ?? undefined}
                         data-testid={`artifact-panel-source-${source.id}`}
                       >
-                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
                         <span className="truncate">
                           {source.title || t('sources.untitledSource')}
                         </span>

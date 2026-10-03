@@ -15,15 +15,19 @@ import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
-  BaseChatSession
+  BaseChatSession,
+  NoteResponse
 } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
+import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
+import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
+import { useNotes } from '@/lib/hooks/use-notes'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { toast } from 'sonner'
@@ -89,20 +93,34 @@ export function ChatPanel({
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Fullscreen slide-out panels (sources left / notes right) — notebook chat
+  // only; the open/close flags live here so the layered Esc handler below can
+  // see them, while the react-query data fetching stays inside the
+  // conditional child (ChatFullscreenPanels) to keep this component
+  // provider-free in tests.
+  const [panelLeftOpen, setPanelLeftOpen] = useState(false)
+  const [panelRightOpen, setPanelRightOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { openModal } = useModalManager()
 
   // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
-  // 无需目标元素持有焦点；非全屏态不挂监听。
+  // 无需目标元素持有焦点；非全屏态不挂监听。分层退出：侧栏开着先收侧栏，
+  // 其次才退全屏（与 ArtifactViewDialog/PDF 全屏同款手势）。
   useEffect(() => {
     if (!isFullscreen) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsFullscreen(false)
+      if (event.key !== 'Escape') return
+      if (panelLeftOpen || panelRightOpen) {
+        setPanelLeftOpen(false)
+        setPanelRightOpen(false)
+      } else {
+        setIsFullscreen(false)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isFullscreen])
+  }, [isFullscreen, panelLeftOpen, panelRightOpen])
 
   // Stable reference-click handler so memoized messages don't re-render on
   // composer keystrokes (which no longer re-render this component at all, since
@@ -268,8 +286,107 @@ export function ChatPanel({
           onModelChange={onModelChange}
         />
       </CardContent>
+
+      {/* Fullscreen slide-out panels + edge handles (notebook chat only): the
+          fullscreen Card is `fixed`, so absolute children anchor to it and the
+          reading area behind the panels stays interactive. */}
+      {isFullscreen && !!notebookId && (
+        <ChatFullscreenPanels
+          notebookId={notebookId}
+          leftOpen={panelLeftOpen}
+          rightOpen={panelRightOpen}
+          onLeftOpenChange={setPanelLeftOpen}
+          onRightOpenChange={setPanelRightOpen}
+          onExitFullscreen={() => {
+            setPanelLeftOpen(false)
+            setPanelRightOpen(false)
+            setIsFullscreen(false)
+          }}
+          onOpenSource={(sourceId) => openModal('source', sourceId)}
+        />
+      )}
     </Card>
 
+    </>
+  )
+}
+
+/**
+ * Slide-out panels + edge handles + note-reading dialog for the fullscreen
+ * chat Card. Split out of ChatPanel so the react-query notes fetch (and its
+ * Provider requirement) only exists once the panels actually mount — the
+ * chat itself stays renderable without a QueryClient.
+ */
+function ChatFullscreenPanels({
+  notebookId,
+  leftOpen,
+  rightOpen,
+  onLeftOpenChange,
+  onRightOpenChange,
+  onExitFullscreen,
+  onOpenSource,
+}: {
+  notebookId: string
+  leftOpen: boolean
+  rightOpen: boolean
+  onLeftOpenChange: (open: boolean) => void
+  onRightOpenChange: (open: boolean) => void
+  onExitFullscreen: () => void
+  onOpenSource: (sourceId: string) => void
+}) {
+  const { t } = useTranslation()
+  const [readingNote, setReadingNote] = useState<NoteResponse | null>(null)
+  const { data: panelNotes = [] } = useNotes(notebookId)
+
+  return (
+    <>
+      {!leftOpen && (
+        <button
+          type="button"
+          className="group absolute inset-y-0 left-0 top-14 z-20 flex w-6 items-center justify-start"
+          onClick={() => onLeftOpenChange(true)}
+          aria-label={t('artifacts.openSourcesPanel')}
+          title={t('artifacts.openSourcesPanel')}
+          data-testid="chat-handle-left"
+        >
+          <span className="h-16 w-1 rounded-r bg-border transition-colors group-hover:bg-primary/60" />
+        </button>
+      )}
+      {!rightOpen && (
+        <button
+          type="button"
+          className="group absolute inset-y-0 right-0 top-14 z-20 flex w-6 items-center justify-end"
+          onClick={() => onRightOpenChange(true)}
+          aria-label={t('artifacts.openNotesPanel')}
+          title={t('artifacts.openNotesPanel')}
+          data-testid="chat-handle-right"
+        >
+          <span className="h-16 w-1 rounded-l bg-border transition-colors group-hover:bg-primary/60" />
+        </button>
+      )}
+      <ArtifactSidePanels
+        notebookId={notebookId}
+        notes={panelNotes}
+        leftOpen={leftOpen}
+        rightOpen={rightOpen}
+        onLeftOpenChange={onLeftOpenChange}
+        onRightOpenChange={onRightOpenChange}
+        onExitFullscreen={onExitFullscreen}
+        onOpenSource={onOpenSource}
+        onNoteSelect={(note) => setReadingNote(note)}
+      />
+      {/* Note reading dialog opened from the right panel (same experience as
+          the PDF fullscreen panels). */}
+      <ArtifactViewDialog
+        open={!!readingNote}
+        onOpenChange={(next) => { if (!next) setReadingNote(null) }}
+        note={readingNote ? { title: readingNote.title, content: readingNote.content } : undefined}
+        notebookId={notebookId}
+        notes={panelNotes}
+        activeNoteId={readingNote?.id ?? null}
+        onNoteSelect={(note) => setReadingNote(note)}
+        onOpenSource={onOpenSource}
+      />
     </>
   )
 }
