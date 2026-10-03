@@ -790,6 +790,8 @@ export const bnIN = {
     synthesisRun: "সংশ্লেষ করুন",
     synthesisResultTitle: "সংশ্লেষিত উত্তর",
     synthesisFailed: "সংশ্লেষণ ব্যর্থ",
+    parallelEmptyHint: "প্রথমে একটি প্রশ্ন লিখুন, তারপর সমান্তরাল উত্তর শুরু করুন",
+    parallelTriggerCount: "সমান্তরাল উত্তর · {{count}}",
   },
   searchPage: {
     askAndSearch: "জিজ্ঞাসা ও অনুসন্ধান",

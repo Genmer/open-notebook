@@ -790,6 +790,8 @@ export const trTR = {
     synthesisRun: "Özetle",
     synthesisResultTitle: "Birleştirilmiş yanıt",
     synthesisFailed: "Özetleme başarısız",
+    parallelEmptyHint: "Önce bir soru yazın, sonra paralel yanıtları başlatın",
+    parallelTriggerCount: "Paralel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Sor ve Ara",

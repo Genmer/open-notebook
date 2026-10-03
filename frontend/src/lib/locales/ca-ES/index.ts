@@ -790,6 +790,8 @@ export const caES = {
     synthesisRun: "Sintetitza",
     synthesisResultTitle: "Resposta sintetitzada",
     synthesisFailed: "Ha fallat la síntesi",
+    parallelEmptyHint: "Escriviu primer una pregunta i després inicieu les respostes paral·leles",
+    parallelTriggerCount: "Paral·lel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Pregunta i cerca",

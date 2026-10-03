@@ -1,17 +1,57 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
 import { ParallelRunsPicker } from './ParallelRunsPicker'
 import { Agent } from '@/lib/types/agents'
 
-// useTranslation is mocked globally in setup.ts (t returns the key string)
+// Radix Popover won't open in jsdom (project precedent: mock it). This mock
+// keeps the real contract — `open` gates PopoverContent and clicking the
+// trigger calls onOpenChange — so tests can close and reopen the picker.
+vi.mock('@/components/ui/popover', async () => {
+  const { createContext, useContext } = await import('react')
+  type PopoverCtx = { open: boolean; setOpen: (open: boolean) => void }
+  const PopoverContext = createContext<PopoverCtx | null>(null)
+  return {
+    Popover: ({
+      children,
+      open,
+      onOpenChange,
+    }: {
+      children: ReactNode
+      open: boolean
+      onOpenChange?: (open: boolean) => void
+    }) => (
+      <PopoverContext.Provider value={{ open, setOpen: v => onOpenChange?.(v) }}>
+        {children}
+      </PopoverContext.Provider>
+    ),
+    PopoverTrigger: ({ children }: { children: ReactNode }) => {
+      const ctx = useContext(PopoverContext)
+      return <div onClick={() => ctx?.setOpen(!ctx.open)}>{children}</div>
+    },
+    PopoverContent: ({ children }: { children: ReactNode }) => {
+      const ctx = useContext(PopoverContext)
+      if (!ctx?.open) return null
+      return <div data-testid="parallel-runs-popover">{children}</div>
+    },
+  }
+})
 
-// Radix Popover won't open in jsdom (project precedent: mock always-open).
-vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="parallel-runs-popover">{children}</div>
-  ),
+// setup.ts mocks t() as identity (returns the key). The trigger-count test
+// asserts the interpolated number, so this file replaces it with a mock that
+// appends "name:value" pairs: t('chat.x', { count: 1 }) → "chat.x count:1".
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, params?: Record<string, unknown>) => {
+      if (!params) return key
+      const interpolations = Object.entries(params)
+        .map(([name, value]) => `${name}:${String(value)}`)
+        .join(' ')
+      return `${key} ${interpolations}`
+    },
+    language: 'en-US',
+    setLanguage: vi.fn(),
+  }),
 }))
 
 vi.mock('@/lib/hooks/use-models', () => ({
@@ -79,5 +119,53 @@ describe('ParallelRunsPicker', () => {
     fireEvent.click(screen.getByTestId('parallel-runs-confirm'))
 
     expect(onSend).toHaveBeenCalledWith(['agent:agent:1'])
+  })
+
+  it('keeps the selection across close/reopen and shows the count on the trigger', () => {
+    render(<ParallelRunsPicker onSend={vi.fn()} />)
+    const trigger = screen.getByTestId('parallel-runs-trigger')
+
+    // nothing picked yet: outline variant, base label
+    expect(trigger.className).toContain('bg-transparent')
+    expect(trigger.className).not.toContain('bg-primary')
+    expect(trigger).toHaveTextContent('chat.parallelSend')
+
+    // open and pick exactly one participant
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByTestId('parallel-option-agent:agent:1'))
+
+    // trigger switches to the filled variant and shows the count
+    expect(trigger.className).toContain('bg-primary')
+    expect(trigger).toHaveTextContent('1')
+    expect(trigger).toHaveAttribute('aria-label', 'chat.parallelSend')
+
+    // close the popover (click outside/ESC equivalent) — content unmounts
+    fireEvent.click(trigger)
+    expect(screen.queryByTestId('parallel-runs-popover')).not.toBeInTheDocument()
+
+    // the pick survives the close: the trigger still shows the count
+    expect(trigger).toHaveTextContent('1')
+
+    // reopen: the checkbox is still checked and the count still shows
+    fireEvent.click(trigger)
+    const row = screen.getByTestId('parallel-option-agent:agent:1')
+    expect(row.querySelector('[role="checkbox"]')).toHaveAttribute('data-state', 'checked')
+    expect(trigger).toHaveTextContent('1')
+  })
+
+  it('clears the selection and the trigger state after a successful send', () => {
+    const onSend = vi.fn()
+    render(<ParallelRunsPicker onSend={onSend} />)
+    const trigger = screen.getByTestId('parallel-runs-trigger')
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByTestId('parallel-option-agent:agent:1'))
+    expect(trigger).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByTestId('parallel-runs-confirm'))
+
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(trigger).toHaveTextContent('chat.parallelSend')
+    expect(trigger.className).toContain('bg-transparent')
+    expect(trigger.className).not.toContain('bg-primary')
   })
 })

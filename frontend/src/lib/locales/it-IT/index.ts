@@ -790,6 +790,8 @@ export const itIT = {
     synthesisRun: "Sintetizza",
     synthesisResultTitle: "Risposta sintetizzata",
     synthesisFailed: "Sintesi non riuscita",
+    parallelEmptyHint: "Scrivi prima una domanda, poi avvia le risposte parallele",
+    parallelTriggerCount: "Parallelo · {{count}}",
   },
   searchPage: {
     askAndSearch: "Chiedi e cerca",

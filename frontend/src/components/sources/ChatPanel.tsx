@@ -573,7 +573,14 @@ function ChatComposer({
   }
 
   const handleParallelSend = (runs: string[]) => {
-    if (input.trim() && !isStreaming && parallelChat) {
+    // The picker now opens on an empty input, so an empty-input confirm lands
+    // here: hint instead of silently doing nothing, and refocus the composer.
+    if (!input.trim()) {
+      toast.error(t('chat.parallelEmptyHint'))
+      document.getElementById(chatInputId)?.focus()
+      return
+    }
+    if (!isStreaming && parallelChat) {
       parallelChat.send(input.trim(), runs)
       setInput('')
     }
@@ -669,7 +676,7 @@ function ChatComposer({
         />
         {parallelChat && (
           <ParallelRunsPicker
-            disabled={!input.trim() || isStreaming || parallelChat.phase === 'running'}
+            disabled={isStreaming || parallelChat.phase === 'running'}
             onSend={handleParallelSend}
           />
         )}

@@ -793,6 +793,8 @@ export const deDE = {
     synthesisRun: "Zusammenfassen",
     synthesisResultTitle: "Zusammengeführte Antwort",
     synthesisFailed: "Zusammenfassung fehlgeschlagen",
+    parallelEmptyHint: "Gib zuerst eine Frage ein, um parallele Antworten zu starten",
+    parallelTriggerCount: "Parallel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Fragen und Suchen",

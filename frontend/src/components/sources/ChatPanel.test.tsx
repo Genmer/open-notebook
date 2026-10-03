@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatPanel } from './ChatPanel'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
+import { toast } from 'sonner'
 import type { SourceTitleResponse } from '@/lib/types/api'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string)
@@ -10,6 +11,36 @@ import type { SourceTitleResponse } from '@/lib/types/api'
 vi.mock('@/lib/hooks/use-modal-manager', () => ({
   useModalManager: () => ({ openModal: vi.fn() }),
 }))
+
+// Stubbed so the empty-input parallel hint can be asserted without a Toaster.
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}))
+
+// The real picker mounts react-query hooks (use-models/use-agents) and a Radix
+// Popover that never opens in jsdom. This probe stands in and surfaces the
+// exact `disabled` prop ChatComposer computes, clicking through to onSend.
+vi.mock('@/components/chat/ParallelRunsPicker', () => ({
+  ParallelRunsPicker: ({
+    disabled,
+    onSend,
+  }: {
+    disabled?: boolean
+    onSend: (runs: string[]) => void
+  }) => (
+    <button
+      type="button"
+      data-testid="parallel-runs-trigger"
+      disabled={disabled}
+      onClick={() => onSend(['default'])}
+    />
+  ),
+}))
+
+const mockToastError = vi.mocked(toast.error)
 
 vi.mock('@/lib/hooks/use-sources', () => ({
   hasActiveInsightJobs: () => false,
@@ -133,6 +164,65 @@ describe('ChatPanel composer', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
 
     expect(onSendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChatPanel parallel composer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // jsdom does not implement scrollIntoView (used by the auto-scroll effect).
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  const renderWithParallel = () => {
+    const parallelChat = {
+      phase: 'idle' as const,
+      runs: [],
+      synthesis: null,
+      isSynthesizing: false,
+      send: vi.fn(),
+      synthesize: vi.fn(),
+    }
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        parallelChat={parallelChat}
+      />
+    )
+    return {
+      parallelChat,
+      textarea: screen.getByRole('textbox') as HTMLTextAreaElement,
+    }
+  }
+
+  it('keeps the parallel trigger clickable while the input is empty', () => {
+    const { textarea } = renderWithParallel()
+    expect(textarea.value).toBe('')
+
+    expect(screen.getByTestId('parallel-runs-trigger')).not.toBeDisabled()
+  })
+
+  it('hints and refocuses the composer instead of sending on an empty-input confirm', () => {
+    const { parallelChat, textarea } = renderWithParallel()
+
+    fireEvent.click(screen.getByTestId('parallel-runs-trigger'))
+
+    expect(parallelChat.send).not.toHaveBeenCalled()
+    expect(mockToastError).toHaveBeenCalledWith('chat.parallelEmptyHint')
+    expect(textarea).toHaveFocus()
+  })
+
+  it('sends the trimmed input through the parallel channel and clears it', () => {
+    const { parallelChat, textarea } = renderWithParallel()
+    fireEvent.change(textarea, { target: { value: '  fan out  ' } })
+
+    fireEvent.click(screen.getByTestId('parallel-runs-trigger'))
+
+    expect(parallelChat.send).toHaveBeenCalledWith('fan out', ['default'])
+    expect(textarea.value).toBe('')
   })
 })
 

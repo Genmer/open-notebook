@@ -790,6 +790,8 @@ export const frFR = {
     synthesisRun: "Synthétiser",
     synthesisResultTitle: "Réponse synthétisée",
     synthesisFailed: "Échec de la synthèse",
+    parallelEmptyHint: "Saisissez d'abord une question, puis lancez les réponses parallèles",
+    parallelTriggerCount: "Parallèle · {{count}}",
   },
   searchPage: {
     askAndSearch: "Poser une question et Rechercher",

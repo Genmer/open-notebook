@@ -790,6 +790,8 @@ export const zhCN = {
     synthesisRun: "生成总结",
     synthesisResultTitle: "总结结论",
     synthesisFailed: "总结生成失败",
+    parallelEmptyHint: "请先输入问题，再发起并发问答",
+    parallelTriggerCount: "并发问答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "提问与搜索",

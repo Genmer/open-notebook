@@ -76,11 +76,15 @@ export function ParallelRunsPicker({ disabled, onSend }: ParallelRunsPickerProps
     </Label>
   )
 
+  // Pending picks survive closing the popover; only a successful send clears
+  // them. The trigger reflects that pending state so it stays visible.
+  const hasSelection = selected.length > 0
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant={hasSelection ? 'default' : 'outline'}
           size="sm"
           disabled={disabled}
           className="gap-1.5 h-9"
@@ -89,7 +93,11 @@ export function ParallelRunsPicker({ disabled, onSend }: ParallelRunsPickerProps
           data-testid="parallel-runs-trigger"
         >
           <Zap className="h-4 w-4" />
-          <span className="hidden sm:inline text-xs">{t('chat.parallelSend')}</span>
+          <span className="hidden sm:inline text-xs">
+            {hasSelection
+              ? t('chat.parallelTriggerCount', { count: selected.length })
+              : t('chat.parallelSend')}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-3" data-testid="parallel-runs-popover">

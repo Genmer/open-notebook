@@ -790,6 +790,8 @@ export const ptBR = {
     synthesisRun: "Sintetizar",
     synthesisResultTitle: "Resposta sintetizada",
     synthesisFailed: "Falha na síntese",
+    parallelEmptyHint: "Digite primeiro uma pergunta e depois inicie as respostas paralelas",
+    parallelTriggerCount: "Paralelo · {{count}}",
   },
   searchPage: {
     askAndSearch: "Perguntar e Buscar",

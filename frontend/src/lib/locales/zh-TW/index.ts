@@ -790,6 +790,8 @@ export const zhTW = {
     synthesisRun: "產生總結",
     synthesisResultTitle: "總結結論",
     synthesisFailed: "總結產生失敗",
+    parallelEmptyHint: "請先輸入問題，再發起並行問答",
+    parallelTriggerCount: "並行問答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "提問與搜尋",

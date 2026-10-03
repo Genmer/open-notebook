@@ -790,6 +790,8 @@ export const ruRU = {
     synthesisRun: "Обобщить",
     synthesisResultTitle: "Итоговый ответ",
     synthesisFailed: "Обобщение не удалось",
+    parallelEmptyHint: "Сначала введите вопрос, затем запустите параллельные ответы",
+    parallelTriggerCount: "Параллельно · {{count}}",
   },
   searchPage: {
     askAndSearch: "Запрос и поиск",

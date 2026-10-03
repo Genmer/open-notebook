@@ -788,6 +788,8 @@ export const enUS = {
     synthesisRun: "Synthesize",
     synthesisResultTitle: "Synthesized answer",
     synthesisFailed: "Synthesis failed",
+    parallelEmptyHint: "Type a question first, then start parallel answers",
+    parallelTriggerCount: "Parallel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Ask and Search",

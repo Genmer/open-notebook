@@ -790,6 +790,8 @@ export const jaJP = {
     synthesisRun: "まとめを生成",
     synthesisResultTitle: "統合された回答",
     synthesisFailed: "まとめの生成に失敗しました",
+    parallelEmptyHint: "質問を入力してから並列回答を開始してください",
+    parallelTriggerCount: "並列回答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "質問と検索",

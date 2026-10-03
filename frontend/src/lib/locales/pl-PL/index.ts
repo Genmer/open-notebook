@@ -790,6 +790,8 @@ export const plPL = {
     synthesisRun: "Podsumuj",
     synthesisResultTitle: "Odpowiedź zbiorcza",
     synthesisFailed: "Synteza nie powiodła się",
+    parallelEmptyHint: "Najpierw wpisz pytanie, a potem uruchom równoległe odpowiedzi",
+    parallelTriggerCount: "Równolegle · {{count}}",
   },
   searchPage: {
     askAndSearch: "Pytaj i szukaj",
