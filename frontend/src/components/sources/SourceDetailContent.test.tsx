@@ -27,12 +27,18 @@ vi.mock('@/lib/api/sources', () => ({
 // keeps the viewer test light and exposes the props SourceDetailContent passes.
 // Like the real component it renders nothing while closed.
 vi.mock('@/components/sources/PdfSourceViewer', () => ({
-  default: (props: { open?: boolean; notebookId?: string; filePath?: string | null }) =>
+  default: (props: {
+    open?: boolean
+    notebookId?: string
+    filePath?: string | null
+    inline?: boolean
+  }) =>
     props.open === false ? null : (
       <div
         data-testid="pdf-viewer-mock"
         data-notebook={props.notebookId ?? ''}
         data-file-path={props.filePath ?? ''}
+        data-inline={props.inline ? 'true' : 'false'}
       />
     ),
 }))
@@ -440,6 +446,27 @@ describe('SourceDetailContent PDF viewer entry', () => {
     expect(viewer).toHaveAttribute('data-file-path', '/data/uploads/需求工程.pdf')
     // notebookId 从 ?nb= 链路透传，供「保存解析为笔记」使用
     expect(viewer).toHaveAttribute('data-notebook', 'nb:9')
+  })
+
+  it('embeds the viewer inline and toggles back to the parsed text with the same button', async () => {
+    renderWith(pdfSource)
+
+    const button = await screen.findByTestId('open-pdf-viewer')
+    expect(button).toHaveTextContent('sources.pdfViewer.open')
+
+    // First click: the parsed text is replaced by the inline viewer.
+    fireEvent.click(button)
+    const viewer = await screen.findByTestId('pdf-viewer-mock')
+    expect(viewer).toHaveAttribute('data-inline', 'true')
+    expect(screen.queryByText('Source content')).not.toBeInTheDocument()
+    // Same button, now "restore".
+    expect(button).toHaveTextContent('sources.pdfViewer.restore')
+
+    // Second click: the viewer unmounts and the parsed text comes back.
+    fireEvent.click(button)
+    expect(screen.queryByTestId('pdf-viewer-mock')).not.toBeInTheDocument()
+    expect(await screen.findByText('Source content')).toBeInTheDocument()
+    expect(button).toHaveTextContent('sources.pdfViewer.open')
   })
 
   it('hides the button for non-PDF uploads', async () => {

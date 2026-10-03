@@ -230,9 +230,9 @@ describe('GeminiStudioColumn', () => {
     await waitFor(() => {
       expect(screen.getByText(/生成进度/)).toBeInTheDocument()
     })
-    expect(screen.getByText(/生成中/)).toBeInTheDocument()
-    expect(screen.getByText(/已用时/)).toBeInTheDocument()
-    expect(screen.getByText(/任务 ID：command:job1/)).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.running')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.elapsed')).toBeInTheDocument()
+    expect(screen.getByText(/tasks.inspector.taskId/)).toBeInTheDocument()
     // 进度管理入口
     expect(screen.getByRole('button', { name: /打开进度管理/ })).toBeInTheDocument()
     // 后台运行按钮存在（可关闭弹窗任务继续）

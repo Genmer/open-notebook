@@ -8,7 +8,7 @@ an error the user retries; the only thing they clicked was this analysis.
 """
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ai_prompter import Prompter
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -31,6 +31,30 @@ MAX_SECTION_CHARS = 60000
 # on the transformation slot). asyncio.wait_for maps the expiry to a 502.
 SECTION_ANALYSIS_TIMEOUT_SECONDS = 300
 
+# Delta callback for the streaming variant: receives each incremental piece
+# of model output as it arrives (used by the async command to persist a live
+# progress stream).
+DeltaCallback = Callable[[str], Awaitable[None]]
+
+
+async def _stream_invoke(
+    model: Any, payload: list, on_delta: DeltaCallback
+) -> Any:
+    """Consume the model's token stream, forwarding deltas and returning the
+    aggregated message (usage_metadata lands on the summed final chunk)."""
+    chunks = []
+    async for chunk in model.astream(payload):
+        chunks.append(chunk)
+        delta = extract_text_content(chunk.content)
+        if delta:
+            await on_delta(delta)
+    if not chunks:
+        raise ExternalServiceError("Model returned an empty stream for section analysis")
+    aggregated = chunks[0]
+    for chunk in chunks[1:]:
+        aggregated = aggregated + chunk
+    return aggregated
+
 
 async def analyze_source_section(
     source_id: str,
@@ -39,8 +63,13 @@ async def analyze_source_section(
     page_start: Optional[int],
     page_end: Optional[int],
     locale: str,
+    on_delta: Optional[DeltaCallback] = None,
 ) -> Dict[str, Any]:
-    """Analyze one document section; raises OpenNotebookError on failure."""
+    """Analyze one document section; raises OpenNotebookError on failure.
+
+    With `on_delta` the model is consumed as a token stream and every
+    incremental piece of output is awaited into the callback — the async
+    command uses this to persist a live progress stream."""
     # 404 gate: the analysis UI can outlive a deleted source. NotFoundError is
     # mapped to HTTP 404 by the global handler (api/main.py).
     source = await Source.get(source_id)
@@ -82,10 +111,16 @@ async def analyze_source_section(
                 )
             ),
         ]
-        ai_message = await asyncio.wait_for(
-            asyncio.to_thread(provisioned.langchain_model.invoke, payload),
-            timeout=SECTION_ANALYSIS_TIMEOUT_SECONDS,
-        )
+        if on_delta is None:
+            ai_message = await asyncio.wait_for(
+                asyncio.to_thread(provisioned.langchain_model.invoke, payload),
+                timeout=SECTION_ANALYSIS_TIMEOUT_SECONDS,
+            )
+        else:
+            ai_message = await asyncio.wait_for(
+                _stream_invoke(provisioned.langchain_model, payload, on_delta),
+                timeout=SECTION_ANALYSIS_TIMEOUT_SECONDS,
+            )
     except asyncio.TimeoutError as e:
         logger.warning(f"Section analysis timed out for source {source_id}")
         await record_llm_usage(

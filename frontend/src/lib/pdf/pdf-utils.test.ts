@@ -4,6 +4,7 @@ import {
   extractPagesText,
   flattenOutline,
   isPdfBuffer,
+  parseTocFromPages,
   resolveOutlineDest,
   sectionEndPage,
   type PdfOutlineEntry,
@@ -209,5 +210,140 @@ describe('getPdfjs worker configuration', () => {
     const { getPdfjs: freshGetPdfjs } = await import('./pdf-loader')
     const pdfjs = await freshGetPdfjs()
     expect((pdfjs.GlobalWorkerOptions as { workerSrc: string }).workerSrc).toBe('/pdf.worker.min.mjs')
+  })
+})
+
+describe('parseTocFromPages (printed-TOC fallback)', () => {
+  /**
+   * Doc whose listed pages return the given text (one text item per line);
+   * pages beyond the list answer with an empty text layer. numPages may
+   * exceed the list so high printed page numbers pass range checks.
+   */
+  const makeTextDoc = (pages: string[], numPages = pages.length) => {
+    const emptyPage = {
+      getTextContent: vi.fn().mockResolvedValue({ items: [] }),
+      cleanup: vi.fn().mockResolvedValue(undefined),
+    }
+    const pageMocks = pages.map((text) => ({
+      getTextContent: vi.fn().mockResolvedValue({
+        items: text
+          .split('\n')
+          .filter((line) => line.length > 0)
+          .map((line) => ({ str: line, hasEOL: true })),
+      }),
+      cleanup: vi.fn().mockResolvedValue(undefined),
+    }))
+    return {
+      numPages,
+      getPage: vi.fn((n: number) =>
+        Promise.resolve(pageMocks[n - 1] ?? emptyPage)
+      ),
+      pageMocks,
+    }
+  }
+
+  it('parses a dot-leader TOC and calibrates a zero offset', async () => {
+    const pages = Array.from({ length: 30 }, (_, i) => `filler page ${i + 1}`)
+    pages[0] = 'Introduction 3\nChapter One 5\nChapter Two 12\nChapter Three 20\nAppendix 30'
+    pages[2] = 'Introduction\nWelcome.'
+    pages[4] = 'Chapter One\nThe beginning.'
+    pages[11] = 'Chapter Two\nMore.'
+    const doc = makeTextDoc(pages)
+    const entries = await parseTocFromPages(doc as never)
+    expect(entries).toEqual([
+      { title: 'Introduction', pageNumber: 3, url: null, depth: 0 },
+      { title: 'Chapter One', pageNumber: 5, url: null, depth: 0 },
+      { title: 'Chapter Two', pageNumber: 12, url: null, depth: 0 },
+      { title: 'Chapter Three', pageNumber: 20, url: null, depth: 0 },
+      { title: 'Appendix', pageNumber: 30, url: null, depth: 0 },
+    ])
+  })
+
+  it('calibrates a printed→physical offset when front matter shifts pages', async () => {
+    const pages = Array.from({ length: 21 }, (_, i) => `filler ${i + 1}`)
+    pages[0] = '封面'
+    pages[1] = '第一章 2\n第二章 10\n第三章 20\n第四章 30\n第五章 40'
+    pages[2] = '第一章 开始'
+    pages[10] = '第二章 继续'
+    pages[20] = '第三章 深入'
+    const doc = makeTextDoc(pages, 45)
+    const entries = await parseTocFromPages(doc as never)
+    // printed 2/10/20 live on physical 3/11/21 → offset +1 applies to all.
+    expect(entries).toEqual([
+      { title: '第一章', pageNumber: 3, url: null, depth: 0 },
+      { title: '第二章', pageNumber: 11, url: null, depth: 0 },
+      { title: '第三章', pageNumber: 21, url: null, depth: 0 },
+      { title: '第四章', pageNumber: 31, url: null, depth: 0 },
+      { title: '第五章', pageNumber: 41, url: null, depth: 0 },
+    ])
+  })
+
+  it('returns non-jumpable entries when calibration finds no matching body pages', async () => {
+    const pages = [
+      '操作系统 2\n专业英语 6\n系统架构设计 9\n数据库系统 24\n计算机组成原理 27',
+      ...Array.from({ length: 9 }, (_, i) => `unrelated prose ${i}`),
+    ]
+    const doc = makeTextDoc(pages)
+    const entries = await parseTocFromPages(doc as never)
+    expect(entries.map((entry) => entry.title)).toEqual([
+      '操作系统',
+      '专业英语',
+      '系统架构设计',
+      '数据库系统',
+      '计算机组成原理',
+    ])
+    expect(entries.every((entry) => entry.pageNumber === null)).toBe(true)
+  })
+
+  it('ignores watermark noise lines mixed into the TOC page', async () => {
+    const pages = [
+      '究 必\n盗 版\n操作系统 2\n专业英语 61\n系统架构设计 96\n数据库系统 242\n计算机组成原理 277\n计算机网络 293',
+      ...Array.from({ length: 9 }, (_, i) => `noise ${i}`),
+    ]
+    const doc = makeTextDoc(pages, 300)
+    const entries = await parseTocFromPages(doc as never)
+    expect(entries.map((entry) => entry.title)).toEqual([
+      '操作系统',
+      '专业英语',
+      '系统架构设计',
+      '数据库系统',
+      '计算机组成原理',
+      '计算机网络',
+    ])
+  })
+
+  it('marks indented TOC lines as sub-level entries', async () => {
+    const pages = ['Part One 3\n  Detail A 4\n  Detail B 5\nPart Two 10\n  Detail C 11']
+    const doc = makeTextDoc(pages)
+    const entries = await parseTocFromPages(doc as never)
+    expect(entries.map((entry) => entry.depth)).toEqual([0, 1, 1, 0, 1])
+  })
+
+  it('strips entry numbers and calibrates against compound heading lines (real-book shape)', async () => {
+    // Page text layers as pdf.js really yields them for a numbered TOC whose
+    // body headings run "book title 第N章——chapter" on one line, printed
+    // pages shifted by +1 from physical pages.
+    const pages = Array.from({ length: 12 }, () => '版权来源芝士架构 盗版必究')
+    pages[0] =
+      ' 目录\n 1. 系统架构设计师-按照知识点导出历年真题（选择题）   2\n 2. 操作系统   2\n 3. 专业英语   5\n 4. 系统架构设计   8\n 5. 数据库系统   10\n 第 1 页'
+    pages[2] =
+      '版权来源芝士架构 盗版必究\n系统架构设计师-按照知识点导出历年真题（选择题） 第1章——操作系统\n 第1章第1小节——磁盘管理'
+    pages[5] = '版权来源芝士架构 盗版必究\n第2章——专业英语\n（2025年11月真题）'
+    pages[8] = '版权来源芝士架构 盗版必究\n第3章——系统架构设计\n架构风格'
+    const doc = makeTextDoc(pages)
+    const entries = await parseTocFromPages(doc as never)
+    expect(entries).toEqual([
+      { title: '系统架构设计师-按照知识点导出历年真题（选择题）', pageNumber: 3, url: null, depth: 0 },
+      { title: '操作系统', pageNumber: 3, url: null, depth: 0 },
+      { title: '专业英语', pageNumber: 6, url: null, depth: 0 },
+      { title: '系统架构设计', pageNumber: 9, url: null, depth: 0 },
+      { title: '数据库系统', pageNumber: 11, url: null, depth: 0 },
+    ])
+  })
+
+  it('returns an empty list when no page looks like a TOC', async () => {
+    const pages = Array.from({ length: 10 }, (_, i) => `just prose line ${i} here`)
+    const doc = makeTextDoc(pages)
+    await expect(parseTocFromPages(doc as never)).resolves.toEqual([])
   })
 })

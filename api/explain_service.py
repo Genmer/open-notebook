@@ -34,6 +34,9 @@ from open_notebook.utils.version_utils import get_installed_version
 
 RETRYABLE_COMMANDS: frozenset[str] = frozenset(
     {
+        # Section analysis is read-only + generative (no persisted side
+        # effects beyond its own state record), so replaying it is safe.
+        "analyze_source_section",
         "classify_sources",
         "create_insight",
         "embed_insight",

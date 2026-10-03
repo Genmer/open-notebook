@@ -532,10 +532,12 @@ export const enUS = {
       viewAll: "View library",
     },
     pdfViewer: {
+      restore: "Restore",
       open: "View original file",
       title: "Original file preview",
       outline: "Outline",
       noOutline: "This document has no outline",
+      parsingToc: "Parsing table of contents…",
       page: "Page {{page}} of {{total}}",
       loading: "Loading document…",
       loadFailed: "Failed to load document",
@@ -1371,6 +1373,356 @@ export const enUS = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Live task inspector",
+
+
+
+
+
+
+        completed: "Completed",
+
+
+
+
+
+
+        failed: "Failed",
+
+
+
+
+
+
+        canceled: "Canceled",
+
+
+
+
+
+
+        running: "Working…",
+
+
+
+
+
+
+        elapsed: "Elapsed",
+
+
+
+
+
+
+        stageFallback: "Running",
+
+
+
+
+
+
+        processing: "Processing",
+
+
+
+
+
+
+        taskId: "Job ID",
+
+
+
+
+
+
+        openTaskCenter: "Open Task Center",
+
+
+
+
+
+
+        stageFlow: "Stage flow",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Context input",
+
+
+
+
+
+
+        modelOutput: "Model output",
+
+
+
+
+
+
+        tokenRate: "Token rate",
+
+
+
+
+
+
+        processedChunks: "Chunks processed",
+
+
+
+
+
+
+        chunksDesc: "Vector chunks",
+
+
+
+
+
+
+        execStatus: "Status",
+
+
+
+
+
+
+        workerNode: "Background worker",
+
+
+
+
+
+
+        timeStats: "Elapsed time",
+
+
+
+
+
+
+        stopwatchDesc: "Live stopwatch",
+
+
+
+
+
+
+        terminalTitle: "live-terminal ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Pause auto-scroll",
+
+
+
+
+
+
+        autoScroll: "Auto-scroll",
+
+
+
+
+
+
+        copyLogs: "Copy logs",
+
+
+
+
+
+
+        clearOutput: "Clear output",
+
+
+
+
+
+
+        logsCopied: "Terminal logs copied to clipboard",
+
+
+
+
+
+
+        logsCleared: "Terminal output cleared",
+
+
+
+
+
+
+        errorDetails: "Error details",
+
+
+
+
+
+
+        cancelTask: "Cancel task",
+
+
+
+
+
+
+        closeDrawer: "Close panel",
+
+
+
+
+
+
+        footerReady: "Live log stream listener ready",
+
+
+
+
+
+
+        doneCollapse: "Done",
+
+
+
+
+
+
+        fallbackStream1: "Token stream flowing through the context graph…",
+
+
+
+
+
+
+        fallbackStream2: "Synthesizing key conceptual assertions & citation anchors…",
+
+
+
+
+
+
+        fallbackStream3: "Validating JSON schema contract and markdown headers…",
+
+
+
+
+
+
+        fallbackStream4: "Flushing async worker output to the database store…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "Queued",
+
+
+
+
+
+
+          queueDesc: "Worker scheduling and resource allocation",
+
+
+
+
+
+
+          prepare: "Preparing",
+
+
+
+
+
+
+          prepareDesc: "Loading context and dependencies",
+
+
+
+
+
+
+          execute: "Executing",
+
+
+
+
+
+
+          executeDesc: "Background process computing",
+
+
+
+
+
+
+          finalize: "Finalizing",
+
+
+
+
+
+
+          finalizeDesc: "Persisting state and results",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

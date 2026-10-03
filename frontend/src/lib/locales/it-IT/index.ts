@@ -534,10 +534,12 @@ export const itIT = {
       viewAll: "Vedi libreria",
     },
     pdfViewer: {
+      restore: "Ripristina",
       open: "Visualizza file originale",
       title: "Anteprima del file originale",
       outline: "Sommario",
       noOutline: "Questo documento non ha un sommario",
+      parsingToc: "Analisi dell'indice…",
       page: "Pagina {{page}} di {{total}}",
       loading: "Caricamento del documento…",
       loadFailed: "Caricamento del documento non riuscito",
@@ -1372,6 +1374,356 @@ export const itIT = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Ispettore attività in tempo reale",
+
+
+
+
+
+
+        completed: "Completato",
+
+
+
+
+
+
+        failed: "Esecuzione non riuscita",
+
+
+
+
+
+
+        canceled: "Annullato",
+
+
+
+
+
+
+        running: "Generazione…",
+
+
+
+
+
+
+        elapsed: "Trascorso",
+
+
+
+
+
+
+        stageFallback: "Esecuzione",
+
+
+
+
+
+
+        processing: "Elaborazione",
+
+
+
+
+
+
+        taskId: "ID attività",
+
+
+
+
+
+
+        openTaskCenter: "Apri gestione attività",
+
+
+
+
+
+
+        stageFlow: "Flusso di fasi",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Input di contesto",
+
+
+
+
+
+
+        modelOutput: "Output del modello",
+
+
+
+
+
+
+        tokenRate: "Velocità token",
+
+
+
+
+
+
+        processedChunks: "Chunk elaborati",
+
+
+
+
+
+
+        chunksDesc: "Chunk vettoriali",
+
+
+
+
+
+
+        execStatus: "Stato",
+
+
+
+
+
+
+        workerNode: "Worker in background",
+
+
+
+
+
+
+        timeStats: "Tempo trascorso",
+
+
+
+
+
+
+        stopwatchDesc: "Cronometro in tempo reale",
+
+
+
+
+
+
+        terminalTitle: "terminale live ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Metti in pausa lo scorrimento",
+
+
+
+
+
+
+        autoScroll: "Scorrimento automatico",
+
+
+
+
+
+
+        copyLogs: "Copia log",
+
+
+
+
+
+
+        clearOutput: "Svuota output",
+
+
+
+
+
+
+        logsCopied: "Log del terminale copiati negli appunti",
+
+
+
+
+
+
+        logsCleared: "Output del terminale svuotato",
+
+
+
+
+
+
+        errorDetails: "Dettagli errore",
+
+
+
+
+
+
+        cancelTask: "Annulla attività",
+
+
+
+
+
+
+        closeDrawer: "Chiudi pannello",
+
+
+
+
+
+
+        footerReady: "Ascolto bidirezionale del flusso di log pronto",
+
+
+
+
+
+
+        doneCollapse: "Completa e comprimi",
+
+
+
+
+
+
+        fallbackStream1: "Flusso di token attraverso il grafo di contesto…",
+
+
+
+
+
+
+        fallbackStream2: "Sintesi delle asserzioni concettuali chiave e ancore di citazione…",
+
+
+
+
+
+
+        fallbackStream3: "Validazione del contratto di schema JSON e delle intestazioni Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Scrittura dell'output asincrono del worker nell'archivio dati…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "In coda",
+
+
+
+
+
+
+          queueDesc: "Pianificazione del worker e allocazione risorse",
+
+
+
+
+
+
+          prepare: "Preparazione",
+
+
+
+
+
+
+          prepareDesc: "Caricamento contesto e dipendenze",
+
+
+
+
+
+
+          execute: "Esecuzione",
+
+
+
+
+
+
+          executeDesc: "Processo in background in calcolo",
+
+
+
+
+
+
+          finalize: "Finalizzazione",
+
+
+
+
+
+
+          finalizeDesc: "Persistenza dello stato e dei risultati",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

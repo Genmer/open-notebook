@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { tasksApi, type TaskEntry, type TaskProgress, type JobLiveProgressResponse } from '@/lib/api/tasks'
 
 export interface LiveTaskInfo {
@@ -39,15 +40,24 @@ export interface TaskLiveInspectorProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   task?: TaskEntry | null
+  /** Bare command-job form: only the id is required; status and live
+   * telemetry are then resolved from the live-progress endpoint. */
   job?: {
     jobId: string
     toolName?: string
+    /** Command name shown in the terminal header (defaults to 'task'). */
+    commandName?: string
+    /** Task type bucket for stage fallback (defaults to 'other'). */
+    type?: string
     status?: string
     startedAt?: number
     progress?: TaskProgress | Record<string, unknown> | null
     errorMessage?: string | null
   } | null
   embedded?: boolean
+  /** Compact variant trims the stage stepper, token telemetry and task id
+   * down to status + progress + the live stream window (for small panels). */
+  variant?: 'full' | 'compact'
   onCancel?: (id: string) => void
   cancelling?: boolean
   onOpenTasksCenter?: () => void
@@ -66,44 +76,15 @@ interface StageStep {
   desc: string
 }
 
-function getStagesForTask(taskType: string, taskName: string): StageStep[] {
-  if (taskName === 'generate_podcast' || taskType === 'podcast') {
-    return [
-      { id: 'prep', title: '素材解析', desc: '检索上下文与声音模型配置' },
-      { id: 'script', title: '对白生成', desc: 'LLM 生成双人多轮深度对谈脚本' },
-      { id: 'tts', title: '语音合成', desc: '逐段调用神经 TTS 引擎渲染音频' },
-      { id: 'export', title: '混音沉淀', desc: '立体声声道混响与播客成片封装' },
-    ]
-  }
-  if (taskName === 'generate_artifact' || taskType === 'artifact') {
-    return [
-      { id: 'prep', title: '提取分析', desc: '检索笔记与来源选区全景上下文' },
-      { id: 'prompt', title: '模型推理', desc: '按工件规约执行结构化生成' },
-      { id: 'validate', title: '格式校验', desc: '验证 Markdown 语法与结构完整性' },
-      { id: 'save', title: '沉淀笔记', desc: '自动写入当前笔记本卡片流' },
-    ]
-  }
-  if (taskType === 'embedding' || taskName.includes('embed')) {
-    return [
-      { id: 'prep', title: '文本读取', desc: '拉取目标源文档或笔记内容' },
-      { id: 'chunk', title: '切片分块', desc: '按 Token 窗口执行重叠滑动分块' },
-      { id: 'embed', title: '向量计算', desc: '调用 Embedding 模型批量生成稠密向量' },
-      { id: 'index', title: '写入索引', desc: '更新 HNSW 向量数据库索引' },
-    ]
-  }
-  if (taskType === 'data_transfer' || taskName.includes('data')) {
-    return [
-      { id: 'prep', title: '环境初始化', desc: '校验目标存储与数据表结构' },
-      { id: 'pack', title: '数据流处理', desc: '序列化记录与文件流转换' },
-      { id: 'transfer', title: '批量传输', desc: '执行原子事务写入或归档压缩' },
-      { id: 'done', title: '完成校验', desc: '校验记录数与完整性哈希' },
-    ]
-  }
+function getStagesForTask(t: (key: string) => string): StageStep[] {
+  // Generic fallback only — the backend live-progress endpoint always returns
+  // a command-specific stage pipeline, so this merely covers a failing or
+  // not-yet-arrived response (stage ids stay stable for index math).
   return [
-    { id: 'queue', title: '队列排队', desc: 'Worker 节点调度与资源分配' },
-    { id: 'prep', title: '环境就绪', desc: '加载上下文与依赖参数' },
-    { id: 'execute', title: '任务执行', desc: '后台核心进程持续运算' },
-    { id: 'finalize', title: '产物归档', desc: '持久化状态与返回执行结果' },
+    { id: 'queue', title: t('tasks.inspector.stages.queue'), desc: t('tasks.inspector.stages.queueDesc') },
+    { id: 'prep', title: t('tasks.inspector.stages.prepare'), desc: t('tasks.inspector.stages.prepareDesc') },
+    { id: 'execute', title: t('tasks.inspector.stages.execute'), desc: t('tasks.inspector.stages.executeDesc') },
+    { id: 'finalize', title: t('tasks.inspector.stages.finalize'), desc: t('tasks.inspector.stages.finalizeDesc') },
   ]
 }
 
@@ -113,10 +94,13 @@ export function TaskLiveInspector({
   task,
   job,
   embedded = false,
+  variant = 'full',
   onCancel,
   cancelling = false,
   onOpenTasksCenter,
 }: TaskLiveInspectorProps) {
+  const { t } = useTranslation()
+
   // 归一化任务对象
   const activeTask: LiveTaskInfo | null = useMemo(() => {
     if (task) {
@@ -134,12 +118,12 @@ export function TaskLiveInspector({
     if (job) {
       return {
         id: job.jobId,
-        name: job.toolName || 'artifact_generation',
-        type: 'artifact',
+        name: job.commandName || job.toolName || 'task',
+        type: job.type ?? 'other',
         target: null,
         status: job.status || 'queued',
         progress: job.progress
-          ? ({ kind: 'artifact', ...(job.progress as Record<string, unknown>) } as TaskProgress)
+          ? ({ kind: job.type ?? 'other', ...(job.progress as Record<string, unknown>) } as TaskProgress)
           : null,
         error_message: job.errorMessage,
         startedAt: job.startedAt,
@@ -151,11 +135,31 @@ export function TaskLiveInspector({
   const taskId = activeTask?.id || ''
   const taskName = activeTask?.name || 'task'
   const taskType = activeTask?.type || 'other'
-  const taskStatus = activeTask?.status || 'unknown'
   const errorMessage = activeTask?.error_message
 
   // 秒表已耗时计时器（秒）
   const [elapsed, setElapsed] = useState(0)
+
+  // 真实拉取后端的实时流式观测与进度数据（未完成时 1.5 秒轮询）
+  const { data: liveData } = useQuery<JobLiveProgressResponse>({
+    queryKey: ['command-live-progress', taskId],
+    queryFn: () => tasksApi.getLiveProgress(taskId),
+    enabled: !!taskId && open,
+    refetchInterval: (query) => {
+      // Prefer backend status; before the first response arrives fall back
+      // to the task snapshot so terminal tasks never schedule an interval.
+      const s = query.state.data?.status || activeTask?.status
+      if (s === 'completed' || s === 'failed' || s === 'canceled') return false
+      // Transport errors (backend down): back off instead of spinning at
+      // full cadence — the next success or remount restores 1.5s polling.
+      if (query.state.error && !query.state.data) return 10000
+      return 1500
+    },
+    staleTime: 1000,
+  })
+
+  // 后端观测是最权威的状态源：live-progress 响应覆盖传入的快照状态
+  const taskStatus = liveData?.status || activeTask?.status || 'unknown'
   const isTerminal =
     taskStatus === 'completed' ||
     taskStatus === 'failed' ||
@@ -188,25 +192,15 @@ export function TaskLiveInspector({
     }
   }, [activeTask, isTerminal])
 
-  // 真实拉取后端的实时流式观测与进度数据（未完成时 1.5 秒轮询）
-  const { data: liveData } = useQuery<JobLiveProgressResponse>({
-    queryKey: ['command-live-progress', taskId],
-    queryFn: () => tasksApi.getLiveProgress(taskId),
-    enabled: !!taskId && open,
-    refetchInterval: (query) => {
-      const s = query.state.data?.status || taskStatus
-      if (s === 'completed' || s === 'failed' || s === 'canceled') return false
-      return 1500
-    },
-    staleTime: 1000,
-  })
-
   // 秒表格式化 MM:SS（优先使用后端计算的真实时间）
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
   const ss = String(elapsed % 60).padStart(2, '0')
   const formattedTime = liveData?.stopwatch || `${mm}:${ss}`
 
   // 阶段流列表（优先使用后端返回的多阶段流水线）
+  // t is deliberately excluded from deps: the mocked (and some real)
+  // useTranslation hooks return a fresh t per render, and a new stages array
+  // per render would re-trigger the log-building effect in a render loop.
   const stages: StageStep[] = useMemo(() => {
     if (liveData?.stages && liveData.stages.length > 0) {
       return liveData.stages.map((s) => ({
@@ -215,8 +209,9 @@ export function TaskLiveInspector({
         desc: s.desc || s.description || '',
       }))
     }
-    return getStagesForTask(taskType, taskName)
-  }, [liveData?.stages, taskType, taskName])
+    return getStagesForTask(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveData?.stages])
 
   // 当前阶段计算
   const currentStageIndex = useMemo(() => {
@@ -390,10 +385,10 @@ export function TaskLiveInspector({
     }
 
     const phrases = [
-      'Token stream streaming through context graph...',
-      'Synthesizing key conceptual assertions & citation anchors...',
-      'Validating JSON schema contract and markdown headers...',
-      'Executing async worker flush to database store...',
+      t('tasks.inspector.fallbackStream1'),
+      t('tasks.inspector.fallbackStream2'),
+      t('tasks.inspector.fallbackStream3'),
+      t('tasks.inspector.fallbackStream4'),
     ]
     const phrase = phrases[currentStageIndex % phrases.length]
 
@@ -408,6 +403,9 @@ export function TaskLiveInspector({
     }, 45)
 
     return () => clearInterval(interval)
+    // t excluded on purpose: a fresh t per render would restart the
+    // typewriter on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveData?.stream_text, currentStageIndex, isTerminal])
 
   // 终端日志自动滚底
@@ -424,12 +422,12 @@ export function TaskLiveInspector({
       .map((l) => `[${l.time}] [${l.level.toUpperCase()}] ${l.message}`)
       .join('\n')
     navigator.clipboard.writeText(text)
-    toast.success('已复制实时终端日志到剪贴板')
+    toast.success(t('tasks.inspector.logsCopied'))
   }
 
   const handleClearLogs = () => {
     setLogs([])
-    toast.info('终端日志视图已清空')
+    toast.info(t('tasks.inspector.logsCleared'))
   }
 
   // 进度百分比（优先使用后端计算的实时百分比）
@@ -459,12 +457,12 @@ export function TaskLiveInspector({
               )}
               <span>
                 {taskStatus === 'completed'
-                  ? '已完成'
+                  ? t('tasks.inspector.completed')
                   : taskStatus === 'failed'
-                    ? '执行失败'
+                    ? t('tasks.inspector.failed')
                     : taskStatus === 'canceled'
-                      ? '已取消'
-                      : '生成中…'}
+                      ? t('tasks.inspector.canceled')
+                      : t('tasks.inspector.running')}
               </span>
             </span>
 
@@ -480,14 +478,14 @@ export function TaskLiveInspector({
                     : 'border-teal/40 bg-teal/10 text-teal animate-pulse'
               )}
             >
-              {stages[Math.min(currentStageIndex, stages.length - 1)]?.title || '任务执行'}
+              {stages[Math.min(currentStageIndex, stages.length - 1)]?.title || t('tasks.inspector.stageFallback')}
             </Badge>
           </div>
 
           {/* 已耗时秒表 */}
           <div className="flex items-center gap-1.5 rounded-md bg-card/80 px-2.5 py-1 text-xs font-mono font-medium text-foreground shadow-2xs border border-border/60">
             <Timer className="h-3.5 w-3.5 text-teal animate-pulse" />
-            <span className="text-muted-foreground">已用时</span>
+            <span className="text-muted-foreground">{t('tasks.inspector.elapsed')}</span>
             <span className="tabular-nums font-semibold">{formattedTime}</span>
           </div>
         </div>
@@ -520,15 +518,15 @@ export function TaskLiveInspector({
               {activeTask?.progress?.stage || stages[Math.min(currentStageIndex, stages.length - 1)]?.desc}
             </span>
             <span className="font-mono tabular-nums">
-              {progressPercent !== null ? `${progressPercent}%` : isTerminal ? '100%' : '处理中'}
+              {progressPercent !== null ? `${progressPercent}%` : isTerminal ? '100%' : t('tasks.inspector.processing')}
             </span>
           </div>
         </div>
 
         {/* 任务 ID 行 */}
-        {taskId && (
+        {taskId && variant !== 'compact' && (
           <div className="flex items-center justify-between text-[11px] text-muted-foreground/80 font-mono pt-0.5">
-            <span className="truncate max-w-[280px]">任务 ID：{taskId}</span>
+            <span className="truncate max-w-[280px]">{t('tasks.inspector.taskId')}：{taskId}</span>
             {onOpenTasksCenter && !embedded && (
               <Button
                 variant="ghost"
@@ -536,7 +534,7 @@ export function TaskLiveInspector({
                 className="h-5 px-1.5 text-[11px] text-teal hover:text-teal gap-1"
                 onClick={onOpenTasksCenter}
               >
-                <span>打开进度管理</span>
+                <span>{t('tasks.inspector.openTaskCenter')}</span>
                 <ExternalLink className="h-3 w-3" />
               </Button>
             )}
@@ -545,11 +543,12 @@ export function TaskLiveInspector({
       </div>
 
       {/* 2. 阶段流指示器 (Stage Flow Stepper) */}
+      {variant !== 'compact' && (
       <div className="rounded-lg border border-border/80 bg-card p-3 space-y-2 shadow-2xs">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-teal" />
-            阶段执行流
+            {t('tasks.inspector.stageFlow')}
           </span>
           <span className="text-[11px] text-muted-foreground">
             {Math.min(currentStageIndex + 1, stages.length)} / {stages.length}
@@ -593,27 +592,29 @@ export function TaskLiveInspector({
           })}
         </div>
       </div>
+      )}
 
       {/* 3. Token 统计与性能指标 (Token & Performance Telemetry) */}
+      {variant !== 'compact' && (
       <div className="grid grid-cols-3 gap-2">
         {tokenStats.isModel ? (
           <>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Prompt Tokens</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.promptTokens')}</span>
               <span className="text-base font-semibold font-mono tabular-nums text-foreground mt-0.5">
                 {(tokenStats.promptTokens ?? 0).toLocaleString()}
               </span>
-              <span className="text-[10px] text-muted-foreground">上下文输入</span>
+              <span className="text-[10px] text-muted-foreground">{t('tasks.inspector.contextInput')}</span>
             </div>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Output Tokens</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.outputTokens')}</span>
               <span className="text-base font-semibold font-mono tabular-nums text-teal mt-0.5">
                 {(tokenStats.completionTokens ?? 0).toLocaleString()}
               </span>
-              <span className="text-[10px] text-muted-foreground">模型推理输出</span>
+              <span className="text-[10px] text-muted-foreground">{t('tasks.inspector.modelOutput')}</span>
             </div>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">推理速率</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.tokenRate')}</span>
               <div className="flex items-baseline gap-1 mt-0.5">
                 <span className="text-base font-semibold font-mono tabular-nums text-foreground">
                   ~{tokenStats.tokensPerSec}
@@ -626,29 +627,30 @@ export function TaskLiveInspector({
         ) : (
           <>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">已处理分块</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.processedChunks')}</span>
               <span className="text-base font-semibold font-mono tabular-nums text-teal mt-0.5">
                 {tokenStats.chunks} / {tokenStats.totalChunks || '—'}
               </span>
-              <span className="text-[10px] text-muted-foreground">向量处理块数</span>
+              <span className="text-[10px] text-muted-foreground">{t('tasks.inspector.chunksDesc')}</span>
             </div>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">执行状态</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.execStatus')}</span>
               <span className="text-base font-semibold font-mono tabular-nums text-foreground mt-0.5 capitalize">
                 {taskStatus}
               </span>
-              <span className="text-[10px] text-muted-foreground">后台 Worker 节点</span>
+              <span className="text-[10px] text-muted-foreground">{t('tasks.inspector.workerNode')}</span>
             </div>
             <div className="flex flex-col rounded-lg border border-border/80 bg-card p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">耗时统计</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('tasks.inspector.timeStats')}</span>
               <span className="text-base font-semibold font-mono tabular-nums text-foreground mt-0.5">
                 {formattedTime}
               </span>
-              <span className="text-[10px] text-muted-foreground">持续秒表跟踪</span>
+              <span className="text-[10px] text-muted-foreground">{t('tasks.inspector.stopwatchDesc')}</span>
             </div>
           </>
         )}
       </div>
+      )}
 
       {/* 4. 终端风格的实时输出窗 (Live Terminal Window) */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-950 shadow-md overflow-hidden flex flex-col">
@@ -662,7 +664,7 @@ export function TaskLiveInspector({
             </div>
             <div className="flex items-center gap-1.5 text-zinc-400 font-mono text-[11px] ml-1">
               <Terminal className="h-3 w-3 text-teal" />
-              <span>open-notebook:live-terminal ~ {taskName}</span>
+              <span>{t('tasks.inspector.terminalTitle', { name: taskName })}</span>
             </div>
           </div>
 
@@ -675,7 +677,7 @@ export function TaskLiveInspector({
                 autoScroll && 'text-teal'
               )}
               onClick={() => setAutoScroll((v) => !v)}
-              title={autoScroll ? '暂停滚屏' : '自动滚屏'}
+              title={autoScroll ? t('tasks.inspector.pauseScroll') : t('tasks.inspector.autoScroll')}
             >
               <Zap className="h-3 w-3" />
             </Button>
@@ -684,7 +686,7 @@ export function TaskLiveInspector({
               size="icon"
               className="h-6 w-6 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
               onClick={handleCopyLogs}
-              title="复制日志"
+              title={t('tasks.inspector.copyLogs')}
             >
               <Copy className="h-3 w-3" />
             </Button>
@@ -693,7 +695,7 @@ export function TaskLiveInspector({
               size="icon"
               className="h-6 w-6 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
               onClick={handleClearLogs}
-              title="清空输出"
+              title={t('tasks.inspector.clearOutput')}
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -701,7 +703,12 @@ export function TaskLiveInspector({
         </div>
 
         {/* Terminal Log Body */}
-        <div className="p-3 font-mono text-[11px] leading-relaxed max-h-56 min-h-36 overflow-y-auto space-y-1.5 text-zinc-300">
+        <div
+          className={cn(
+            'p-3 font-mono text-[11px] leading-relaxed overflow-y-auto space-y-1.5 text-zinc-300',
+            variant === 'compact' ? 'max-h-40 min-h-20' : 'max-h-56 min-h-36'
+          )}
+        >
           {logs.map((log) => {
             let badgeClass = 'text-blue-400'
             if (log.level === 'stage') badgeClass = 'text-purple-400 font-semibold'
@@ -745,7 +752,7 @@ export function TaskLiveInspector({
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive space-y-1">
           <div className="font-semibold flex items-center gap-1.5">
             <XCircle className="h-4 w-4 shrink-0" />
-            <span>执行异常详情</span>
+            <span>{t('tasks.inspector.errorDetails')}</span>
           </div>
           <p className="font-mono whitespace-pre-wrap break-words text-[11px] opacity-90 pl-5.5">
             {errorMessage}
@@ -781,7 +788,7 @@ export function TaskLiveInspector({
             </div>
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                实时任务执行检视器 (Live Inspector)
+                {t('tasks.inspector.title')}
               </h2>
               <p className="text-xs text-muted-foreground truncate max-w-xs">
                 {taskName} {activeTask?.target ? `· ${activeTask.target}` : ''}
@@ -799,7 +806,7 @@ export function TaskLiveInspector({
                 disabled={cancelling}
               >
                 {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
-                <span>取消任务</span>
+                <span>{t('tasks.inspector.cancelTask')}</span>
               </Button>
             )}
 
@@ -808,7 +815,7 @@ export function TaskLiveInspector({
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-md"
               onClick={() => onOpenChange?.(false)}
-              aria-label="关闭抽屉"
+              aria-label={t('tasks.inspector.closeDrawer')}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -824,7 +831,7 @@ export function TaskLiveInspector({
         <div className="border-t border-border/80 px-5 py-3 flex items-center justify-between bg-muted/20">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Zap className="h-3.5 w-3.5 text-teal" />
-            <span>实时日志流双向监听已就绪</span>
+            <span>{t('tasks.inspector.footerReady')}</span>
           </div>
 
           <Button
@@ -833,7 +840,7 @@ export function TaskLiveInspector({
             className="h-8 text-xs"
             onClick={() => onOpenChange?.(false)}
           >
-            完成并收起
+            {t('tasks.inspector.doneCollapse')}
           </Button>
         </div>
       </div>

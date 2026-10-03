@@ -25,6 +25,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
 import { dataTransferApi, type ExportScope } from '@/lib/api/dataTransfer'
 import {
   useDeleteExportPackage,
@@ -127,6 +128,15 @@ export function ExportCard() {
               stageLabels={stageLabels}
               fallbackLabel={t('dataManagement.export.stages.collecting')}
             />
+            {data?.command_id && (
+              <div data-testid="export-live-inspector">
+                <TaskLiveInspector
+                  embedded
+                  variant="compact"
+                  job={{ jobId: data.command_id, commandName: 'export_data', type: 'data_transfer' }}
+                />
+              </div>
+            )}
           </div>
         )}
 

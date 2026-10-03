@@ -534,10 +534,12 @@ export const caES = {
       viewAll: "Mostra la biblioteca",
     },
     pdfViewer: {
+      restore: "Restaura",
       open: "Mostra el fitxer original",
       title: "Previsualització del fitxer original",
       outline: "Índex",
       noOutline: "Aquest document no té índex",
+      parsingToc: "Analitzant l'índex…",
       page: "Pàgina {{page}} de {{total}}",
       loading: "S'està carregant el document…",
       loadFailed: "No s'ha pogut carregar el document",
@@ -1372,6 +1374,356 @@ export const caES = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Inspector de tasques en directe",
+
+
+
+
+
+
+        completed: "Completat",
+
+
+
+
+
+
+        failed: "Error d'execució",
+
+
+
+
+
+
+        canceled: "Cancel·lat",
+
+
+
+
+
+
+        running: "Generant…",
+
+
+
+
+
+
+        elapsed: "Transcorregut",
+
+
+
+
+
+
+        stageFallback: "Executant",
+
+
+
+
+
+
+        processing: "Processant",
+
+
+
+
+
+
+        taskId: "ID de tasca",
+
+
+
+
+
+
+        openTaskCenter: "Obre la gestió de tasques",
+
+
+
+
+
+
+        stageFlow: "Flux d'etapes",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Entrada de context",
+
+
+
+
+
+
+        modelOutput: "Sortida del model",
+
+
+
+
+
+
+        tokenRate: "Velocitat de tokens",
+
+
+
+
+
+
+        processedChunks: "Fragments processats",
+
+
+
+
+
+
+        chunksDesc: "Fragments vectorials",
+
+
+
+
+
+
+        execStatus: "Estat",
+
+
+
+
+
+
+        workerNode: "Worker en segon pla",
+
+
+
+
+
+
+        timeStats: "Temps transcorregut",
+
+
+
+
+
+
+        stopwatchDesc: "Cronòmetre en directe",
+
+
+
+
+
+
+        terminalTitle: "terminal en directe ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Atura el desplaçament",
+
+
+
+
+
+
+        autoScroll: "Desplaçament automàtic",
+
+
+
+
+
+
+        copyLogs: "Copia els registres",
+
+
+
+
+
+
+        clearOutput: "Esborra la sortida",
+
+
+
+
+
+
+        logsCopied: "Registres del terminal copiats al porta-retalls",
+
+
+
+
+
+
+        logsCleared: "Sortida del terminal esborrada",
+
+
+
+
+
+
+        errorDetails: "Detalls de l'error",
+
+
+
+
+
+
+        cancelTask: "Cancel·la la tasca",
+
+
+
+
+
+
+        closeDrawer: "Tanca el panell",
+
+
+
+
+
+
+        footerReady: "Escolta bidireccional del flux de registres a punt",
+
+
+
+
+
+
+        doneCollapse: "Fet i replega",
+
+
+
+
+
+
+        fallbackStream1: "Flux de tokens travessant el graf de context…",
+
+
+
+
+
+
+        fallbackStream2: "Sintetitzant afirmacions conceptuals clau i àncores de cita…",
+
+
+
+
+
+
+        fallbackStream3: "Validant el contracte d'esquema JSON i capçaleres Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Escrivint la sortida asíncrona del worker al magatzem de dades…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "En cua",
+
+
+
+
+
+
+          queueDesc: "Planificació del worker i assignació de recursos",
+
+
+
+
+
+
+          prepare: "Preparació",
+
+
+
+
+
+
+          prepareDesc: "Carregant context i dependències",
+
+
+
+
+
+
+          execute: "Execució",
+
+
+
+
+
+
+          executeDesc: "Procés en segon pla calculant",
+
+
+
+
+
+
+          finalize: "Finalització",
+
+
+
+
+
+
+          finalizeDesc: "Persistint estat i resultats",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

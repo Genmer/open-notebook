@@ -686,6 +686,16 @@ class SourceSectionAnalysisResponse(BaseModel):
     )
 
 
+class SourceSectionAnalysisSubmitResponse(BaseModel):
+    """Async handshake for POST /sources/{id}/sections/analyze: the analysis
+    itself lands in the command job result (GET /commands/jobs/{job_id})."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    job_id: str = Field(..., description="Submitted command job id")
+    status: str = Field("submitted", description="Submission status")
+
+
 # Source status response
 class SourceInsightJob(BaseModel):
     # One run_transformation command for this source (recent ones only; the

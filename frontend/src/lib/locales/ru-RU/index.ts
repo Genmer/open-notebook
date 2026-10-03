@@ -534,10 +534,12 @@ export const ruRU = {
       viewAll: "Открыть библиотеку",
     },
     pdfViewer: {
+      restore: "Восстановить",
       open: "Открыть исходный файл",
       title: "Просмотр исходного файла",
       outline: "Оглавление",
       noOutline: "У этого документа нет оглавления",
+      parsingToc: "Анализ оглавления…",
       page: "Страница {{page}} из {{total}}",
       loading: "Загрузка документа…",
       loadFailed: "Не удалось загрузить документ",
@@ -1372,6 +1374,356 @@ export const ruRU = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Инспектор задач в реальном времени",
+
+
+
+
+
+
+        completed: "Завершено",
+
+
+
+
+
+
+        failed: "Сбой выполнения",
+
+
+
+
+
+
+        canceled: "Отменено",
+
+
+
+
+
+
+        running: "Генерация…",
+
+
+
+
+
+
+        elapsed: "Прошло",
+
+
+
+
+
+
+        stageFallback: "Выполнение",
+
+
+
+
+
+
+        processing: "Обработка",
+
+
+
+
+
+
+        taskId: "ID задачи",
+
+
+
+
+
+
+        openTaskCenter: "Открыть центр задач",
+
+
+
+
+
+
+        stageFlow: "Поток этапов",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Входной контекст",
+
+
+
+
+
+
+        modelOutput: "Вывод модели",
+
+
+
+
+
+
+        tokenRate: "Скорость токенов",
+
+
+
+
+
+
+        processedChunks: "Обработанные фрагменты",
+
+
+
+
+
+
+        chunksDesc: "Векторные фрагменты",
+
+
+
+
+
+
+        execStatus: "Статус",
+
+
+
+
+
+
+        workerNode: "Фоновый Worker",
+
+
+
+
+
+
+        timeStats: "Время выполнения",
+
+
+
+
+
+
+        stopwatchDesc: "Секундомер в реальном времени",
+
+
+
+
+
+
+        terminalTitle: "live-терминал ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Приостановить прокрутку",
+
+
+
+
+
+
+        autoScroll: "Автопрокрутка",
+
+
+
+
+
+
+        copyLogs: "Копировать журнал",
+
+
+
+
+
+
+        clearOutput: "Очистить вывод",
+
+
+
+
+
+
+        logsCopied: "Журнал терминала скопирован в буфер обмена",
+
+
+
+
+
+
+        logsCleared: "Вывод терминала очищен",
+
+
+
+
+
+
+        errorDetails: "Подробности ошибки",
+
+
+
+
+
+
+        cancelTask: "Отменить задачу",
+
+
+
+
+
+
+        closeDrawer: "Закрыть панель",
+
+
+
+
+
+
+        footerReady: "Двусторонний прослушиватель потока журналов готов",
+
+
+
+
+
+
+        doneCollapse: "Готово и свернуть",
+
+
+
+
+
+
+        fallbackStream1: "Поток токенов проходит через граф контекста…",
+
+
+
+
+
+
+        fallbackStream2: "Синтез ключевых концептуальных утверждений и цитатных якорей…",
+
+
+
+
+
+
+        fallbackStream3: "Проверка контракта JSON-схемы и заголовков Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Асинхронная запись вывода воркера в хранилище данных…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "В очереди",
+
+
+
+
+
+
+          queueDesc: "Планирование воркера и выделение ресурсов",
+
+
+
+
+
+
+          prepare: "Подготовка",
+
+
+
+
+
+
+          prepareDesc: "Загрузка контекста и зависимостей",
+
+
+
+
+
+
+          execute: "Выполнение",
+
+
+
+
+
+
+          executeDesc: "Фоновый процесс вычисляет",
+
+
+
+
+
+
+          finalize: "Завершение",
+
+
+
+
+
+
+          finalizeDesc: "Сохранение состояния и результатов",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

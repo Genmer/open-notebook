@@ -995,3 +995,106 @@ def test_task_entry_and_progress_model_backward_compatibility():
     assert dumped["progress"]["stopwatch"] == "00:18"
     assert dumped["progress"]["token_count"] == 2100
 
+
+
+# ---------------------------------------------------------------------------
+# Section analysis (analyze_source_section) live progress
+# ---------------------------------------------------------------------------
+
+
+class SectionLiveRecorder:
+    """SQL router for get_live_progress on an analyze_source_section row."""
+
+    def __init__(self, command_row, state_rows=None, usage_rows=None):
+        self.command_row = command_row
+        self.state_rows = state_rows if state_rows is not None else []
+        self.usage_rows = usage_rows if usage_rows is not None else []
+        self.state_reads = 0
+
+    async def __call__(self, sql, params=None):
+        if "FROM command WHERE id = $id" in sql:
+            return [self.command_row]
+        if "SELECT id, title FROM source" in sql:
+            return [{"id": "source:s1", "title": "真题册.pdf"}]
+        if "SELECT progress FROM $rid" in sql:
+            self.state_reads += 1
+            return self.state_rows
+        if "FROM model_usage" in sql:
+            return self.usage_rows
+        raise AssertionError(f"Unexpected query: {sql[:120]}")
+
+
+def _section_command_row(status="running"):
+    return {
+        "id": "command:sec1",
+        "name": "analyze_source_section",
+        "args": {"source_id": "source:s1"},
+        "status": status,
+        "error_message": None,
+        "result": None,
+        "created": "2026-10-02T10:00:00Z",
+        "updated": "2026-10-02T10:00:30Z",
+    }
+
+
+@pytest.mark.asyncio
+@patch("api.task_service.repo_query", new_callable=AsyncMock)
+async def test_section_analysis_live_progress_streams_tail(repo_query):
+    from api.task_service import get_live_progress
+
+    tail = "x" * 600 + "章节小结：需求工程两分类。"  # 500-char window keeps the tail
+    recorder = SectionLiveRecorder(
+        _section_command_row(),
+        state_rows=[
+            {
+                "progress": {
+                    "stage": "streaming",
+                    "percent": 64,
+                    "message": "Model is analyzing the section",
+                    "stream_tail": tail,
+                }
+            }
+        ],
+    )
+    async def _route(sql, params=None):
+        return await recorder(sql, params)
+
+    repo_query.side_effect = _route
+
+    data = await get_live_progress("command:sec1")
+
+    assert data["status"] == "running"
+    assert data["percent"] == 64
+    assert data["stream_text"].endswith("章节小结：需求工程两分类。")
+    assert len(data["stream_text"]) <= 500
+    # 4-stage pipeline with the streaming stage active
+    assert [s["id"] for s in data["stages"]] == [
+        "fetching",
+        "prompting",
+        "streaming",
+        "done",
+    ]
+    assert data["stage_index"] == 2
+    assert data["stages"][2]["status"] == "active"
+    # Section analysis is an LLM task: token telemetry is enabled
+    assert data["tokens"]["is_model"] is True
+
+
+@pytest.mark.asyncio
+@patch("api.task_service.repo_query", new_callable=AsyncMock)
+async def test_section_analysis_live_progress_completed_skips_state(repo_query):
+    from api.task_service import get_live_progress
+
+    recorder = SectionLiveRecorder(_section_command_row(status="completed"))
+    async def _route(sql, params=None):
+        return await recorder(sql, params)
+
+    repo_query.side_effect = _route
+
+    data = await get_live_progress("command:sec1")
+
+    assert data["status"] == "completed"
+    assert data["percent"] == 100
+    assert data["stage_index"] == 3
+    assert recorder.state_reads == 0
+    assert "章节分析已完成" in data["stream_text"]

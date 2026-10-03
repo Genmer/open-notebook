@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { SaveNoteDialog } from '@/components/sources/SaveNoteDialog'
+import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
 import { sourcesApi } from '@/lib/api/sources'
 import { useSectionAnalysis } from '@/lib/hooks/use-section-analysis'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -27,6 +28,7 @@ import {
   extractPagesText,
   flattenOutline,
   isPdfBuffer,
+  parseTocFromPages,
   sectionEndPage,
   type PdfOutlineEntry,
 } from '@/lib/pdf/pdf-utils'
@@ -39,6 +41,11 @@ interface PdfSourceViewerProps {
   filePath?: string | null
   /** Notebook context for the "save analysis as note" flow; hides it when absent (classic page). */
   notebookId?: string
+  /**
+   * Render embedded in the content pane (no dialog) — the "show source
+   * file" toggle replaces the parsed text in place.
+   */
+  inline?: boolean
 }
 
 interface SectionAnalysis {
@@ -54,6 +61,9 @@ const ZOOM_STEPS = [0.6, 0.8, 1, 1.25, 1.5, 2, 2.5]
  * the document outline for navigation and a click-triggered AI analysis per
  * outline section (result savable as a note when a notebook context exists).
  *
+ * Two shells: a modal dialog (default) or `inline` — embedded directly in
+ * the source content pane, replacing the parsed text while toggled on.
+ *
  * Loaded via next/dynamic + ssr:false (pdf.js is browser-only).
  */
 export default function PdfSourceViewer({
@@ -62,6 +72,7 @@ export default function PdfSourceViewer({
   sourceId,
   filePath,
   notebookId,
+  inline = false,
 }: PdfSourceViewerProps) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -72,9 +83,12 @@ export default function PdfSourceViewer({
   const [scale, setScale] = useState(1)
   const [outline, setOutline] = useState<PdfOutlineEntry[] | null>(null)
   const [outlineOpen, setOutlineOpen] = useState(true)
+  // True while the printed-TOC fallback is scanning (no PDF bookmarks).
+  const [parsingToc, setParsingToc] = useState(false)
 
-  // AI analysis state: results cached per outline entry key; one request in
-  // flight (hook isPending disables the sibling Sparkles buttons).
+  // AI analysis state: results cached per outline entry key; one job in
+  // flight (isAnalyzing disables the sibling Sparkles buttons). The job id
+  // drives the live progress inspector in the analysis panel.
   const [analysisByKey, setAnalysisByKey] = useState<Record<string, SectionAnalysis>>({})
   const [emptyTextKeys, setEmptyTextKeys] = useState<Record<string, true>>({})
   const [analyzingKey, setAnalyzingKey] = useState<string | null>(null)
@@ -82,7 +96,19 @@ export default function PdfSourceViewer({
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
 
-  const analysis = useSectionAnalysis()
+  const analysis = useSectionAnalysis({
+    onCompleted: (key, result) => {
+      setAnalysisByKey((prev) => ({
+        ...prev,
+        [key]: { markdown: result.analysis_markdown, truncated: !!result.truncated },
+      }))
+      setAnalyzingKey(null)
+    },
+    onFailed: (key) => {
+      setErrorKey(key)
+      setAnalyzingKey(null)
+    },
+  })
 
   // "still mounted" guard for the async load/extract chains.
   const mountedRef = useRef(true)
@@ -99,6 +125,7 @@ export default function PdfSourceViewer({
     setCurrentPage(1)
     setScale(1)
     setOutline(null)
+    setParsingToc(false)
     setAnalysisByKey({})
     setEmptyTextKeys({})
     setAnalyzingKey(null)
@@ -140,8 +167,25 @@ export default function PdfSourceViewer({
         setDoc(loaded)
         const rawOutline = await loaded.getOutline()
         if (cancelled) return
-        setOutline(rawOutline ? await flattenOutline(loaded, rawOutline) : [])
+        // The page renders immediately; the outline (or its printed-TOC
+        // fallback parse) fills in asynchronously.
         setStatus('ready')
+        if (rawOutline?.length) {
+          setOutline(await flattenOutline(loaded, rawOutline))
+        } else {
+          setOutline([])
+          setParsingToc(true)
+          try {
+            const parsed = await parseTocFromPages(loaded)
+            if (cancelled) return
+            setOutline(parsed)
+          } catch {
+            // A failed TOC parse leaves the empty outline in place; the
+            // document itself is already viewable.
+          } finally {
+            if (!cancelled) setParsingToc(false)
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to load source file for preview:', err)
@@ -210,7 +254,7 @@ export default function PdfSourceViewer({
 
   const analyzeSection = useCallback(
     async (entry: PdfOutlineEntry, index: number) => {
-      if (!doc || entry.pageNumber == null || analysis.isPending) return
+      if (!doc || entry.pageNumber == null || analysis.isAnalyzing) return
       const key = entryKey(entry, index)
       if (emptyTextKeys[key]) return // scanned page range: nothing to analyze
       setActiveKey(key)
@@ -230,42 +274,23 @@ export default function PdfSourceViewer({
       }
 
       setAnalyzingKey(key)
-      analysis.mutate(
-        {
-          sourceId,
-          sectionTitle: entry.title,
-          sectionText,
-          pageStart: startPage,
-          pageEnd: endPage,
-        },
-        {
-          onSuccess: (result) => {
-            setAnalysisByKey((prev) => ({
-              ...prev,
-              [key]: { markdown: result.analysis_markdown, truncated: result.truncated },
-            }))
-            setAnalyzingKey(null)
-          },
-          onError: () => {
-            setErrorKey(key)
-            setAnalyzingKey(null)
-          },
-        }
-      )
+      void analysis.submit({
+        key,
+        sourceId,
+        sectionTitle: entry.title,
+        sectionText,
+        pageStart: startPage,
+        pageEnd: endPage,
+      })
     },
     [doc, outline, analysis, emptyTextKeys, entryKey, sourceId]
   )
 
   if (!open) return null
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-[95vw] sm:max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col gap-0"
-        data-testid="pdf-viewer-dialog"
-      >
-        <DialogTitle className="sr-only">{t('sources.pdfViewer.title')}</DialogTitle>
-
+  // Shared toolbar/body/save-dialog markup — wrapped by the shell below.
+  const viewerBody = (
+    <>
         {/* Toolbar */}
         <div className="flex h-12 shrink-0 items-center gap-1 border-b px-2">
           <Button
@@ -341,14 +366,38 @@ export default function PdfSourceViewer({
         </div>
 
         {/* Body */}
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* Outline sidebar */}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {/* Floating outline panel — overlays the page instead of squeezing
+              the canvas width (WPS-style). */}
           {status === 'ready' && outlineOpen && (
             <aside
-              className="w-64 shrink-0 overflow-y-auto border-r bg-muted/20 p-2"
+              className="absolute bottom-0 left-0 top-0 z-10 flex w-64 flex-col border-r bg-background/95 shadow-xl backdrop-blur-sm"
               data-testid="pdf-outline"
+              aria-label={t('sources.pdfViewer.outline')}
             >
-              {!outline || outline.length === 0 ? (
+              <div className="flex h-9 shrink-0 items-center justify-between border-b px-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('sources.pdfViewer.outline')}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setOutlineOpen(false)}
+                  aria-label={t('sources.pdfViewer.close')}
+                  title={t('sources.pdfViewer.close')}
+                  data-testid="pdf-outline-close"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {parsingToc ? (
+                <div className="flex items-center gap-2 px-2 py-6 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('sources.pdfViewer.parsingToc')}
+                </div>
+              ) : !outline || outline.length === 0 ? (
                 <p className="px-2 py-6 text-center text-xs text-muted-foreground">
                   {t('sources.pdfViewer.noOutline')}
                 </p>
@@ -395,7 +444,7 @@ export default function PdfSourceViewer({
                       onClick={() => void analyzeSection(entry, index)}
                       disabled={
                         entry.pageNumber == null ||
-                        analysis.isPending ||
+                        analysis.isAnalyzing ||
                         !!emptyTextKeys[key] ||
                         isAnalyzing
                       }
@@ -417,6 +466,7 @@ export default function PdfSourceViewer({
                 )
               })
               )}
+              </div>
             </aside>
           )}
 
@@ -462,7 +512,7 @@ export default function PdfSourceViewer({
                     size="icon"
                     className="h-6 w-6"
                     onClick={() => void analyzeSection(activeEntry, activeEntryIndex)}
-                    disabled={analysis.isPending || !!emptyTextKeys[activeKey]}
+                    disabled={analysis.isAnalyzing || !!emptyTextKeys[activeKey]}
                     aria-label={t('sources.fileView.analyzeSection')}
                     title={t('sources.fileView.analyzeSection')}
                   >
@@ -473,12 +523,27 @@ export default function PdfSourceViewer({
               {emptyTextKeys[activeKey] && !errorKey && (
                 <p className="text-xs text-muted-foreground">{t('sources.noContent')}</p>
               )}
-              {analyzingKey === activeKey && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t('sources.fileView.analyzing')}
-                </div>
-              )}
+              {analyzingKey === activeKey &&
+                analysis.activeJob?.key !== activeKey && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t('sources.fileView.analyzing')}
+                  </div>
+                )}
+              {analyzingKey === activeKey &&
+                analysis.activeJob?.key === activeKey && (
+                  <div data-testid="pdf-analysis-live">
+                    <TaskLiveInspector
+                      embedded
+                      variant="compact"
+                      job={{
+                        jobId: analysis.activeJob.jobId,
+                        commandName: 'analyze_source_section',
+                        type: 'section_analysis',
+                      }}
+                    />
+                  </div>
+                )}
               {activeAnalysis && (
                 <>
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -537,6 +602,29 @@ export default function PdfSourceViewer({
             initialMode="note"
           />
         )}
+    </>
+  )
+
+  // Embedded in the content pane: same chrome, no dialog shell.
+  if (inline) {
+    return (
+      <div
+        className="flex h-[calc(100vh-16rem)] min-h-[480px] flex-col overflow-hidden rounded-md border"
+        data-testid="pdf-viewer-inline"
+      >
+        {viewerBody}
+      </div>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-[95vw] sm:max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col gap-0"
+        data-testid="pdf-viewer-dialog"
+      >
+        <DialogTitle className="sr-only">{t('sources.pdfViewer.title')}</DialogTitle>
+        {viewerBody}
       </DialogContent>
     </Dialog>
   )

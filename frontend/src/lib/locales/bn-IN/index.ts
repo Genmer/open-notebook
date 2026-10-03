@@ -534,10 +534,12 @@ export const bnIN = {
       viewAll: "লাইব্রেরি দেখুন",
     },
     pdfViewer: {
+      restore: "পুনরুদ্ধার",
       open: "মূল ফাইল দেখুন",
       title: "মূল ফাইলের প্রিভিউ",
       outline: "সূচিপত্র",
       noOutline: "এই নথিতে কোনো সূচিপত্র নেই",
+      parsingToc: "সূচিপত্র বিশ্লেষণ চলছে…",
       page: "{{total}} পৃষ্ঠার মধ্যে {{page}} নম্বর পৃষ্ঠা",
       loading: "নথি লোড হচ্ছে…",
       loadFailed: "নথি লোড করা ব্যর্থ হয়েছে",
@@ -1373,6 +1375,356 @@ export const bnIN = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "লাইভ টাস্ক ইন্সপেক্টর",
+
+
+
+
+
+
+        completed: "সম্পন্ন",
+
+
+
+
+
+
+        failed: "সম্পাদন ব্যর্থ",
+
+
+
+
+
+
+        canceled: "বাতিল হয়েছে",
+
+
+
+
+
+
+        running: "তৈরি হচ্ছে…",
+
+
+
+
+
+
+        elapsed: "অতিবাহিত",
+
+
+
+
+
+
+        stageFallback: "চলছে",
+
+
+
+
+
+
+        processing: "প্রক্রিয়াধীন",
+
+
+
+
+
+
+        taskId: "টাস্ক আইডি",
+
+
+
+
+
+
+        openTaskCenter: "টাস্ক ম্যানেজমেন্ট খুলুন",
+
+
+
+
+
+
+        stageFlow: "পর্যায় প্রবাহ",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "প্রসঙ্গ ইনপুট",
+
+
+
+
+
+
+        modelOutput: "মডেল আউটপুট",
+
+
+
+
+
+
+        tokenRate: "টোকেন হার",
+
+
+
+
+
+
+        processedChunks: "প্রক্রিয়াকৃত খণ্ড",
+
+
+
+
+
+
+        chunksDesc: "ভেক্টর খণ্ড",
+
+
+
+
+
+
+        execStatus: "স্ট্যাটাস",
+
+
+
+
+
+
+        workerNode: "ব্যাকগ্রাউন্ড ওয়ার্কার",
+
+
+
+
+
+
+        timeStats: "অতিবাহিত সময়",
+
+
+
+
+
+
+        stopwatchDesc: "লাইভ স্টপওয়াচ",
+
+
+
+
+
+
+        terminalTitle: "লাইভ টার্মিনাল ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "স্ক্রল থামান",
+
+
+
+
+
+
+        autoScroll: "স্বয়ংক্রিয় স্ক্রল",
+
+
+
+
+
+
+        copyLogs: "লগ কপি করুন",
+
+
+
+
+
+
+        clearOutput: "আউটপুট মুছুন",
+
+
+
+
+
+
+        logsCopied: "টার্মিনাল লগ ক্লিপবোর্ডে কপি হয়েছে",
+
+
+
+
+
+
+        logsCleared: "টার্মিনাল আউটপুট মুছে ফেলা হয়েছে",
+
+
+
+
+
+
+        errorDetails: "ত্রুটির বিবরণ",
+
+
+
+
+
+
+        cancelTask: "টাস্ক বাতিল করুন",
+
+
+
+
+
+
+        closeDrawer: "প্যানেল বন্ধ করুন",
+
+
+
+
+
+
+        footerReady: "লাইভ লগ স্ট্রিম শ্রোতা প্রস্তুত",
+
+
+
+
+
+
+        doneCollapse: "সম্পন্ন ও সংকুচিত করুন",
+
+
+
+
+
+
+        fallbackStream1: "টোকেন প্রবাহ প্রসঙ্গ গ্রাফের মধ্য দিয়ে যাচ্ছে…",
+
+
+
+
+
+
+        fallbackStream2: "মূল ধারণাগত দাবি ও উদ্ধৃতি নোঙর সংশ্লেষিত হচ্ছে…",
+
+
+
+
+
+
+        fallbackStream3: "JSON স্কিমা চুক্তি ও Markdown শিরোনাম যাচাই হচ্ছে…",
+
+
+
+
+
+
+        fallbackStream4: "অ্যাসিঙ্ক্রোনাস ওয়ার্কার আউটপুট ডেটা স্টোরে লেখা হচ্ছে…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "সারিতে",
+
+
+
+
+
+
+          queueDesc: "ওয়ার্কার শিডিউলিং ও রিসোর্স বণ্টন",
+
+
+
+
+
+
+          prepare: "প্রস্তুতি",
+
+
+
+
+
+
+          prepareDesc: "প্রসঙ্গ ও নির্ভরতা লোড হচ্ছে",
+
+
+
+
+
+
+          execute: "সম্পাদন",
+
+
+
+
+
+
+          executeDesc: "ব্যাকগ্রাউন্ড প্রসেস গণনা করছে",
+
+
+
+
+
+
+          finalize: "চূড়ান্তকরণ",
+
+
+
+
+
+
+          finalizeDesc: "স্টেট ও ফলাফল সংরক্ষিত হচ্ছে",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

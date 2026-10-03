@@ -534,10 +534,12 @@ export const zhCN = {
       viewAll: "查看全库",
     },
     pdfViewer: {
+      restore: "恢复",
       open: "以源文件展示",
       title: "源文件预览",
       outline: "目录",
       noOutline: "该文档没有目录",
+      parsingToc: "正在解析目录…",
       page: "第 {{page}} / {{total}} 页",
       loading: "正在加载文档…",
       loadFailed: "文档加载失败",
@@ -1372,6 +1374,356 @@ export const zhCN = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "实时任务执行检视器",
+
+
+
+
+
+
+        completed: "已完成",
+
+
+
+
+
+
+        failed: "执行失败",
+
+
+
+
+
+
+        canceled: "已取消",
+
+
+
+
+
+
+        running: "生成中…",
+
+
+
+
+
+
+        elapsed: "已用时",
+
+
+
+
+
+
+        stageFallback: "任务执行",
+
+
+
+
+
+
+        processing: "处理中",
+
+
+
+
+
+
+        taskId: "任务 ID",
+
+
+
+
+
+
+        openTaskCenter: "打开进度管理",
+
+
+
+
+
+
+        stageFlow: "阶段执行流",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "上下文输入",
+
+
+
+
+
+
+        modelOutput: "模型推理输出",
+
+
+
+
+
+
+        tokenRate: "推理速率",
+
+
+
+
+
+
+        processedChunks: "已处理分块",
+
+
+
+
+
+
+        chunksDesc: "向量处理块数",
+
+
+
+
+
+
+        execStatus: "执行状态",
+
+
+
+
+
+
+        workerNode: "后台 Worker 节点",
+
+
+
+
+
+
+        timeStats: "耗时统计",
+
+
+
+
+
+
+        stopwatchDesc: "持续秒表跟踪",
+
+
+
+
+
+
+        terminalTitle: "实时终端 ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "暂停滚屏",
+
+
+
+
+
+
+        autoScroll: "自动滚屏",
+
+
+
+
+
+
+        copyLogs: "复制日志",
+
+
+
+
+
+
+        clearOutput: "清空输出",
+
+
+
+
+
+
+        logsCopied: "已复制实时终端日志到剪贴板",
+
+
+
+
+
+
+        logsCleared: "终端日志视图已清空",
+
+
+
+
+
+
+        errorDetails: "执行异常详情",
+
+
+
+
+
+
+        cancelTask: "取消任务",
+
+
+
+
+
+
+        closeDrawer: "关闭抽屉",
+
+
+
+
+
+
+        footerReady: "实时日志流双向监听已就绪",
+
+
+
+
+
+
+        doneCollapse: "完成并收起",
+
+
+
+
+
+
+        fallbackStream1: "令牌流正在流经上下文图谱…",
+
+
+
+
+
+
+        fallbackStream2: "正在综合关键概念断言与引用锚点…",
+
+
+
+
+
+
+        fallbackStream3: "正在校验 JSON 结构契约与标题层级…",
+
+
+
+
+
+
+        fallbackStream4: "正在执行异步工作流写回数据库存储…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "队列排队",
+
+
+
+
+
+
+          queueDesc: "Worker 节点调度与资源分配",
+
+
+
+
+
+
+          prepare: "环境就绪",
+
+
+
+
+
+
+          prepareDesc: "加载上下文与依赖参数",
+
+
+
+
+
+
+          execute: "任务执行",
+
+
+
+
+
+
+          executeDesc: "后台核心进程持续运算",
+
+
+
+
+
+
+          finalize: "产物归档",
+
+
+
+
+
+
+          finalizeDesc: "持久化状态与返回执行结果",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "进度管理",
       description: "汇总所有后台操作：见解生成、向量构建、数据导入导出等。",
       refresh: "刷新",

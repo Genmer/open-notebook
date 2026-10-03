@@ -534,10 +534,12 @@ export const zhTW = {
       viewAll: "查看全庫",
     },
     pdfViewer: {
+      restore: "恢復",
       open: "以原始檔案顯示",
       title: "原始檔案預覽",
       outline: "目錄",
       noOutline: "此文件沒有目錄",
+      parsingToc: "正在解析目錄…",
       page: "第 {{page}} / {{total}} 頁",
       loading: "正在載入文件…",
       loadFailed: "文件載入失敗",
@@ -1372,6 +1374,356 @@ export const zhTW = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "即時任務執行檢視器",
+
+
+
+
+
+
+        completed: "已完成",
+
+
+
+
+
+
+        failed: "執行失敗",
+
+
+
+
+
+
+        canceled: "已取消",
+
+
+
+
+
+
+        running: "產生中…",
+
+
+
+
+
+
+        elapsed: "已用時",
+
+
+
+
+
+
+        stageFallback: "任務執行",
+
+
+
+
+
+
+        processing: "處理中",
+
+
+
+
+
+
+        taskId: "任務 ID",
+
+
+
+
+
+
+        openTaskCenter: "開啟進度管理",
+
+
+
+
+
+
+        stageFlow: "階段執行流",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "上下文輸入",
+
+
+
+
+
+
+        modelOutput: "模型推理輸出",
+
+
+
+
+
+
+        tokenRate: "推理速率",
+
+
+
+
+
+
+        processedChunks: "已處理分塊",
+
+
+
+
+
+
+        chunksDesc: "向量處理塊數",
+
+
+
+
+
+
+        execStatus: "執行狀態",
+
+
+
+
+
+
+        workerNode: "背景 Worker 節點",
+
+
+
+
+
+
+        timeStats: "耗時統計",
+
+
+
+
+
+
+        stopwatchDesc: "持續秒錶跟蹤",
+
+
+
+
+
+
+        terminalTitle: "即時終端 ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "暫停滾屏",
+
+
+
+
+
+
+        autoScroll: "自動滾屏",
+
+
+
+
+
+
+        copyLogs: "複製日誌",
+
+
+
+
+
+
+        clearOutput: "清空輸出",
+
+
+
+
+
+
+        logsCopied: "已複製即時終端日誌到剪貼簿",
+
+
+
+
+
+
+        logsCleared: "終端日誌視圖已清空",
+
+
+
+
+
+
+        errorDetails: "執行異常詳情",
+
+
+
+
+
+
+        cancelTask: "取消任務",
+
+
+
+
+
+
+        closeDrawer: "關閉抽屜",
+
+
+
+
+
+
+        footerReady: "即時日誌流雙向監聽已就緒",
+
+
+
+
+
+
+        doneCollapse: "完成並收起",
+
+
+
+
+
+
+        fallbackStream1: "權杖流正在流經上下文圖譜…",
+
+
+
+
+
+
+        fallbackStream2: "正在綜合關鍵概念斷言與引用錨點…",
+
+
+
+
+
+
+        fallbackStream3: "正在校驗 JSON 結構契約與標題層級…",
+
+
+
+
+
+
+        fallbackStream4: "正在執行非同步工作流寫回資料庫儲存…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "佇列排隊",
+
+
+
+
+
+
+          queueDesc: "Worker 節點調度與資源分配",
+
+
+
+
+
+
+          prepare: "環境就緒",
+
+
+
+
+
+
+          prepareDesc: "載入上下文與依賴參數",
+
+
+
+
+
+
+          execute: "任務執行",
+
+
+
+
+
+
+          executeDesc: "背景核心處理程序持續運算",
+
+
+
+
+
+
+          finalize: "產物歸檔",
+
+
+
+
+
+
+          finalizeDesc: "持久化狀態與返回執行結果",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

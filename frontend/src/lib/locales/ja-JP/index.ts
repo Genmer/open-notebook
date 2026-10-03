@@ -534,10 +534,12 @@ export const jaJP = {
       viewAll: "ライブラリを表示",
     },
     pdfViewer: {
+      restore: "元に戻す",
       open: "元ファイルを表示",
       title: "元ファイルのプレビュー",
       outline: "目次",
       noOutline: "この文書には目次がありません",
+      parsingToc: "目次を解析しています…",
       page: "{{total}} ページ中 {{page}} ページ目",
       loading: "文書を読み込み中…",
       loadFailed: "文書の読み込みに失敗しました",
@@ -1372,6 +1374,356 @@ export const jaJP = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "ライブタスクインスペクター",
+
+
+
+
+
+
+        completed: "完了",
+
+
+
+
+
+
+        failed: "実行失敗",
+
+
+
+
+
+
+        canceled: "キャンセル済み",
+
+
+
+
+
+
+        running: "生成中…",
+
+
+
+
+
+
+        elapsed: "経過時間",
+
+
+
+
+
+
+        stageFallback: "タスク実行",
+
+
+
+
+
+
+        processing: "処理中",
+
+
+
+
+
+
+        taskId: "ジョブ ID",
+
+
+
+
+
+
+        openTaskCenter: "タスク管理を開く",
+
+
+
+
+
+
+        stageFlow: "ステージ実行フロー",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "コンテキスト入力",
+
+
+
+
+
+
+        modelOutput: "モデル推論出力",
+
+
+
+
+
+
+        tokenRate: "推論速度",
+
+
+
+
+
+
+        processedChunks: "処理済みチャンク",
+
+
+
+
+
+
+        chunksDesc: "ベクトル処理チャンク数",
+
+
+
+
+
+
+        execStatus: "実行状態",
+
+
+
+
+
+
+        workerNode: "バックグラウンド Worker ノード",
+
+
+
+
+
+
+        timeStats: "所要時間",
+
+
+
+
+
+
+        stopwatchDesc: "ストップウォッチ追跡",
+
+
+
+
+
+
+        terminalTitle: "ライブターミナル ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "自動スクロール停止",
+
+
+
+
+
+
+        autoScroll: "自動スクロール",
+
+
+
+
+
+
+        copyLogs: "ログをコピー",
+
+
+
+
+
+
+        clearOutput: "出力をクリア",
+
+
+
+
+
+
+        logsCopied: "ターミナルログをクリップボードにコピーしました",
+
+
+
+
+
+
+        logsCleared: "ターミナルログをクリアしました",
+
+
+
+
+
+
+        errorDetails: "実行エラー詳細",
+
+
+
+
+
+
+        cancelTask: "タスクをキャンセル",
+
+
+
+
+
+
+        closeDrawer: "パネルを閉じる",
+
+
+
+
+
+
+        footerReady: "ライブログストリームの双方向リスニング準備完了",
+
+
+
+
+
+
+        doneCollapse: "完了して閉じる",
+
+
+
+
+
+
+        fallbackStream1: "トークンストリームがコンテキストグラフを流れています…",
+
+
+
+
+
+
+        fallbackStream2: "主要な概念的主張と引用アンカーを統合しています…",
+
+
+
+
+
+
+        fallbackStream3: "JSON スキーマ契約と Markdown 見出しを検証しています…",
+
+
+
+
+
+
+        fallbackStream4: "非同期ワーカーの出力をデータベースに書き戻しています…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "キュー待機",
+
+
+
+
+
+
+          queueDesc: "Worker ノードのスケジュールとリソース割り当て",
+
+
+
+
+
+
+          prepare: "環境準備",
+
+
+
+
+
+
+          prepareDesc: "コンテキストと依存パラメータの読み込み",
+
+
+
+
+
+
+          execute: "タスク実行",
+
+
+
+
+
+
+          executeDesc: "バックグラウンドプロセスが継続計算中",
+
+
+
+
+
+
+          finalize: "成果物の保存",
+
+
+
+
+
+
+          finalizeDesc: "状態と実行結果の永続化",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

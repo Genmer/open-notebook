@@ -534,10 +534,12 @@ export const trTR = {
       viewAll: "Kitaplığı görüntüle",
     },
     pdfViewer: {
+      restore: "Geri yükle",
       open: "Orijinal dosyayı görüntüle",
       title: "Orijinal dosya önizlemesi",
       outline: "İçindekiler",
       noOutline: "Bu belgenin içindekiler bölümü yok",
+      parsingToc: "İçindekiler çözümleniyor…",
       page: "Sayfa {{page}} / {{total}}",
       loading: "Belge yükleniyor…",
       loadFailed: "Belge yüklenemedi",
@@ -1372,6 +1374,356 @@ export const trTR = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Canlı görev denetçisi",
+
+
+
+
+
+
+        completed: "Tamamlandı",
+
+
+
+
+
+
+        failed: "Yürütme başarısız",
+
+
+
+
+
+
+        canceled: "İptal edildi",
+
+
+
+
+
+
+        running: "Üretiliyor…",
+
+
+
+
+
+
+        elapsed: "Geçen",
+
+
+
+
+
+
+        stageFallback: "Çalışıyor",
+
+
+
+
+
+
+        processing: "İşleniyor",
+
+
+
+
+
+
+        taskId: "Görev kimliği",
+
+
+
+
+
+
+        openTaskCenter: "Görev yönetimini aç",
+
+
+
+
+
+
+        stageFlow: "Aşama akışı",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Bağlam girdisi",
+
+
+
+
+
+
+        modelOutput: "Model çıktısı",
+
+
+
+
+
+
+        tokenRate: "Token hızı",
+
+
+
+
+
+
+        processedChunks: "İşlenen parçalar",
+
+
+
+
+
+
+        chunksDesc: "Vektör parçaları",
+
+
+
+
+
+
+        execStatus: "Durum",
+
+
+
+
+
+
+        workerNode: "Arka plan Worker'ı",
+
+
+
+
+
+
+        timeStats: "Geçen süre",
+
+
+
+
+
+
+        stopwatchDesc: "Canlı kronometre",
+
+
+
+
+
+
+        terminalTitle: "canlı terminal ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Otomatik kaydırmayı duraklat",
+
+
+
+
+
+
+        autoScroll: "Otomatik kaydırma",
+
+
+
+
+
+
+        copyLogs: "Günlükleri kopyala",
+
+
+
+
+
+
+        clearOutput: "Çıktıyı temizle",
+
+
+
+
+
+
+        logsCopied: "Terminal günlükleri panoya kopyalandı",
+
+
+
+
+
+
+        logsCleared: "Terminal çıktısı temizlendi",
+
+
+
+
+
+
+        errorDetails: "Hata ayrıntıları",
+
+
+
+
+
+
+        cancelTask: "Görevi iptal et",
+
+
+
+
+
+
+        closeDrawer: "Paneli kapat",
+
+
+
+
+
+
+        footerReady: "Canlı günlük akışı dinleyicisi hazır",
+
+
+
+
+
+
+        doneCollapse: "Tamamla ve daralt",
+
+
+
+
+
+
+        fallbackStream1: "Token akışı bağlam grafiğinden geçiyor…",
+
+
+
+
+
+
+        fallbackStream2: "Temel kavramsal önermeler ve alıntı çapaları sentezleniyor…",
+
+
+
+
+
+
+        fallbackStream3: "JSON şema sözleşmesi ve Markdown başlıkları doğrulanıyor…",
+
+
+
+
+
+
+        fallbackStream4: "Zaman uyumsuz worker çıktısı veri deposuna yazılıyor…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "Kuyrukta",
+
+
+
+
+
+
+          queueDesc: "Worker zamanlaması ve kaynak tahsisi",
+
+
+
+
+
+
+          prepare: "Hazırlık",
+
+
+
+
+
+
+          prepareDesc: "Bağlam ve bağımlılıklar yükleniyor",
+
+
+
+
+
+
+          execute: "Yürütme",
+
+
+
+
+
+
+          executeDesc: "Arka plan işlemi hesaplıyor",
+
+
+
+
+
+
+          finalize: "Sonlandırma",
+
+
+
+
+
+
+          finalizeDesc: "Durum ve sonuçlar kalıcılaştırılıyor",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",

@@ -491,18 +491,18 @@ describe('TasksPage', () => {
     fireEvent.click(liveBtn)
 
     // 验证抽屉滑出展示实时检视器和终端
-    expect(screen.getByText('实时任务执行检视器 (Live Inspector)')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.title')).toBeInTheDocument()
     expect(screen.getAllByText(/AI Architecture Notes/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/open-notebook:live-terminal/)).toBeInTheDocument()
-    expect(screen.getByText('阶段执行流')).toBeInTheDocument()
-    expect(screen.getByText('Prompt Tokens')).toBeInTheDocument()
-    expect(screen.getByText('已用时')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.terminalTitle')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.stageFlow')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.promptTokens')).toBeInTheDocument()
+    expect(screen.getByText('tasks.inspector.elapsed')).toBeInTheDocument()
 
     // 验证抽屉可收起
-    const closeBtn = screen.getByRole('button', { name: '关闭抽屉' })
+    const closeBtn = screen.getByRole('button', { name: 'tasks.inspector.closeDrawer' })
     fireEvent.click(closeBtn)
     await waitFor(() => {
-      expect(screen.queryByText('实时任务执行检视器 (Live Inspector)')).not.toBeInTheDocument()
+      expect(screen.queryByText('tasks.inspector.title')).not.toBeInTheDocument()
     })
   })
 })

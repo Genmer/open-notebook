@@ -63,6 +63,7 @@ import {
   MessageSquare,
   Loader2,
   FileText,
+  RotateCcw,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
@@ -129,7 +130,7 @@ function SourceDetailContentInner({
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
   const [deletingInsight, setDeletingInsight] = useState(false)
   // In-app original-file (PDF) viewer, opened from the Content tab.
-  const [pdfViewerOpen, setPdfViewerOpen] = useState(false)
+  const [fileViewOpen, setFileViewOpen] = useState(false)
   // Insight completion catch-up compares against the count before the job ran.
   const insightsCountRef = useRef(0)
 
@@ -562,15 +563,34 @@ function SourceDetailContentInner({
                     variant="outline"
                     size="sm"
                     className="gap-1.5"
-                    onClick={() => setPdfViewerOpen(true)}
+                    onClick={() => setFileViewOpen((v) => !v)}
                     disabled={fileAvailable === false}
                     data-testid="open-pdf-viewer"
                   >
-                    <FileText className="h-3.5 w-3.5" />
-                    {t('sources.pdfViewer.open')}
+                    {fileViewOpen ? (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    ) : (
+                      <FileText className="h-3.5 w-3.5" />
+                    )}
+                    {fileViewOpen
+                      ? t('sources.pdfViewer.restore')
+                      : t('sources.pdfViewer.open')}
                   </Button>
                 </div>
               )}
+              {fileViewOpen && isPdfFile ? (
+                /* Source-file view replaces the parsed text in place; the
+                   toggle above restores it. */
+                <PdfSourceViewer
+                  inline
+                  open
+                  onOpenChange={setFileViewOpen}
+                  sourceId={source.id}
+                  filePath={source.asset?.file_path ?? null}
+                  notebookId={notebookId}
+                />
+              ) : (
+                <>
               {externalHref && !isYouTubeUrl && (
                 <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
                   <LinkIcon className="h-3.5 w-3.5 shrink-0" />
@@ -613,6 +633,8 @@ function SourceDetailContentInner({
               <MarkdownRenderer>
                 {source.full_text || t('sources.noContent')}
               </MarkdownRenderer>
+                </>
+              )}
             </section>
           </TabsContent>
 
@@ -886,15 +908,8 @@ function SourceDetailContentInner({
         }}
       />
 
-      {/* In-app original-file preview (PDF.js). notebookId (when the modal was
-          opened from a notebook) enables the "save analysis as note" flow. */}
-      <PdfSourceViewer
-        open={pdfViewerOpen}
-        onOpenChange={setPdfViewerOpen}
-        sourceId={source.id}
-        filePath={source.asset?.file_path ?? null}
-        notebookId={notebookId}
-      />
+      {/* Source-file PDF viewing now lives inline in the content tab (the
+          "show source file" toggle swaps it with the parsed text). */}
 
       <AlertDialog open={!!insightToDelete} onOpenChange={() => setInsightToDelete(null)}>
         <AlertDialogContent>

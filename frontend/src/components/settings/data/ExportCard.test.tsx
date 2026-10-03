@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string).
 
@@ -16,6 +17,13 @@ vi.mock('@/lib/hooks/use-data-transfer', () => ({
 vi.mock('@/lib/api/dataTransfer', () => ({
   dataTransferApi: {
     downloadExport: vi.fn().mockResolvedValue(undefined),
+  },
+}))
+
+// TaskLiveInspector polls live progress; never let it hit the network here.
+vi.mock('@/lib/api/tasks', () => ({
+  tasksApi: {
+    getLiveProgress: vi.fn().mockResolvedValue(null),
   },
 }))
 
@@ -117,8 +125,7 @@ describe('ExportCard', () => {
     expect(mutateSpy).toHaveBeenCalledWith({ scope: 'models', include_models: false })
   })
 
-  it('renders progress with the current stage highlighted, x/y message and percent', () => {
-    mockStatus({
+  it('renders progress with the current stage highlighted, x/y message and percent', () => {    mockStatus({
       status: 'running',
       progress: {
         stage: 'exporting_embeddings',
@@ -152,6 +159,24 @@ describe('ExportCard', () => {
     expect(currentRow?.className).toContain('bg-muted')
     // Percent reaches the progress indicator transform
     expect(indicatorStyle()).toContain('translateX(-28%)')
+  })
+
+  it('embeds the live progress inspector while an export job is active', () => {
+    mockStatus({
+      status: 'running',
+      command_id: 'command:exp-1',
+      progress: { stage: 'collecting', percent: 5, message: 'Collecting' },
+    })
+    // The embedded inspector polls via react-query, so it needs a client.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ExportCard />
+      </QueryClientProvider>
+    )
+
+    const live = document.querySelector('[data-testid="export-live-inspector"]')
+    expect(live).not.toBeNull()
   })
 
   it('falls back to the localized stage label when progress has no detail', () => {

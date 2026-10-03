@@ -128,17 +128,197 @@ export async function extractPagesText(
 
   let text = ''
   for (let pageNumber = first; pageNumber <= last; pageNumber += 1) {
-    const page = await doc.getPage(pageNumber)
-    try {
-      const content = await page.getTextContent()
-      for (const item of content.items) {
-        if (!('str' in item)) continue
-        text += item.str
-        text += item.hasEOL ? '\n' : ' '
-      }
-    } finally {
-      await page.cleanup()
-    }
+    text += await extractSinglePageText(doc, pageNumber)
   }
   return text.trim()
+}
+
+/**
+ * Text layer of one page (trailing newline included when the last item ends
+ * a line — same joining rules as extractPagesText). Always cleans up.
+ */
+async function extractSinglePageText(
+  doc: PDFDocumentProxy,
+  pageNumber: number
+): Promise<string> {
+  const page = await doc.getPage(pageNumber)
+  try {
+    const content = await page.getTextContent()
+    let text = ''
+    for (const item of content.items) {
+      if (!('str' in item)) continue
+      text += item.str
+      text += item.hasEOL ? '\n' : ' '
+    }
+    return text
+  } finally {
+    await page.cleanup()
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Printed-TOC fallback (documents without a PDF outline)              */
+/* ------------------------------------------------------------------ */
+
+/** How deep into the document to look for a printed table-of-contents page. */
+const TOC_SCAN_PAGES = 10
+/** Matching TOC lines a page needs before it counts as a TOC page. */
+const TOC_MIN_LINES = 5
+/** Printed→physical page offset candidates tried during calibration. */
+const TOC_OFFSET_CANDIDATES = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+/** Entries used to calibrate the offset (smallest printed pages first). */
+const TOC_CALIBRATION_ENTRIES = 3
+
+/** Leader chars between a TOC title and its page number. */
+const TOC_LEADER = /[\s.\u2026\u00b7\u2022\u2014\u2013-]+/
+/** A TOC line: non-trivial title, leader, trailing page number. */
+const TOC_LINE = /^(.+?)[\s.\u2026\u00b7\u2022\u2014\u2013-]{1,}(\d{1,4})$/
+/** Titles must contain some CJK or at least 3 word chars to filter noise. */
+const TOC_TITLE_VALID = /[\u4e00-\u9fff]|([A-Za-z0-9].*){3}/
+/** Leading entry numbers ("1.", "2 ") — listed in the TOC, absent from body headings. */
+const TOC_ENTRY_NUMBER = /^\d{1,3}\s*[.\u3001\uff0e:\uff1a]?\s*/
+
+interface TocLine {
+  title: string
+  printedPage: number
+  depth: number
+}
+
+/** Whitespace-stripped comparison form (also drops TOC leader dots). */
+const normalizeText = (text: string): string =>
+  text.replace(/[\s.\u2026\u00b7\u2022\u2014\u2013-]/g, '')
+
+/**
+ * Parse the printed table of contents found on the first pages of a
+ * document — the WPS-style fallback for PDFs that carry no bookmarks.
+ *
+ * A page qualifies as the TOC when at least TOC_MIN_LINES of its text-layer
+ * lines look like "title …… page-number". Printed page numbers are then
+ * calibrated against the document: for each candidate offset the smallest
+ * TOC entries must actually appear (near a line start) on their target
+ * physical pages; the best-scoring offset wins, ties prefer the offset
+ * closest to 0. When no offset scores ≥2 matches, entries are returned with
+ * `pageNumber: null` (listed, not jumpable). Heuristic by design — a rough
+ * jump target beats no TOC at all.
+ */
+export async function parseTocFromPages(
+  doc: PDFDocumentProxy
+): Promise<PdfOutlineEntry[]> {
+  const scanEnd = Math.min(doc.numPages, TOC_SCAN_PAGES)
+  let best: { page: number; lines: TocLine[] } | null = null
+
+  for (let pageNumber = 1; pageNumber <= scanEnd; pageNumber += 1) {
+    const lines = parseTocLines(await extractSinglePageText(doc, pageNumber), doc.numPages)
+    if (lines.length >= TOC_MIN_LINES && (!best || lines.length > best.lines.length)) {
+      best = { page: pageNumber, lines }
+    }
+  }
+  if (!best) return []
+
+  const offset = await calibrateOffset(doc, best.page, best.lines)
+  return best.lines.map((line) => {
+    const target = offset == null ? null : line.printedPage + offset
+    // Out-of-range targets (bad printed number) stay unjumpable rather than
+    // clamping somewhere misleading.
+    const pageNumber =
+      target != null && target >= 1 && target <= doc.numPages ? target : null
+    return { title: line.title, pageNumber, url: null, depth: line.depth }
+  })
+}
+
+/** Extract "title …… page" lines from one page's text layer. */
+function parseTocLines(pageText: string, numPages: number): TocLine[] {
+  const lines: TocLine[] = []
+  for (const rawLine of pageText.split('\n')) {
+    const match = rawLine.trimEnd().match(TOC_LINE)
+    if (!match) continue
+    let title = match[1].replace(TOC_LEADER, ' ').trim()
+    const printedPage = Number(match[2])
+    // Reject noise: bare numbers, one-char watermarks, out-of-range pages.
+    if (printedPage < 1 || printedPage > numPages + 30) continue
+    // Strip the entry number ("1.", "2 ") — the body heading it must match
+    // during calibration does not carry it.
+    title = title.replace(TOC_ENTRY_NUMBER, '').trim()
+    if (title.length < 2 || !TOC_TITLE_VALID.test(title)) continue
+    // Leading indentation (kept by the text layer) marks a sub-level.
+    const indent = rawLine.length - rawLine.trimStart().length
+    lines.push({ title, printedPage, depth: indent >= 2 ? 1 : 0 })
+  }
+  // TOC pages list monotonically increasing pages; drop the rest as noise.
+  const increasing = lines.filter(
+    (line, i) => i === 0 || line.printedPage >= lines[i - 1].printedPage
+  )
+  return increasing.length >= TOC_MIN_LINES ? increasing : []
+}
+
+/**
+ * Find the printed→physical page offset with the most calibrated hits.
+ * Returns null when nothing matches confidently (entries stay unjumpable).
+ */
+async function calibrateOffset(
+  doc: PDFDocumentProxy,
+  tocPage: number,
+  lines: TocLine[]
+): Promise<number | null> {
+  // Calibrate on the smallest printed pages (cheapest to verify, usually
+  // the front matter); the same offset applies to the whole TOC.
+  const probes = [...lines]
+    .sort((a, b) => a.printedPage - b.printedPage)
+    .slice(0, TOC_CALIBRATION_ENTRIES)
+
+  const targets = [
+    ...new Set(
+      TOC_OFFSET_CANDIDATES.flatMap((offset) =>
+        probes
+          .map((probe) => probe.printedPage + offset)
+          .filter(
+            (page) =>
+              page >= 1 && page <= doc.numPages && Math.abs(page - tocPage) > 1
+          )
+      )
+    ),
+  ]
+  if (targets.length === 0) return null
+
+  const textByPage = new Map<number, string>()
+  await Promise.all(
+    targets.map(async (page) => {
+      textByPage.set(page, await extractSinglePageText(doc, page))
+    })
+  )
+
+  const normalizedByPage = new Map(
+    [...textByPage].map(([page, text]) => [
+      page,
+      text.split('\n').map((line) => normalizeText(line)),
+    ])
+  )
+
+  // The probe title should appear as a line (or part of a compound heading
+  // line) on its target page — running prose rarely quotes a full TOC title.
+  const titleOnPage = (probe: TocLine, page: number): boolean => {
+    const key = normalizeText(probe.title).slice(0, 10)
+    if (!key) return false
+    const pageLines = normalizedByPage.get(page)
+    if (!pageLines) return false
+    return pageLines.some((line) => line.includes(key))
+  }
+
+  let bestOffset: number | null = null
+  let bestScore = 0
+  for (const offset of TOC_OFFSET_CANDIDATES) {
+    const score = probes.filter(
+      (probe) =>
+        probe.printedPage + offset >= 1 &&
+        probe.printedPage + offset <= doc.numPages &&
+        Math.abs(probe.printedPage + offset - tocPage) > 1 &&
+        titleOnPage(probe, probe.printedPage + offset)
+    ).length
+    // Ties keep the earlier (closer-to-zero) offset.
+    if (score > bestScore) {
+      bestScore = score
+      bestOffset = offset
+    }
+  }
+  return bestScore >= 2 ? bestOffset : null
 }

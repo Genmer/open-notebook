@@ -566,6 +566,8 @@ export function GeminiStudioColumn({
               job={{
                 jobId: submittedJob.jobId,
                 toolName: submittedJob.toolName,
+                commandName: 'generate_artifact',
+                type: 'artifact',
                 status: jobStatus?.status || 'running',
                 startedAt: submittedJob.startedAt,
                 progress: jobStatus?.progress,
