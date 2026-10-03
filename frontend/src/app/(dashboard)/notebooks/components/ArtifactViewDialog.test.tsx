@@ -240,12 +240,12 @@ describe('ArtifactViewDialog fullscreen side panels', () => {
     expect(screen.getByTestId('artifact-handle-right')).toBeInTheDocument()
   })
 
-  it('handle hit zones sit below the X button band (top-12)', () => {
+  it('handles are vertically centered cards (no overlap with the X button band)', () => {
     renderDialog(vi.fn(), { notebookId: 'nb:1' })
     fireEvent.click(screen.getByRole('button', { name: 'artifacts.enterFullscreen' }))
 
-    expect(screen.getByTestId('artifact-handle-left').className).toContain('top-12')
-    expect(screen.getByTestId('artifact-handle-right').className).toContain('top-12')
+    expect(screen.getByTestId('artifact-handle-left').className).toContain('top-1/2')
+    expect(screen.getByTestId('artifact-handle-right').className).toContain('top-1/2')
   })
 
   it('Escape closes open panels first, then exits fullscreen, then lets Radix close', () => {

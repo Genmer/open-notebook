@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
+import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
 import { SaveNoteDialog } from '@/components/sources/SaveNoteDialog'
 import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
@@ -1291,29 +1292,23 @@ export default function PdfSourceViewer({
                   <>
                     {/* Left handle (hidden while its panel is open). */}
                     {!leftOpen && (
-                      <button
-                        type="button"
-                        className="group absolute inset-y-0 left-0 top-12 z-20 flex w-6 items-center justify-start"
+                      <EdgePanelHandle
+                        side="left"
+                        ariaLabel={t('artifacts.openSourcesPanel')}
+                        label={t('artifacts.sourcesPanelTitle')}
                         onClick={() => setLeftOpen(true)}
-                        aria-label={t('artifacts.openSourcesPanel')}
-                        title={t('artifacts.openSourcesPanel')}
-                        data-testid="pdf-handle-left"
-                      >
-                        <span className="h-16 w-1 rounded-r bg-border transition-colors group-hover:bg-primary/60" />
-                      </button>
+                        testid="pdf-handle-left"
+                      />
                     )}
                     {/* Right handle (hidden while its panel is open). */}
                     {!rightOpen && (
-                      <button
-                        type="button"
-                        className="group absolute inset-y-0 right-0 top-12 z-20 flex w-6 items-center justify-end"
+                      <EdgePanelHandle
+                        side="right"
+                        ariaLabel={t('artifacts.openNotesPanel')}
+                        label={t('artifacts.notesPanelTitle')}
                         onClick={() => setRightOpen(true)}
-                        aria-label={t('artifacts.openNotesPanel')}
-                        title={t('artifacts.openNotesPanel')}
-                        data-testid="pdf-handle-right"
-                      >
-                        <span className="h-16 w-1 rounded-l bg-border transition-colors group-hover:bg-primary/60" />
-                      </button>
+                        testid="pdf-handle-right"
+                      />
                     )}
                     <ArtifactSidePanels
                       notebookId={notebookId}

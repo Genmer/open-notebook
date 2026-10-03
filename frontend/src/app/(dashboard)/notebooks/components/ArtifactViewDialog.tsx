@@ -11,6 +11,7 @@ import type { NoteResponse } from '@/lib/types/api'
 import { cn } from '@/lib/utils'
 import { FlashcardViewer } from './FlashcardViewer'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
+import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 
 interface ArtifactViewDialogProps {
   open: boolean
@@ -174,29 +175,23 @@ export function ArtifactViewDialog({
           <>
             {/* 左拉手（面板开时隐藏） */}
             {!leftOpen && (
-              <button
-                type="button"
-                className="group absolute inset-y-0 left-0 top-12 z-20 flex w-6 items-center justify-start"
+              <EdgePanelHandle
+                side="left"
+                ariaLabel={t('artifacts.openSourcesPanel')}
+                label={t('artifacts.sourcesPanelTitle')}
                 onClick={() => setLeftOpen(true)}
-                aria-label={t('artifacts.openSourcesPanel')}
-                title={t('artifacts.openSourcesPanel')}
-                data-testid="artifact-handle-left"
-              >
-                <span className="h-16 w-1 rounded-r bg-border transition-colors group-hover:bg-primary/60" />
-              </button>
+                testid="artifact-handle-left"
+              />
             )}
-            {/* 右拉手（面板开时隐藏；top-12 避开 X 的 right-4 top-4 点击带） */}
+            {/* 右拉手（面板开时隐藏） */}
             {!rightOpen && (
-              <button
-                type="button"
-                className="group absolute inset-y-0 right-0 top-12 z-20 flex w-6 items-center justify-end"
+              <EdgePanelHandle
+                side="right"
+                ariaLabel={t('artifacts.openNotesPanel')}
+                label={t('artifacts.notesPanelTitle')}
                 onClick={() => setRightOpen(true)}
-                aria-label={t('artifacts.openNotesPanel')}
-                title={t('artifacts.openNotesPanel')}
-                data-testid="artifact-handle-right"
-              >
-                <span className="h-16 w-1 rounded-l bg-border transition-colors group-hover:bg-primary/60" />
-              </button>
+                testid="artifact-handle-right"
+              />
             )}
             <ArtifactSidePanels
               notebookId={notebookId}
