@@ -549,6 +549,8 @@ export const ptBR = {
       nextPage: "Próxima página",
       close: "Fechar",
       notPdf: "Este arquivo não é um PDF e não pode ser visualizado",
+      enterFullscreen: "Ler em tela cheia",
+      exitFullscreen: "Sair da tela cheia",
     },
     fileView: {
       analyzeSection: "Analisar seção com IA",

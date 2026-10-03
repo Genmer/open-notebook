@@ -549,6 +549,8 @@ export const jaJP = {
       nextPage: "次のページ",
       close: "閉じる",
       notPdf: "このファイルは PDF ではないためプレビューできません",
+      enterFullscreen: "全画面で読む",
+      exitFullscreen: "全画面を終了",
     },
     fileView: {
       analyzeSection: "AIでこの章を解析",

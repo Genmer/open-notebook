@@ -547,6 +547,8 @@ export const enUS = {
       nextPage: "Next page",
       close: "Close",
       notPdf: "This file is not a PDF and cannot be previewed",
+      enterFullscreen: "Fullscreen reading",
+      exitFullscreen: "Exit fullscreen",
     },
     fileView: {
       analyzeSection: "Analyze section with AI",

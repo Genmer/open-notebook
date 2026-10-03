@@ -549,6 +549,8 @@ export const itIT = {
       nextPage: "Pagina successiva",
       close: "Chiudi",
       notPdf: "Questo file non è un PDF e non può essere visualizzato",
+      enterFullscreen: "Leggi a schermo intero",
+      exitFullscreen: "Esci da schermo intero",
     },
     fileView: {
       analyzeSection: "Analizza sezione con IA",

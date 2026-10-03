@@ -549,6 +549,8 @@ export const zhCN = {
       nextPage: "下一页",
       close: "关闭",
       notPdf: "该文件不是 PDF，无法预览",
+      enterFullscreen: "全屏阅读",
+      exitFullscreen: "退出全屏",
     },
     fileView: {
       analyzeSection: "AI 解析本章",

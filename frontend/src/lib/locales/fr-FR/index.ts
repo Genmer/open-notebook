@@ -549,6 +549,8 @@ export const frFR = {
       nextPage: "Page suivante",
       close: "Fermer",
       notPdf: "Ce fichier n'est pas un PDF et ne peut pas être prévisualisé",
+      enterFullscreen: "Lecture plein écran",
+      exitFullscreen: "Quitter le plein écran",
     },
     fileView: {
       analyzeSection: "Analyser la section avec l'IA",

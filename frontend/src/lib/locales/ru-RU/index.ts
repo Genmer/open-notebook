@@ -549,6 +549,8 @@ export const ruRU = {
       nextPage: "Следующая страница",
       close: "Закрыть",
       notPdf: "Этот файл не является PDF и не может быть просмотрен",
+      enterFullscreen: "Читать на весь экран",
+      exitFullscreen: "Выйти из полноэкранного режима",
     },
     fileView: {
       analyzeSection: "Проанализировать раздел с помощью ИИ",

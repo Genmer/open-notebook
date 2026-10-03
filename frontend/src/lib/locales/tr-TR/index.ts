@@ -549,6 +549,8 @@ export const trTR = {
       nextPage: "Sonraki sayfa",
       close: "Kapat",
       notPdf: "Bu dosya bir PDF değil ve önizlenemez",
+      enterFullscreen: "Tam ekranda oku",
+      exitFullscreen: "Tam ekrandan çık",
     },
     fileView: {
       analyzeSection: "Yapay zekâ ile bölümü analiz et",

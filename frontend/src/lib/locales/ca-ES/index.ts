@@ -549,6 +549,8 @@ export const caES = {
       nextPage: "Pàgina següent",
       close: "Tanca",
       notPdf: "Aquest fitxer no és un PDF i no es pot previsualitzar",
+      enterFullscreen: "Llegeix a pantalla completa",
+      exitFullscreen: "Surt de la pantalla completa",
     },
     fileView: {
       analyzeSection: "Analitza la secció amb IA",

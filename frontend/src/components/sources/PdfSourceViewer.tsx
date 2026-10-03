@@ -12,15 +12,20 @@ import {
   Link2,
   List,
   Loader2,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Sparkles,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
+import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
+import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
 import { SaveNoteDialog } from '@/components/sources/SaveNoteDialog'
 import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
 import AnnotationHoverCard, {
@@ -46,6 +51,8 @@ import {
   sortPageAnnotations,
   useAnnotations,
 } from '@/lib/hooks/use-annotations'
+import { useNotes } from '@/lib/hooks/use-notes'
+import type { NoteResponse } from '@/lib/types/api'
 import { useSectionAnalysis } from '@/lib/hooks/use-section-analysis'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getPdfjs } from '@/lib/pdf/pdf-loader'
@@ -171,6 +178,19 @@ export default function PdfSourceViewer({
   // True while the printed-TOC fallback is scanning (no PDF bookmarks).
   const [parsingToc, setParsingToc] = useState(false)
 
+  // ── Fullscreen reading state (inline shell only) ────────────────────────
+  // Fullscreen swaps the embedded frame for a w-screen/h-screen Dialog with
+  // the same viewerBody, plus slide-out side panels (sources left / notes
+  // right, ArtifactSidePanels). Only with a notebook context — the panels
+  // need one to fill their lists.
+  const router = useRouter()
+  const [fullscreen, setFullscreen] = useState(false)
+  const [leftOpen, setLeftOpen] = useState(false)
+  const [rightOpen, setRightOpen] = useState(false)
+  // Note opened for reading via the right panel (ArtifactViewDialog reuse).
+  const [readingNote, setReadingNote] = useState<NoteResponse | null>(null)
+  const { data: panelNotes = [] } = useNotes(notebookId)
+
   // AI analysis state: results cached per outline entry key; one job in
   // flight (isAnalyzing disables the sibling Sparkles buttons). The job id
   // drives the live progress inspector in the analysis panel.
@@ -267,6 +287,25 @@ export default function PdfSourceViewer({
       clearHoverTimers()
     }
   }, [clearHoverTimers])
+
+  /** Leave fullscreen reading: collapse the panels too (they are part of
+   * the fullscreen experience — re-entering starts closed, like
+   * ArtifactViewDialog's reset-on-close behavior). */
+  const closeFullscreen = useCallback(() => {
+    setFullscreen(false)
+    setLeftOpen(false)
+    setRightOpen(false)
+  }, [])
+
+  /** Source clicked in the left panel: navigate to its detail page. The id
+   * from the notebook sources cache always carries the record prefix; the
+   * prefix guard keeps hand-fed ids working. */
+  const openPanelSource = useCallback(
+    (id: string) => {
+      router.push(`/sources/${encodeURIComponent(id.startsWith('source:') ? id : `source:${id}`)}`)
+    },
+    [router]
+  )
 
   /** Clear the live selection and every piece of transient annotation UI. */
   const clearAnnotationUi = useCallback(() => {
@@ -862,6 +901,20 @@ export default function PdfSourceViewer({
             >
               <ZoomIn className="h-4 w-4" />
             </Button>
+            {inline && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => (fullscreen ? closeFullscreen() : setFullscreen(true))}
+                disabled={status !== 'ready'}
+                aria-label={fullscreen ? t('sources.pdfViewer.exitFullscreen') : t('sources.pdfViewer.enterFullscreen')}
+                title={fullscreen ? t('sources.pdfViewer.exitFullscreen') : t('sources.pdfViewer.enterFullscreen')}
+                data-testid="pdf-fullscreen-toggle"
+              >
+                {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1202,15 +1255,103 @@ export default function PdfSourceViewer({
     </>
   )
 
-  // Embedded in the content pane: same chrome, no dialog shell.
+  // Embedded in the content pane: same chrome, no dialog shell. The
+  // fullscreen toggle swaps the frame for a w-screen/h-screen Dialog holding
+  // the SAME viewerBody (single canvas instance — never rendered in both
+  // shells at once); a same-height placeholder keeps the page layout from
+  // jumping while the dialog covers it.
   if (inline) {
     return (
-      <div
-        className="flex h-[calc(100vh-16rem)] min-h-[480px] flex-col overflow-hidden rounded-md border"
-        data-testid="pdf-viewer-inline"
-      >
-        {viewerBody}
-      </div>
+      <>
+        {fullscreen ? (
+          <>
+            <div
+              aria-hidden
+              className="h-[calc(100vh-16rem)] min-h-[480px] rounded-md border border-dashed"
+              data-testid="pdf-viewer-inline-placeholder"
+            />
+            <Dialog open onOpenChange={(next) => { if (!next) closeFullscreen() }}>
+              <DialogContent
+                className="max-w-[95vw] sm:max-w-none sm:max-h-none w-screen h-screen border-none rounded-none overflow-hidden p-0 flex flex-col gap-0"
+                data-testid="pdf-viewer-fullscreen"
+                onEscapeKeyDown={(event) => {
+                  // Layered exit, mirroring ArtifactViewDialog: open panels
+                  // close first, then fullscreen goes, then (n/a — the dialog
+                  // itself IS the fullscreen state).
+                  if (leftOpen || rightOpen) {
+                    event.preventDefault()
+                    setLeftOpen(false)
+                    setRightOpen(false)
+                  }
+                }}
+              >
+                <DialogTitle className="sr-only">{t('sources.pdfViewer.title')}</DialogTitle>
+                {viewerBody}
+                {!!notebookId && (
+                  <>
+                    {/* Left handle (hidden while its panel is open). */}
+                    {!leftOpen && (
+                      <button
+                        type="button"
+                        className="group absolute inset-y-0 left-0 top-12 z-20 flex w-6 items-center justify-start"
+                        onClick={() => setLeftOpen(true)}
+                        aria-label={t('artifacts.openSourcesPanel')}
+                        title={t('artifacts.openSourcesPanel')}
+                        data-testid="pdf-handle-left"
+                      >
+                        <span className="h-16 w-1 rounded-r bg-border transition-colors group-hover:bg-primary/60" />
+                      </button>
+                    )}
+                    {/* Right handle (hidden while its panel is open). */}
+                    {!rightOpen && (
+                      <button
+                        type="button"
+                        className="group absolute inset-y-0 right-0 top-12 z-20 flex w-6 items-center justify-end"
+                        onClick={() => setRightOpen(true)}
+                        aria-label={t('artifacts.openNotesPanel')}
+                        title={t('artifacts.openNotesPanel')}
+                        data-testid="pdf-handle-right"
+                      >
+                        <span className="h-16 w-1 rounded-l bg-border transition-colors group-hover:bg-primary/60" />
+                      </button>
+                    )}
+                    <ArtifactSidePanels
+                      notebookId={notebookId}
+                      notes={panelNotes}
+                      leftOpen={leftOpen}
+                      rightOpen={rightOpen}
+                      onLeftOpenChange={setLeftOpen}
+                      onRightOpenChange={setRightOpen}
+                      onExitFullscreen={closeFullscreen}
+                      onOpenSource={openPanelSource}
+                      onNoteSelect={(note) => setReadingNote(note)}
+                    />
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
+          </>
+        ) : (
+          <div
+            className="flex h-[calc(100vh-16rem)] min-h-[480px] flex-col overflow-hidden rounded-md border"
+            data-testid="pdf-viewer-inline"
+          >
+            {viewerBody}
+          </div>
+        )}
+        {/* Note reading dialog opened from the right panel (ArtifactViewDialog
+            reuse: flashcard/markdown rendering, its own fullscreen+panels). */}
+        <ArtifactViewDialog
+          open={!!readingNote}
+          onOpenChange={(next) => { if (!next) setReadingNote(null) }}
+          note={readingNote ? { title: readingNote.title, content: readingNote.content } : undefined}
+          notebookId={notebookId}
+          notes={panelNotes}
+          activeNoteId={readingNote?.id ?? null}
+          onNoteSelect={(note) => setReadingNote(note)}
+          onOpenSource={openPanelSource}
+        />
+      </>
     )
   }
 

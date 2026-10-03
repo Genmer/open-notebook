@@ -10,7 +10,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import type { NoteResponse } from '@/lib/types/api'
 import { cn } from '@/lib/utils'
 import { FlashcardViewer } from './FlashcardViewer'
-import { ArtifactSidePanels } from './ArtifactSidePanels'
+import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 
 interface ArtifactViewDialogProps {
   open: boolean

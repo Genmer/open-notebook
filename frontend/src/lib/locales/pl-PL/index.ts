@@ -549,6 +549,8 @@ export const plPL = {
       nextPage: "Następna strona",
       close: "Zamknij",
       notPdf: "Ten plik nie jest plikiem PDF i nie można go wyświetlić",
+      enterFullscreen: "Czytaj na pełnym ekranie",
+      exitFullscreen: "Opuść pełny ekran",
     },
     fileView: {
       analyzeSection: "Analizuj sekcję za pomocą AI",

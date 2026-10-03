@@ -549,6 +549,8 @@ export const zhTW = {
       nextPage: "下一頁",
       close: "關閉",
       notPdf: "此檔案不是 PDF，無法預覽",
+      enterFullscreen: "全螢幕閱讀",
+      exitFullscreen: "退出全螢幕",
     },
     fileView: {
       analyzeSection: "AI 解析本章",

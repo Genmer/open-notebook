@@ -549,6 +549,8 @@ export const esES = {
       nextPage: "Página siguiente",
       close: "Cerrar",
       notPdf: "Este archivo no es un PDF y no se puede previsualizar",
+      enterFullscreen: "Leer a pantalla completa",
+      exitFullscreen: "Salir de pantalla completa",
     },
     fileView: {
       analyzeSection: "Analizar sección con IA",

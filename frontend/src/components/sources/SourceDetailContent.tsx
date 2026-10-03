@@ -587,7 +587,10 @@ function SourceDetailContentInner({
                   onOpenChange={setFileViewOpen}
                   sourceId={source.id}
                   filePath={source.asset?.file_path ?? null}
-                  notebookId={notebookId}
+                  /* Direct context first; on the bare detail route (no prop)
+                     fall back to the source's first notebook so fullscreen
+                     reading still gets its side panels. */
+                  notebookId={notebookId ?? source.notebooks?.[0]}
                 />
               ) : (
                 <>

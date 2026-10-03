@@ -549,6 +549,8 @@ export const bnIN = {
       nextPage: "পরবর্তী পৃষ্ঠা",
       close: "বন্ধ করুন",
       notPdf: "এই ফাইলটি PDF নয় এবং প্রিভিউ করা যাবে না",
+      enterFullscreen: "ফুলস্ক্রিনে পড়ুন",
+      exitFullscreen: "ফুলস্ক্রিন থেকে বেরিয়ে যান",
     },
     fileView: {
       analyzeSection: "AI দিয়ে এই অংশ বিশ্লেষণ করুন",

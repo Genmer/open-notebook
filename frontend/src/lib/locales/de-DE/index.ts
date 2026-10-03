@@ -552,6 +552,8 @@ export const deDE = {
       nextPage: "Nächste Seite",
       close: "Schließen",
       notPdf: "Diese Datei ist kein PDF und kann nicht in der Vorschau angezeigt werden",
+      enterFullscreen: "Vollbild lesen",
+      exitFullscreen: "Vollbild beenden",
     },
     fileView: {
       analyzeSection: "Abschnitt mit KI analysieren",
