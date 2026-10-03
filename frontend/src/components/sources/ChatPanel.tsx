@@ -179,7 +179,13 @@ export function ChatPanel({
         'flex flex-col overflow-hidden',
         // 全屏时 fixed 脱离 flex 流，尺寸锚定改为受控 class（h-screen/w-screen），
         // 不再依赖 h-full/flex-1 从父容器继承。
-        isFullscreen ? 'fixed inset-0 z-50 h-screen w-screen rounded-none' : 'h-full flex-1'
+        isFullscreen
+          ? 'fixed inset-0 z-50 h-screen w-screen rounded-none transition-[padding] duration-300'
+          : 'h-full flex-1',
+        // 面板开启时推挤而非覆盖：padding 让出面板宽度（w-96=24rem），
+        // 中间对话与左右面板三栏并存；窄屏（<lg）保持覆盖模式。
+        isFullscreen && panelLeftOpen && 'lg:pl-96',
+        isFullscreen && panelRightOpen && 'lg:pr-96'
       )}
     >
       <CardHeader className="pb-3 flex-shrink-0">

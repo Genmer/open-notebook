@@ -1273,7 +1273,13 @@ export default function PdfSourceViewer({
             />
             <Dialog open onOpenChange={(next) => { if (!next) closeFullscreen() }}>
               <DialogContent
-                className="max-w-[95vw] sm:max-w-none sm:max-h-none w-screen h-screen border-none rounded-none overflow-hidden p-0 flex flex-col gap-0"
+                className={
+                  'max-w-[95vw] sm:max-w-none sm:max-h-none w-screen h-screen border-none rounded-none overflow-hidden p-0 flex flex-col gap-0 transition-[padding] duration-300 ' +
+                  // 面板开启时推挤而非覆盖：padding 让出面板宽度（w-96=24rem），
+                  // PDF 页面与左右面板三栏并存；窄屏（<lg）保持覆盖模式。
+                  (leftOpen ? 'lg:pl-96 ' : '') +
+                  (rightOpen ? 'lg:pr-96' : '')
+                }
                 data-testid="pdf-viewer-fullscreen"
                 onEscapeKeyDown={(event) => {
                   // Layered exit, mirroring ArtifactViewDialog: open panels

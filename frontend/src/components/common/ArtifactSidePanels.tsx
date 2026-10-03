@@ -97,7 +97,7 @@ export function ArtifactSidePanels({
       {/* Left: sources of the notebook (or a slotted workspace column) */}
       {leftOpen && (
         <aside
-          className="absolute inset-y-0 left-0 z-20 flex w-80 max-w-[85vw] flex-col border-r bg-card shadow-overlay duration-300 animate-in slide-in-from-left"
+          className="absolute inset-y-0 left-0 z-20 flex w-96 max-w-[85vw] flex-col border-r bg-card shadow-overlay duration-300 animate-in slide-in-from-left"
           data-testid="artifact-panel-sources"
         >
           {leftPanel ? (
@@ -169,10 +169,7 @@ export function ArtifactSidePanels({
       {/* Right: notes of the notebook (or a slotted workspace column) */}
       {rightOpen && (
         <aside
-          className={cn(
-            'absolute inset-y-0 right-0 z-20 flex max-w-[85vw] flex-col border-l bg-card shadow-overlay duration-300 animate-in slide-in-from-right',
-            rightPanel ? 'w-[22rem]' : 'w-96'
-          )}
+          className="absolute inset-y-0 right-0 z-20 flex w-96 max-w-[85vw] flex-col border-l bg-card shadow-overlay duration-300 animate-in slide-in-from-right"
           data-testid="artifact-panel-notes"
         >
           {rightPanel ? (

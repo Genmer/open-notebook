@@ -81,7 +81,11 @@ export function ArtifactViewDialog({
           // X（ui/dialog.tsx 基类）均 absolute 不占流；新增流内子级须同步改此模板。
           // overflow 条件互斥输出，不依赖 cn/twMerge 的追加顺序（两个方向都安全）。
           isFullscreen &&
-            'sm:max-w-none sm:max-h-none w-screen h-screen border-none rounded-none overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto]'
+            'sm:max-w-none sm:max-h-none w-screen h-screen border-none rounded-none overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] transition-[padding] duration-300',
+          // 面板开启时推挤而非覆盖：容器 padding 让出面板宽度（w-96=24rem），
+          // 中间正文与左右面板三栏并存。窄屏（<lg）保持覆盖模式。
+          isFullscreen && leftOpen && 'lg:pl-96',
+          isFullscreen && rightOpen && 'lg:pr-96'
         )}
         onEscapeKeyDown={(event) => {
           // Radix 的 Escape 关闭走 DismissableLayer，内容层 onKeyDown 不可靠：
