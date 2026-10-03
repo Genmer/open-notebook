@@ -1,0 +1,23 @@
+-- Migration 33: source annotation system (PDR-003).
+-- Single-annotation table (merged highlight+comment+note entity, no kind/parent)
+-- plus the color-semantics singleton. The EVENT removes annotations when their
+-- source is deleted, mirroring the source_insight cleanup in migration 1.
+DEFINE TABLE IF NOT EXISTS source_annotation SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS source ON TABLE source_annotation TYPE record<source>;
+DEFINE FIELD IF NOT EXISTS color ON TABLE source_annotation TYPE string;
+DEFINE FIELD IF NOT EXISTS line_style ON TABLE source_annotation TYPE string;
+DEFINE FIELD IF NOT EXISTS body ON TABLE source_annotation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS display_position ON TABLE source_annotation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS quote ON TABLE source_annotation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS text_anchor ON TABLE source_annotation FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS pdf_anchor ON TABLE source_annotation FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS page ON TABLE source_annotation TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS start_offset ON TABLE source_annotation TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS created ON source_annotation DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON source_annotation DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_sa_source ON TABLE source_annotation FIELDS source;
+DEFINE INDEX IF NOT EXISTS idx_sa_source_page ON TABLE source_annotation FIELDS source, page;
+DEFINE EVENT IF NOT EXISTS source_annotation_cleanup ON TABLE source WHEN ($after == NONE) THEN { DELETE source_annotation WHERE source == $before.id; };
+
+-- Color-semantics singleton (CONFIG_TABLES pattern: fixed id, SCHEMALESS).
+DEFINE TABLE IF NOT EXISTS annotation_settings SCHEMALESS;

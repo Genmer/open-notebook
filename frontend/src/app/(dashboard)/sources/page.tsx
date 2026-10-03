@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { sourcesApi, type SourceSortField } from '@/lib/api/sources'
+import { sourceAnnotationsApi } from '@/lib/api/source-annotations'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useUpdateSource } from '@/lib/hooks/use-sources'
 import { SourceListResponse } from '@/lib/types/api'
@@ -48,6 +49,22 @@ import {
 
 type BulkDialogKind = 'move' | 'copy' | null
 
+// F9 视觉要求：计数行里的数字用 mono。键是单句插值（{{count}}），无法在
+// locale 侧拆分，这里对插值结果按数字字面量定位后包裹 mono span；定位不到
+// （如测试环境 t 直接返回键名）则原样渲染整句，不丢内容。
+function withMonoNumber(text: string, value: number): React.ReactNode {
+  const raw = String(value)
+  const at = text.indexOf(raw)
+  if (at === -1) return text
+  return (
+    <>
+      {text.slice(0, at)}
+      <span className="font-mono font-semibold">{raw}</span>
+      {text.slice(at + raw.length)}
+    </>
+  )
+}
+
 export default function SourcesPage() {
   const { t, language } = useTranslation()
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
@@ -73,6 +90,8 @@ export default function SourcesPage() {
     open: false,
     source: null
   })
+  // F9：删除确认框内的“将连带删除 N 条标注”计数（null = 未拉到/无标注，不显示）
+  const [annotationCount, setAnnotationCount] = useState<number | null>(null)
   const router = useRouter()
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -414,6 +433,26 @@ export default function SourcesPage() {
     e.stopPropagation() // Prevent row click
     setDeleteDialog({ open: true, source })
   }, [])
+
+  // F9：删除确认打开时按“当前确认的源”拉标注计数，关闭即中止请求。
+  // 失败按无标注处理（不显示警示行），不打断删除流程本身。
+  const deleteDialogSourceId = deleteDialog.source?.id
+  useEffect(() => {
+    if (!deleteDialog.open || !deleteDialogSourceId) {
+      setAnnotationCount(null)
+      return
+    }
+    const controller = new AbortController()
+    let active = true
+    sourceAnnotationsApi
+      .count(deleteDialogSourceId, { signal: controller.signal })
+      .then(count => { if (active) setAnnotationCount(count) })
+      .catch(() => { if (active) setAnnotationCount(null) })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [deleteDialog.open, deleteDialogSourceId])
 
   const toggleSelectAllLoaded = () => {
     setSelectedIds(prev => (prev.size === sources.length ? new Set() : new Set(sources.map(s => s.id))))
@@ -1168,10 +1207,26 @@ export default function SourcesPage() {
         onOpenChange={(open) => setDeleteDialog({ open, source: deleteDialog.source })}
         title={t('sources.delete')}
         description={t('sources.deleteConfirmWithTitle', { title: deleteDialog.source?.title || t('sources.untitledSource') })}
-        confirmText={t('common.delete')}
+        confirmText={
+          annotationCount != null && annotationCount > 0
+            ? t('common.deleteForever')
+            : t('common.delete')
+        }
         confirmVariant="destructive"
         onConfirm={handleDeleteConfirm}
-      />
+      >
+        {annotationCount != null && annotationCount > 0 && (
+          <p
+            data-testid="delete-annotation-count"
+            className="mt-2 text-sm font-medium text-destructive"
+          >
+            {withMonoNumber(
+              t('sources.annotations.deleteConfirm.count', { count: annotationCount }),
+              annotationCount
+            )}
+          </p>
+        )}
+      </ConfirmDialog>
     </>)
   }
 

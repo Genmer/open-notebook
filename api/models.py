@@ -291,6 +291,85 @@ class NoteResponse(BaseModel):
     command_id: Optional[str] = None
 
 
+# Source annotation API models (PDR-003)
+class PdfQuadPayload(BaseModel):
+    x1: float = Field(..., description="Left edge in PDF user space (y up)")
+    y1: float = Field(..., description="Bottom edge in PDF user space")
+    x2: float = Field(..., description="Right edge in PDF user space")
+    y2: float = Field(..., description="Top edge in PDF user space")
+
+
+class PdfAnchorPayload(BaseModel):
+    page: int = Field(..., ge=1, description="1-based page number")
+    quads: List[PdfQuadPayload] = Field(
+        ..., min_length=1, description="Rectangle set covering the selection"
+    )
+
+
+class TextAnchorPayload(BaseModel):
+    quote: str = Field(..., min_length=1, description="Selected text")
+    prefix: str = Field("", description="Text immediately before the quote")
+    suffix: str = Field("", description="Text immediately after the quote")
+    start_offset: int = Field(0, ge=0)
+    end_offset: int = Field(0, ge=0)
+    section_title: Optional[str] = None
+
+
+class SourceAnnotationCreate(BaseModel):
+    source_id: str = Field(..., description="Source the annotation belongs to")
+    color: str = Field(..., description="Semantic color token (gold/fern/plum/slate/clay)")
+    line_style: str = Field("wavy", description="wavy | straight")
+    body: Optional[str] = Field(None, description="Annotation text (optional)")
+    display_position: Optional[str] = Field(
+        None,
+        description=(
+            "Body presentation slot; MVP always persists NULL regardless of "
+            "the value sent (PDR-003 ruling 9)"
+        ),
+    )
+    quote: Optional[str] = Field(None, description="Redundant quote for overviews")
+    text_anchor: Optional[TextAnchorPayload] = None
+    pdf_anchor: Optional[PdfAnchorPayload] = None
+
+
+class SourceAnnotationUpdate(BaseModel):
+    color: Optional[str] = None
+    line_style: Optional[str] = None
+    body: Optional[str] = None
+    display_position: Optional[str] = None
+    quote: Optional[str] = None
+    text_anchor: Optional[TextAnchorPayload] = None
+    pdf_anchor: Optional[PdfAnchorPayload] = None
+
+
+class SourceAnnotationResponse(BaseModel):
+    id: str
+    source: str
+    color: str
+    line_style: str
+    body: Optional[str] = None
+    display_position: Optional[str] = None
+    quote: Optional[str] = None
+    text_anchor: Optional[Dict[str, object]] = None
+    pdf_anchor: Optional[Dict[str, object]] = None
+    page: Optional[int] = None
+    start_offset: Optional[int] = None
+    created: str
+    updated: str
+
+
+class AnnotationSettingsPayload(BaseModel):
+    color_names: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Custom semantic names per color token (i18n defaults apply elsewhere)",
+    )
+
+
+class AnnotationSettingsResponse(BaseModel):
+    id: str
+    color_names: Dict[str, str]
+
+
 # Embedding API models
 class EmbedRequest(BaseModel):
     item_id: str = Field(..., description="ID of the item to embed")

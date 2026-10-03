@@ -199,11 +199,14 @@
 
 ## 6. F1 裁定结论回填（spike 完成后填写）
 
-- 技术判据 1-3：〔通过/失败 + 数据〕
-- 12 页抽样占比：〔数字〕% → 分支：〔①换范围 / ②混排 / ③正常〕
-- WCAG 对比度复测：〔结论〕；坐标往返复测：〔误差〕
-- SurrealDB 嵌套索引断言：〔结论——只影响平铺字段可否简化〕
-- **路径裁定**：〔划词主路径 / 换范围（F2 起按 §6.1 对照表变更，重排 +3-5 人日，TextLayer 整体移 P1）〕
+> 2026-10-03 实测（真实真题册 source:5ml0qs9qqh7g1qamovih，611 页，经 `/api/sources/{id}/download` 直读，node + pdfjs-dist legacy build）：
+
+- 技术判据 1-3：**通过**——①12/12 抽样页全部有文本层且每 item 带 6 元 transform（quads 可算，实测 w/h/transform[4,5] 齐备）；②viewport→user space→viewport 往返误差 **0.00e+0**（scale 1.75，3 页 ×3 点）；③TextLayer 定位数学按官方 `viewport.transform` 矩阵成立（naive 基线公式符号误，弃用；DOM 级偏差 ≤2px 留 F2 验收与浏览器 E2E 复核）
+- 12 页抽样占比：**100 %**（321–1520 字符/页，items 28–76）→ 分支：**③正常（划词主路径）**
+- WCAG 对比度复测：亮色 ink vs 白纸 gold 3.80 / fern 6.30 / plum 7.43 / slate 5.58 / clay 5.65，全部 ≥3:1 达标；暗色 hue 2.30–2.81 全部不达标 → **固定 ink token 裁决以实测数字坐实**
+- 坐标往返复测：误差 0（见上）
+- SurrealDB 嵌套索引断言：**支持**（DEFINE INDEX FIELDS anchor.page 与 ORDER BY anchor.page 均正常，实测排序正确）→ 平铺 page/start_offset 字段保留（懒加载/超界 O(1) 判定仍走顶层索引更直接，非必须但零成本）
+- **路径裁定**：**划词主路径**（不触发换范围分支；F8 按 §3.1 渲染，F10 全键进 locale）
 
 ### 6.1 换范围分支任务变更对照表（missing 回补：F1 裁定 = 换范围时启用）
 

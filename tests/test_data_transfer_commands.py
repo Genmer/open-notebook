@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from surrealdb import RecordID
 
 import commands.data_transfer_commands as dtc
 from commands.data_transfer_commands import (
@@ -32,6 +33,7 @@ VIEW_ID = "source_view:v1"
 GROUP_ID = "source_group:g1"
 INSIGHT_ID = "source_insight:si1"
 EMB_IDS = ["source_embedding:e1", "source_embedding:e2"]
+ANNOTATION_ID = "source_annotation:sa1"
 TRANSFORMATION_ID = "transformation:t1"
 CREDENTIAL_ID = "credential:c1"
 MODEL_ID = "model:m1"
@@ -87,6 +89,14 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
             {"id": NOTE_ID, "title": "N", "note_type": "human",
              "content": "note", "embedding": [0.4, 0.5, 0.6]}
         ],
+        "source_annotation": [
+            {"id": ANNOTATION_ID, "source": SOURCE_ID, "color": "gold",
+             "line_style": "wavy", "body": "易错点", "display_position": None,
+             "quote": "划线文字", "text_anchor": None,
+             "pdf_anchor": {"page": 3,
+                            "quads": [{"x1": 10, "y1": 700, "x2": 300, "y2": 715}]},
+             "page": 3, "start_offset": None},
+        ],
         "reference": [{"id": "reference:r1", "in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"id": "artifact:a1", "in": NOTE_ID, "out": NOTEBOOK_ID}],
         "source_group_member": [
@@ -109,6 +119,10 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
         "default_prompts": [{
             "id": "open_notebook:default_prompts",
             "transformation_instructions": "Custom prompt test",
+        }],
+        "annotation_settings": [{
+            "id": "open_notebook:annotation_settings",
+            "color_names": {"gold": "重点"},
         }],
         "credential": [{
             "id": CREDENTIAL_ID,
@@ -342,6 +356,11 @@ def _package_rows() -> Dict[str, List[Dict[str, Any]]]:
                              "embedding": [0.1, 0.2, 0.3]}],
         "note": [{"id": NOTE_ID, "title": "N", "note_type": "human",
                    "content": "note", "embedding": [0.4, 0.5, 0.6]}],
+        "source_annotation": [
+            {"id": ANNOTATION_ID, "source": SOURCE_ID, "color": "fern",
+             "line_style": "straight", "body": None, "display_position": None,
+             "quote": "quote text", "page": 2, "start_offset": 10},
+        ],
         "reference": [{"in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"in": NOTE_ID, "out": NOTEBOOK_ID}],
         "source_group_member": [{"in": SOURCE_ID, "out": GROUP_ID}],
@@ -577,6 +596,8 @@ class TestRoundTrip:
         assert first.imported["source"] == 1
         assert first.imported["source_embedding"] == 2
         assert first.imported["reference"] == 1
+        assert first.imported["source_annotation"] == 1
+        assert first.imported["annotation_settings"] == 1
         assert first.warnings == []
         update = [
             p or {}
@@ -584,6 +605,16 @@ class TestRoundTrip:
             if sql.startswith("UPDATE $id SET asset")
         ][0]
         assert update["asset"]["file_path"].startswith(str(tmp_path / "uploads2"))
+
+        # MVP acceptance 5: the annotation's source field imports as a record
+        # link, not a bare string (RECORD_FIELDS registration).
+        annotation_create = [
+            p or {}
+            for sql, p in import_recorder.writes
+            if sql.startswith("CREATE source_annotation")
+        ][0]
+        assert isinstance(annotation_create["p0_source"], RecordID)
+        assert str(annotation_create["p0_source"]) == SOURCE_ID
 
         # Second pass over an environment holding every id: zero writes.
         second_recorder = TransferRecorder(
@@ -599,10 +630,15 @@ class TestRoundTrip:
             second_recorder, str(tmp_path / "uploads3"), package_copy
         )
         # Data records skip whole, but config records re-apply via MERGE.
-        assert second.imported == {"content_settings": 1, "default_prompts": 1}
+        assert second.imported == {
+            "content_settings": 1,
+            "default_prompts": 1,
+            "annotation_settings": 1,
+        }
         assert [sql for sql, _ in second_recorder.writes] == [
             "UPSERT open_notebook:content_settings MERGE $data;",
             "UPSERT open_notebook:default_prompts MERGE $data;",
+            "UPSERT open_notebook:annotation_settings MERGE $data;",
         ]
 
 
@@ -713,7 +749,8 @@ class TestImport:
     @pytest.mark.asyncio
     async def test_import_package_with_missing_table_members(self, tmp_path):
         rows = _package_rows()
-        # A minimal package: no views/groups/edges/insights at all.
+        # A minimal package: no views/groups/edges/insights at all. The
+        # annotation member rides along because its source is present.
         for missing in ("source_view", "source_group", "source_insight", "note",
                         "reference", "artifact", "source_group_member",
                         "source_embedding", "transformation"):
@@ -724,7 +761,11 @@ class TestImport:
 
         output = await _run_import(recorder, str(tmp_path / "uploads"), package)
 
-        assert output.imported == {"notebook": 1, "source": 1}
+        assert output.imported == {
+            "notebook": 1,
+            "source": 1,
+            "source_annotation": 1,
+        }
         assert output.skipped.get("source") == 0
         assert output.warnings == []
 

@@ -1,7 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist'
+import type { TextContent, TextItem } from 'pdfjs-dist/types/src/display/api'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,7 +23,29 @@ import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { SaveNoteDialog } from '@/components/sources/SaveNoteDialog'
 import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
+import AnnotationHoverCard, {
+  ANNOTATION_HOVER_TIMING,
+  type AnchorRect,
+} from '@/components/sources/annotations/AnnotationHoverCard'
+import AnnotationSvgOverlay, {
+  type OverlayAnnotation,
+} from '@/components/sources/annotations/AnnotationSvgOverlay'
+import PageTextLayer from '@/components/sources/annotations/PageTextLayer'
+import ScanPageNotice from '@/components/sources/annotations/ScanPageNotice'
+import SelectionToolbar from '@/components/sources/annotations/SelectionToolbar'
 import { sourcesApi } from '@/lib/api/sources'
+import {
+  sourceAnnotationsApi,
+  type AnnotationColor,
+  type AnnotationLineStyle,
+  type SourceAnnotation,
+  type SourceAnnotationCreateInput,
+} from '@/lib/api/source-annotations'
+import {
+  annotationsPageKey,
+  sortPageAnnotations,
+  useAnnotations,
+} from '@/lib/hooks/use-annotations'
 import { useSectionAnalysis } from '@/lib/hooks/use-section-analysis'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getPdfjs } from '@/lib/pdf/pdf-loader'
@@ -32,6 +57,15 @@ import {
   sectionEndPage,
   type PdfOutlineEntry,
 } from '@/lib/pdf/pdf-utils'
+import {
+  quoteFromSelectionText,
+  quadToDomRect,
+  rectsToQuads,
+  textAnchorFromSelection,
+  type DomRectLike,
+  type Quad,
+  type TextAnchor,
+} from '@/lib/pdf/annotation-anchor'
 
 interface PdfSourceViewerProps {
   open: boolean
@@ -56,10 +90,60 @@ interface SectionAnalysis {
 const ZOOM_STEPS = [0.6, 0.8, 1, 1.25, 1.5, 2, 2.5]
 
 /**
+ * F1 spike ruling (2026-10-03, mvp-tasks §6): the 划词 (text-selection) branch
+ * is the MVP main path — 100% text pages sampled on the real 611-page exam
+ * file, no branch switch. The scan-page notice renders ONLY on this branch
+ * (plan §3.1 branch condition: on the rectangle-selection branch its copy
+ * would promise "next phase" about the current main path). Flip to false if a
+ * re-run of the spike ever switches branches (§5.6).
+ */
+const ANNOTATION_SELECTION_MAIN_PATH = true
+
+/** Page classification: has a usable pdf.js text layer or not (PDR-003 ruling 1
+ * — interaction routes per page, decoupled from the document-wide branch). */
+type PageKind = 'text' | 'scan'
+
+/** One page's TextLayer inputs: the pdf.js page proxy, its dpr-free CSS
+ * viewport and the pre-fetched text content (classification already done). */
+interface PageTextInfo {
+  page: PDFPageProxy
+  cssViewport: PageViewport
+  textContent: TextContent
+}
+
+/** Page geometry for the wrapper CSS size + the overlay viewBox space. */
+interface PageDims {
+  /** PDF user units (viewBox space, y grows upward). */
+  userWidth: number
+  userHeight: number
+  /** CSS pixels — the scaled on-screen page (no devicePixelRatio). */
+  cssWidth: number
+  cssHeight: number
+}
+
+/** Zoom-independent per-page classification cache entry. TextContent identity
+ * is kept stable so PageTextLayer never rebuilds on zoom (it `update()`s). */
+interface CachedPageText {
+  kind: PageKind
+  textContent: TextContent
+}
+
+/**
  * In-app viewer for uploaded PDF sources. Loads the original file via the
  * download endpoint, renders one page at a time on a single canvas, offers
  * the document outline for navigation and a click-triggered AI analysis per
  * outline section (result savable as a note when a notebook context exists).
+ *
+ * The rendered page lives in a relative wrapper (data-testid="pdf-page-wrapper")
+ * that all page layers share — canvas, pdf.js TextLayer (text pages only) and
+ * the SVG annotation overlay — so they can never drift apart by rounding: the
+ * wrapper carries the exact dpr-free CSS viewport size and every child fills
+ * it (plan §5.3 "same wrapper" guarantee).
+ *
+ * Annotation flow (plan §3): selection inside the TextLayer → floating
+ * toolbar → optimistic annotation (serial submit queue) → hover card with the
+ * 150ms open / 300ms grace choreography. Scanned pages (empty text content)
+ * route to the inline notice instead of a text layer (PDR-003 ruling 1).
  *
  * Two shells: a modal dialog (default) or `inline` — embedded directly in
  * the source content pane, replacing the parsed text while toggled on.
@@ -76,6 +160,7 @@ export default function PdfSourceViewer({
 }: PdfSourceViewerProps) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pageWrapperRef = useRef<HTMLDivElement | null>(null)
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'notPdf' | 'failed'>('loading')
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -96,6 +181,49 @@ export default function PdfSourceViewer({
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
 
+  // ── Annotation layer state ──────────────────────────────────────────────
+  // Current-page classification + TextLayer inputs (null on scanned pages).
+  const [pageKind, setPageKind] = useState<PageKind | null>(null)
+  const [pageInfo, setPageInfo] = useState<PageTextInfo | null>(null)
+  const [pageDims, setPageDims] = useState<PageDims | null>(null)
+  // The TextLayer container element (queried from the wrapper after mount) —
+  // the selection toolbar's containerEl.
+  const [textLayerEl, setTextLayerEl] = useState<HTMLElement | null>(null)
+  // Per-page classification cache, cleared on document switch.
+  const pageTextCacheRef = useRef<Map<number, CachedPageText>>(new Map())
+
+  // Annotation rows for the current page come from the per-page lazy loader
+  // (react-query cache; optimistic rows are painted by the hook itself).
+  // Rapid successive creations run through a serial queue below (plan §3.5).
+  const queryClient = useQueryClient()
+  const totalPages = doc?.numPages ?? 0
+  const annotations = useAnnotations({ sourceId, currentPage, totalPages })
+  // Toolbar defaults: gold is the default color (plan §4.2), the line style
+  // only switches the default for *subsequent* annotations (plan §3.1).
+  const [defaultColor] = useState<AnnotationColor>('gold')
+  const [defaultLineStyle, setDefaultLineStyle] = useState<AnnotationLineStyle>('wavy')
+  // Serial submit queue — rapid successive annotations never race (§3.5).
+  const submitQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+
+  // Hover-card choreography (AnnotationHoverCard visibility protocol): the
+  // open/close delays live here because the underline and the card both
+  // participate.
+  const [hover, setHover] = useState<{ id: string; rect: AnchorRect } | null>(null)
+  const [hoverOpen, setHoverOpen] = useState(false)
+  // Opens the card straight into the pinned edit state (comment flow entry);
+  // afterwards it mirrors the card's internal flag (onPinnedChange) so the
+  // pointer-leave grace can skip closing a pinned card (plan §3.7).
+  const [hoverPinned, setHoverPinned] = useState(false)
+  const hoverPinnedRef = useRef(false)
+  hoverPinnedRef.current = hoverPinned
+  const hoverOpenTimerRef = useRef<number | null>(null)
+  const hoverCloseTimerRef = useRef<number | null>(null)
+
+  // Annotations whose flattened page exceeds the document's page count —
+  // source file was replaced; O(1) check per row against doc.numPages
+  // (PDR-003 ruling 16, MVP lightweight orphaned hint).
+  const [orphanedCount, setOrphanedCount] = useState(0)
+
   const analysis = useSectionAnalysis({
     onCompleted: (key, result) => {
       setAnalysisByKey((prev) => ({
@@ -112,12 +240,45 @@ export default function PdfSourceViewer({
 
   // "still mounted" guard for the async load/extract chains.
   const mountedRef = useRef(true)
+
+  const clearHoverTimers = useCallback(() => {
+    if (hoverOpenTimerRef.current != null) {
+      window.clearTimeout(hoverOpenTimerRef.current)
+      hoverOpenTimerRef.current = null
+    }
+    if (hoverCloseTimerRef.current != null) {
+      window.clearTimeout(hoverCloseTimerRef.current)
+      hoverCloseTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleHoverClose = useCallback(() => {
+    if (hoverCloseTimerRef.current != null) window.clearTimeout(hoverCloseTimerRef.current)
+    hoverCloseTimerRef.current = window.setTimeout(() => {
+      hoverCloseTimerRef.current = null
+      setHoverOpen(false)
+    }, ANNOTATION_HOVER_TIMING.closeGraceMs)
+  }, [])
+
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      clearHoverTimers()
     }
-  }, [])
+  }, [clearHoverTimers])
+
+  /** Clear the live selection and every piece of transient annotation UI. */
+  const clearAnnotationUi = useCallback(() => {
+    clearHoverTimers()
+    setHoverOpen(false)
+    setHover(null)
+    setHoverPinned(false)
+    setOrphanedCount(0)
+    if (typeof window !== 'undefined') {
+      window.getSelection()?.removeAllRanges()
+    }
+  }, [clearHoverTimers])
 
   const resetState = useCallback(() => {
     setStatus('loading')
@@ -132,7 +293,26 @@ export default function PdfSourceViewer({
     setErrorKey(null)
     setActiveKey(null)
     setSaveDialogOpen(false)
-  }, [])
+    // Annotation layer: drop per-page classification, page inputs and every
+    // in-flight annotation interaction (a new document is loading). The
+    // react-query page caches stay — they are keyed per source+page and serve
+    // a reopened viewer instantly.
+    setPageKind(null)
+    setPageInfo(null)
+    setPageDims(null)
+    setTextLayerEl(null)
+    pageTextCacheRef.current.clear()
+    submitQueueRef.current = Promise.resolve()
+    clearAnnotationUi()
+  }, [clearAnnotationUi])
+
+  // Closing the viewer (either shell) must also drop the selection and the
+  // annotation UI state — the dialog unmounts its children, but the text
+  // selection itself outlives the DOM it lived in.
+  useEffect(() => {
+    if (open) return
+    clearAnnotationUi()
+  }, [open, clearAnnotationUi])
 
   // Load the document while open; destroy the loading task on close/reopen.
   // The ArrayBuffer is transferred to the worker (ownership moves) — never
@@ -200,8 +380,11 @@ export default function PdfSourceViewer({
     }
   }, [open, sourceId, filePath, resetState])
 
-  // Render the current page onto the single canvas. Cancel any in-flight
-  // render task before a page turn / zoom (effect cleanup).
+  // Render the current page onto the single canvas and classify the page:
+  // getTextContent decides whether a TextLayer exists (PDR-003 ruling 1 —
+  // per-page routing). Classification is cached per page so zoom only
+  // re-renders the canvas and re-layouts the existing spans. Cancel any
+  // in-flight render task before a page turn / zoom (effect cleanup).
   useEffect(() => {
     if (!doc || status !== 'ready') return
     let cancelled = false
@@ -210,19 +393,51 @@ export default function PdfSourceViewer({
     void (async () => {
       try {
         const page = await doc.getPage(currentPage)
+        let cached = pageTextCacheRef.current.get(currentPage)
+        if (!cached) {
+          const textContent = await page.getTextContent()
+          // Non-text items (marked content) and whitespace-only strings carry
+          // no selectable text — only a real str counts for classification.
+          const hasText = textContent.items.some(
+            (item) => typeof (item as TextItem).str === 'string' && (item as TextItem).str.trim().length > 0
+          )
+          cached = { kind: hasText ? 'text' : 'scan', textContent }
+          pageTextCacheRef.current.set(currentPage, cached)
+        }
+        if (cancelled) return
+        // The dpr-free CSS viewport — the one the TextLayer lays out in and
+        // every DOM↔user-space conversion goes through (the "dual viewport
+        // trap": only the canvas bitmap uses the dpr viewport below).
+        const cssViewport = page.getViewport({ scale })
+        // User-space page size = CSS size / scale. Derived from the viewport
+        // (not page.view) so rotated pages stay consistent with the transform
+        // every conversion and the overlay viewBox rely on.
+        setPageKind(cached.kind)
+        setPageInfo(
+          cached.kind === 'text'
+            ? { page, cssViewport, textContent: cached.textContent }
+            : null
+        )
+        setPageDims({
+          userWidth: cssViewport.width / cssViewport.scale,
+          userHeight: cssViewport.height / cssViewport.scale,
+          cssWidth: cssViewport.width,
+          cssHeight: cssViewport.height,
+        })
+
         const canvas = canvasRef.current
         if (cancelled || !canvas) {
           await page.cleanup()
           return
         }
         // Render at device resolution, lay out at CSS resolution (v6 has no
-        // maxCanvasPixels cap — clamp the multiplier instead).
+        // maxCanvasPixels cap — clamp the multiplier instead). The canvas
+        // bitmap may floor to integers; its CSS box is 100% of the wrapper,
+        // which carries the exact CSS viewport size.
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
         const viewport = page.getViewport({ scale: scale * dpr })
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
-        canvas.style.width = `${Math.floor(viewport.width / dpr)}px`
-        canvas.style.height = `${Math.floor(viewport.height / dpr)}px`
         const task = page.render({ canvas, viewport })
         renderTask = task
         await task.promise
@@ -239,7 +454,30 @@ export default function PdfSourceViewer({
     }
   }, [doc, status, currentPage, scale])
 
-  const totalPages = doc?.numPages ?? 0
+  // Track the mounted TextLayer container element (PageTextLayer owns its
+  // DOM) — the selection toolbar scopes to it. pageInfo changes exactly when
+  // the layer mounts/unmounts (page turn, text→scan), so a post-commit query
+  // is sufficient.
+  useEffect(() => {
+    if (!pageInfo) {
+      setTextLayerEl(null)
+      return
+    }
+    setTextLayerEl(
+      pageWrapperRef.current?.querySelector<HTMLElement>('[data-testid="pdf-text-layer"]') ?? null
+    )
+  }, [pageInfo])
+
+  // A page turn invalidates any open hover card — its anchor rect and row
+  // live on the old page; without this, returning to that page would pop the
+  // stale card back open.
+  useEffect(() => {
+    clearHoverTimers()
+    setHoverOpen(false)
+    setHover(null)
+    setHoverPinned(false)
+  }, [currentPage, clearHoverTimers])
+
   const zoomIn = () => setScale((s) => ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, ZOOM_STEPS.indexOf(s) + 1)] ?? s)
   const zoomOut = () => setScale((s) => ZOOM_STEPS[Math.max(0, ZOOM_STEPS.indexOf(s) - 1)] ?? s)
 
@@ -286,7 +524,269 @@ export default function PdfSourceViewer({
     [doc, outline, analysis, emptyTextKeys, entryKey, sourceId]
   )
 
+  // ── Annotation data flow ────────────────────────────────────────────────
+
+  // Current-page rows (server rows + any optimistic rows the hook painted
+  // into the page cache). Referentially stable across unrelated re-renders.
+  const pageAnnotations = annotations.currentPageAnnotations
+  // The hook's optimistic create (stable identity) — captured for the serial
+  // submit queue below.
+  const createAnnotation = annotations.create
+
+  // Orphaned detection (PDR-003 ruling 16): one full-source fetch when the
+  // document is ready, then the per-row check is O(1) — flattened page vs
+  // doc.numPages. The hook's own orphanedAnnotations is window-limited
+  // (current ± buffer pages) and can never surface an over-range row on its
+  // own, so the viewer does this single unfiltered fetch. Best-effort: an
+  // API failure just leaves the hint hidden.
+  useEffect(() => {
+    if (!doc || status !== 'ready' || !sourceId) return
+    let cancelled = false
+    setOrphanedCount(0)
+    sourceAnnotationsApi
+      .list(sourceId)
+      .then((rows) => {
+        if (cancelled) return
+        setOrphanedCount(rows.filter((row) => row.page != null && row.page > doc.numPages).length)
+      })
+      .catch(() => {
+        // The orphaned hint is an enhancement, not a gate.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [doc, status, sourceId])
+
+  /** Cache-only sync for hover-card mutations. The card performs its own API
+   * calls with its own toasts (single-door rule from use-annotations: never
+   * route one action through both); these handlers only mirror the outcome
+   * into the per-page query caches. */
+  const writeAnnotationToCache = useCallback(
+    (annotation: SourceAnnotation) => {
+      for (const page of annotations.loadedPages) {
+        queryClient.setQueryData<SourceAnnotation[]>(annotationsPageKey(sourceId, page), (prev) =>
+          prev?.some((row) => row.id === annotation.id)
+            ? prev.filter((row) => row.id !== annotation.id)
+            : prev
+        )
+      }
+      if (annotation.page != null) {
+        queryClient.setQueryData<SourceAnnotation[]>(
+          annotationsPageKey(sourceId, annotation.page),
+          (prev) =>
+            sortPageAnnotations([...(prev ?? []).filter((row) => row.id !== annotation.id), annotation])
+        )
+      }
+    },
+    [annotations.loadedPages, queryClient, sourceId]
+  )
+
+  const removeAnnotationFromCache = useCallback(
+    (id: string) => {
+      for (const page of annotations.loadedPages) {
+        queryClient.setQueryData<SourceAnnotation[]>(annotationsPageKey(sourceId, page), (prev) =>
+          prev?.some((row) => row.id === id) ? prev.filter((row) => row.id !== id) : prev
+        )
+      }
+    },
+    [annotations.loadedPages, queryClient, sourceId]
+  )
+
+  /** Viewport-coordinate rect covering a set of user-space quads — the hover
+   * card's virtual anchor (quadToDomRect is wrapper-relative; offset by the
+   * wrapper's client rect to reach fixed/viewport coordinates). */
+  const anchorRectFromQuads = useCallback(
+    (quads: Quad[]): AnchorRect | null => {
+      const wrapper = pageWrapperRef.current
+      if (!wrapper || !pageInfo || quads.length === 0) return null
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const domRects = quads.map((quad) => quadToDomRect(quad, pageInfo.cssViewport))
+      const left = Math.min(...domRects.map((r) => r.left)) + wrapperRect.left
+      const top = Math.min(...domRects.map((r) => r.top)) + wrapperRect.top
+      const right = Math.max(...domRects.map((r) => r.left + r.width)) + wrapperRect.left
+      const bottom = Math.max(...domRects.map((r) => r.top + r.height)) + wrapperRect.top
+      return { left, top, width: right - left, height: bottom - top }
+    },
+    [pageInfo]
+  )
+
+  const anchorRectForAnnotation = useCallback(
+    (annotation: SourceAnnotation): AnchorRect | null =>
+      annotation.pdf_anchor?.quads ? anchorRectFromQuads(annotation.pdf_anchor.quads) : null,
+    [anchorRectFromQuads]
+  )
+
+  /** Open the card for an annotation id at a precomputed anchor rect —
+   * preview (underline hover) or pinned edit state (comment flow). */
+  const openHoverCard = useCallback(
+    (id: string, rect: AnchorRect, pinned: boolean) => {
+      clearHoverTimers()
+      setHover({ id, rect })
+      setHoverPinned(pinned)
+      setHoverOpen(true)
+    },
+    [clearHoverTimers]
+  )
+
+  // Overlay hover → card open/close choreography (AnnotationHoverCard
+  // visibility protocol: 150ms open delay, 300ms close grace).
+  const handleOverlayHover = useCallback(
+    (id: string) => {
+      const annotation = pageAnnotations.find((row) => row.id === id)
+      if (!annotation || !pageInfo) return
+      if (hoverCloseTimerRef.current != null) {
+        window.clearTimeout(hoverCloseTimerRef.current)
+        hoverCloseTimerRef.current = null
+      }
+      if (hoverOpen && hover?.id === id) {
+        // Already showing: refresh the anchor rect (zoom may have moved it).
+        const rect = anchorRectForAnnotation(annotation)
+        if (rect) setHover((prev) => (prev ? { ...prev, rect } : prev))
+        return
+      }
+      if (hoverOpenTimerRef.current != null) window.clearTimeout(hoverOpenTimerRef.current)
+      hoverOpenTimerRef.current = window.setTimeout(() => {
+        hoverOpenTimerRef.current = null
+        const rect = anchorRectForAnnotation(annotation)
+        if (!rect) return
+        setHover({ id, rect })
+        setHoverPinned(false)
+        setHoverOpen(true)
+      }, ANNOTATION_HOVER_TIMING.openDelayMs)
+    },
+    [pageAnnotations, pageInfo, hover?.id, hoverOpen, anchorRectForAnnotation]
+  )
+
+  const handleOverlayLeave = useCallback(() => {
+    if (hoverOpenTimerRef.current != null) {
+      window.clearTimeout(hoverOpenTimerRef.current)
+      hoverOpenTimerRef.current = null
+    }
+    // A pinned (editing) card stays up regardless of the pointer (§3.7).
+    if (!hoverPinnedRef.current) scheduleHoverClose()
+  }, [scheduleHoverClose])
+
+  /** Selection → anchors → serial optimistic submit (via use-annotations'
+   * create, which paints the optimistic row and owns the failure toast +
+   * rollback). Rejects over-length quotes (>5000 chars, the quote must stay
+   * verbatim) and selections that leave the current page's text layer
+   * (cross-page, plan §3.5) with explicit toasts — never a silent
+   * truncation. `openPinned` (the [批注] entry) opens the hover card straight
+   * into the pinned edit state once the row has landed. */
+  const createAnnotationFromSelection = useCallback(
+    (color: AnnotationColor, lineStyle: AnnotationLineStyle, openPinned: boolean) => {
+      const wrapper = pageWrapperRef.current
+      const container = textLayerEl ?? wrapper
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null
+      if (!pageInfo || !wrapper || !container || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+        return
+      }
+      // Cross-page guard: every boundary of the selection must live inside
+      // the current page's text layer (the single-page viewer cannot anchor
+      // anything else; plan §3.5 "跨页内容请分段标注").
+      const insideContainer = (node: Node | null): boolean =>
+        node != null && (node === container || container.contains(node))
+      if (
+        !insideContainer(selection.anchorNode) ||
+        !insideContainer(selection.focusNode)
+      ) {
+        toast.error(t('sources.annotations.toast.crossPage'))
+        return
+      }
+
+      // Selection rects, re-based to the page wrapper (rectsToQuads expects
+      // wrapper-relative CSS-pixel rects and the dpr-free viewport).
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const rects: DomRectLike[] = []
+      for (let i = 0; i < selection.rangeCount; i++) {
+        for (const rect of selection.getRangeAt(i).getClientRects()) {
+          rects.push({
+            left: rect.left - wrapperRect.left,
+            top: rect.top - wrapperRect.top,
+            width: rect.width,
+            height: rect.height,
+          })
+        }
+      }
+      const quads = rectsToQuads(rects, pageInfo.cssViewport)
+      if (quads.length === 0) return
+
+      const textAnchorOrError = textAnchorFromSelection(selection, container)
+      if (textAnchorOrError && 'error' in textAnchorOrError && textAnchorOrError.error === 'too_long') {
+        toast.error(t('sources.annotations.toast.tooLong'))
+        return
+      }
+      let textAnchor: TextAnchor | null = null
+      let quote: string | null = null
+      if (textAnchorOrError && !('error' in textAnchorOrError)) {
+        textAnchor = textAnchorOrError
+        quote = textAnchor.quote
+      } else {
+        // Selection inside the container but not inside text spans (rare):
+        // fall back to the plain selection text as the quote snapshot.
+        const fallback = quoteFromSelectionText(selection.toString())
+        if (typeof fallback === 'object') {
+          toast.error(t('sources.annotations.toast.tooLong'))
+          return
+        }
+        quote = fallback
+      }
+
+      const input: SourceAnnotationCreateInput = {
+        source_id: sourceId,
+        color,
+        line_style: lineStyle,
+        body: null,
+        quote,
+        text_anchor: textAnchor,
+        pdf_anchor: { page: currentPage, quads },
+      }
+      // The card anchor rect is computed from the same quads now (the
+      // selection is about to be superseded) and reused when the row lands.
+      const anchorRect = openPinned ? anchorRectFromQuads(quads) : null
+
+      // Serial queue (plan §3.5 快速连续标注): each create is optimistic in
+      // the page cache the moment it runs, but POSTs never overlap. The hook
+      // owns rollback + the createFailed toast; the queue only sequences.
+      submitQueueRef.current = submitQueueRef.current
+        .then(async () => {
+          const created = await createAnnotation(input)
+          if (openPinned && anchorRect && mountedRef.current) {
+            // 落标后立即打开该标注的 pin 态批注卡（plan §3.1 [批注]）。
+            openHoverCard(created.id, anchorRect, true)
+          }
+        })
+        .catch(() => {
+          // Hook already toasted + rolled the optimistic row back; a pinned
+          // card that was pointing at it simply unmounts with the row.
+        })
+    },
+    [
+      pageInfo,
+      textLayerEl,
+      currentPage,
+      sourceId,
+      t,
+      createAnnotation,
+      anchorRectFromQuads,
+      openHoverCard,
+    ]
+  )
+
   if (!open) return null
+
+  const hoverAnnotation = hover ? pageAnnotations.find((row) => row.id === hover.id) : undefined
+
+  // Overlay rows for the current page: persisted + optimistic annotations
+  // that carry a PDF anchor here.
+  const overlayAnnotations: OverlayAnnotation[] = pageAnnotations
+    .filter((row) => row.pdf_anchor?.quads?.length)
+    .map((row) => ({
+      id: row.id,
+      color: row.color,
+      lineStyle: row.line_style,
+      quads: row.pdf_anchor!.quads,
+    }))
 
   // Shared toolbar/body/save-dialog markup — wrapped by the shell below.
   const viewerBody = (
@@ -365,6 +865,25 @@ export default function PdfSourceViewer({
           </div>
         </div>
 
+        {/* Page-level annotation notices (below the toolbar, plan §3.1).
+            Scanned pages: no text layer → no selection toolbar; the persistent
+            role="status" notice explains why (only on the selection-first
+            branch — ANNOTATION_SELECTION_MAIN_PATH, F1 ruling). */}
+        {status === 'ready' && pageKind === 'scan' && ANNOTATION_SELECTION_MAIN_PATH && (
+          <div className="shrink-0 border-b px-3 py-2">
+            <ScanPageNotice />
+          </div>
+        )}
+        {status === 'ready' && orphanedCount > 0 && (
+          <div
+            role="status"
+            data-testid="annotation-orphaned-hint"
+            className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400"
+          >
+            {t('sources.annotations.orphanedHint')}
+          </div>
+        )}
+
         {/* Body */}
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {/* Floating outline panel — overlays the page instead of squeezing
@@ -392,52 +911,52 @@ export default function PdfSourceViewer({
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {parsingToc ? (
-                <div className="flex items-center gap-2 px-2 py-6 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t('sources.pdfViewer.parsingToc')}
-                </div>
-              ) : !outline || outline.length === 0 ? (
-                <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                  {t('sources.pdfViewer.noOutline')}
-                </p>
-              ) : (
-              outline.map((entry, index) => {
-                const key = entryKey(entry, index)
-                const isAnalyzing = analyzingKey === key
-                return (
-                  <div
-                    key={key}
-                    className="group flex items-start gap-1 rounded px-1 py-0.5 hover:bg-accent/50"
-                    style={{ paddingLeft: `${8 + entry.depth * 12}px` }}
-                  >
-                    {entry.pageNumber != null ? (
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 truncate text-left text-xs text-foreground/90 hover:text-primary hover:underline"
-                        onClick={() => setCurrentPage(entry.pageNumber as number)}
-                        title={entry.title}
+                {parsingToc ? (
+                  <div className="flex items-center gap-2 px-2 py-6 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t('sources.pdfViewer.parsingToc')}
+                  </div>
+                ) : !outline || outline.length === 0 ? (
+                  <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                    {t('sources.pdfViewer.noOutline')}
+                  </p>
+                ) : (
+                  outline.map((entry, index) => {
+                    const key = entryKey(entry, index)
+                    const isAnalyzing = analyzingKey === key
+                    return (
+                      <div
+                        key={key}
+                        className="group flex items-start gap-1 rounded px-1 py-0.5 hover:bg-accent/50"
+                        style={{ paddingLeft: `${8 + entry.depth * 12}px` }}
                       >
-                        <FileText className="mr-1 inline h-3 w-3 text-muted-foreground" />
-                        {entry.title}
-                      </button>
-                    ) : entry.url ? (
-                      <a
-                        href={entry.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground hover:text-primary hover:underline"
-                        title={entry.title}
-                      >
-                        <Link2 className="mr-1 inline h-3 w-3" />
-                        {entry.title}
-                      </a>
-                    ) : (
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={entry.title}>
-                        {entry.title}
-                      </span>
-                    )}
-                    <Button
+                        {entry.pageNumber != null ? (
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate text-left text-xs text-foreground/90 hover:text-primary hover:underline"
+                            onClick={() => setCurrentPage(entry.pageNumber as number)}
+                            title={entry.title}
+                          >
+                            <FileText className="mr-1 inline h-3 w-3 text-muted-foreground" />
+                            {entry.title}
+                          </button>
+                        ) : entry.url ? (
+                          <a
+                            href={entry.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground hover:text-primary hover:underline"
+                            title={entry.title}
+                          >
+                            <Link2 className="mr-1 inline h-3 w-3" />
+                            {entry.title}
+                          </a>
+                        ) : (
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={entry.title}>
+                            {entry.title}
+                          </span>
+                        )}
+                        <Button
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5 shrink-0 text-muted-foreground hover:text-primary"
@@ -462,10 +981,10 @@ export default function PdfSourceViewer({
                         <Sparkles className="h-3 w-3" />
                       )}
                     </Button>
-                  </div>
-                )
-              })
-              )}
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </aside>
           )}
@@ -489,12 +1008,40 @@ export default function PdfSourceViewer({
               </div>
             )}
             {status === 'ready' && (
-              <canvas
-                ref={canvasRef}
-                className="rounded shadow-md"
-                data-testid="pdf-canvas"
-                aria-label={t('sources.pdfViewer.title')}
-              />
+              <div
+                ref={pageWrapperRef}
+                data-testid="pdf-page-wrapper"
+                className="relative shrink-0 rounded shadow-md"
+                style={
+                  pageDims ? { width: pageDims.cssWidth, height: pageDims.cssHeight } : undefined
+                }
+              >
+                <canvas
+                  ref={canvasRef}
+                  className="h-full w-full rounded"
+                  data-testid="pdf-canvas"
+                  aria-label={t('sources.pdfViewer.title')}
+                />
+                {pageInfo && (
+                  <PageTextLayer
+                    page={pageInfo.page}
+                    cssViewport={pageInfo.cssViewport}
+                    textContent={pageInfo.textContent}
+                  />
+                )}
+                {pageInfo && pageDims && overlayAnnotations.length > 0 && (
+                  <AnnotationSvgOverlay
+                    annotations={overlayAnnotations}
+                    userWidth={pageDims.userWidth}
+                    userHeight={pageDims.userHeight}
+                    cssWidth={pageDims.cssWidth}
+                    cssHeight={pageDims.cssHeight}
+                    activeId={hoverOpen ? (hover?.id ?? null) : null}
+                    onHover={handleOverlayHover}
+                    onLeave={handleOverlayLeave}
+                  />
+                )}
+              </div>
             )}
           </div>
 
@@ -553,7 +1100,7 @@ export default function PdfSourceViewer({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 shrink-0 text-muted-foreground"
+                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
                       onClick={() => setActiveKey(null)}
                       aria-label={t('sources.pdfViewer.close')}
                       title={t('sources.pdfViewer.close')}
@@ -591,6 +1138,56 @@ export default function PdfSourceViewer({
             </aside>
           )}
         </div>
+
+        {/* Selection floating toolbar (fixed-position; arms only when a text
+            layer container exists — scanned pages route to the notice above). */}
+        {status === 'ready' && (
+          <SelectionToolbar
+            containerEl={textLayerEl}
+            defaultColor={defaultColor}
+            defaultLineStyle={defaultLineStyle}
+            onAnnotate={(color, lineStyle) => createAnnotationFromSelection(color, lineStyle, false)}
+            onCommentRequest={(color, lineStyle) => createAnnotationFromSelection(color, lineStyle, true)}
+            onDefaultsChange={({ lineStyle }) => setDefaultLineStyle(lineStyle)}
+          />
+        )}
+
+        {/* Hover annotation card (portal-rendered by Radix; anchored on the
+            underline's viewport rect). The card performs its own API calls;
+            these handlers only mirror outcomes into the page caches. */}
+        {status === 'ready' && hover && hoverAnnotation && (
+          <AnnotationHoverCard
+            annotation={hoverAnnotation}
+            anchorRect={hover.rect}
+            open={hoverOpen}
+            onOpenChange={(next) => {
+              if (next) {
+                setHoverOpen(true)
+              } else {
+                clearHoverTimers()
+                setHoverOpen(false)
+                setHover(null)
+                setHoverPinned(false)
+              }
+            }}
+            defaultPinned={hoverPinned}
+            onPinnedChange={setHoverPinned}
+            onCardPointerEnter={() => {
+              if (hoverCloseTimerRef.current != null) {
+                window.clearTimeout(hoverCloseTimerRef.current)
+                hoverCloseTimerRef.current = null
+              }
+            }}
+            onCardPointerLeave={() => {
+              // Pinned (editing) cards ignore the grace — only Esc or an
+              // outside click closes them (plan §3.7 layered exit).
+              if (!hoverPinnedRef.current) scheduleHoverClose()
+            }}
+            onUpdated={writeAnnotationToCache}
+            onDeleted={(annotation) => removeAnnotationFromCache(annotation.id)}
+            onRestored={writeAnnotationToCache}
+          />
+        )}
 
         {/* Save-as-note dual-mode dialog (defaults to note mode here). */}
         {notebookId && (

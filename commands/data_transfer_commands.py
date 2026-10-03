@@ -98,12 +98,13 @@ DATA_TABLES = (
     "source",
     "source_insight",
     "note",
+    "source_annotation",
 )
 EDGE_TABLES = ("reference", "artifact", "source_group_member")
 EMBEDDING_TABLE = "source_embedding"
 # Single-record tables living at fixed ids (open_notebook:<table>), not at
 # <table>:<key>; export reads them with LIMIT 1 and import MERGEs unconditionally.
-CONFIG_TABLES = ("content_settings", "default_prompts")
+CONFIG_TABLES = ("content_settings", "default_prompts", "annotation_settings")
 # Model configuration (format v2, ADR-014); default_models is a singleton like
 # the CONFIG_TABLES entries, credential/model are regular keyed records.
 MODEL_CONFIG_TABLES = ("credential", "model", "default_models")
@@ -179,6 +180,20 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
         "created",
         "updated",
     ),
+    "source_annotation": (
+        "source",
+        "color",
+        "line_style",
+        "body",
+        "display_position",
+        "quote",
+        "text_anchor",
+        "pdf_anchor",
+        "page",
+        "start_offset",
+        "created",
+        "updated",
+    ),
     "transformation": (
         "name",
         "title",
@@ -209,6 +224,10 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
     "default_prompts": (
         "transformation_instructions",
+    ),
+    "annotation_settings": (
+        "color_names",
+        "updated",
     ),
     "credential": (
         "name",
@@ -261,6 +280,7 @@ RECORD_FIELDS: Dict[str, Set[str]] = {
     "source_group": {"source_view", "parent"},
     EMBEDDING_TABLE: {"source"},
     "model": {"credential"},
+    "source_annotation": {"source"},
 }
 DATETIME_FIELDS = {"created", "updated", "last_viewed_at", "last_classified_at"}
 
