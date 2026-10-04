@@ -80,7 +80,7 @@ export function RecentlyViewed({ limit = 12 }: RecentlyViewedProps) {
       </div>
 
       <CollapsibleContent>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {items.map((item) => {
             const Icon = item.type === 'notebook' ? BookOpen : FileText
             const typeLabel =

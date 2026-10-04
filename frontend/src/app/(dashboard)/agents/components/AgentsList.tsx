@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { Bot, Edit, Trash2 } from 'lucide-react'
+import { Bot, Edit, HelpCircle, Trash2 } from 'lucide-react'
 import { Agent } from '@/lib/types/agents'
 import { useDeleteAgent } from '@/lib/hooks/use-agents'
 import { useModels } from '@/lib/hooks/use-models'
@@ -40,7 +41,7 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
   if (agents.length === 0) {
     return (
       <div
-        className="rounded-lg border border-dashed p-8 text-center text-muted-foreground"
+        className="rounded-lg border border-dashed p-6 text-center text-muted-foreground"
         data-testid="agents-empty"
       >
         <Bot className="mx-auto mb-3 h-8 w-8 opacity-50" />
@@ -51,10 +52,13 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2" data-testid="agents-list">
+      <div
+        className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+        data-testid="agents-list"
+      >
         {agents.map((agent) => (
-          <Card key={agent.id} data-testid={`agent-card-${agent.id}`}>
-            <CardContent className="p-4 space-y-3">
+          <Card key={agent.id} className="py-4" data-testid={`agent-card-${agent.id}`}>
+            <CardContent className="p-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -98,10 +102,6 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
                 </div>
               </div>
 
-              <p className="text-xs text-muted-foreground line-clamp-2 font-mono bg-muted rounded p-2 whitespace-pre-wrap">
-                {agent.system_prompt}
-              </p>
-
               <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                 {modelName(agent.model_id) && (
                   <span className="inline-flex items-center gap-1">
@@ -110,7 +110,21 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
                   </span>
                 )}
                 {agent.temperature !== null && (
-                  <span>{t('agents.temperatureLabel', { value: agent.temperature })}</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        tabIndex={0}
+                        aria-label={t('agents.temperatureHelp')}
+                        className="inline-flex items-center gap-0.5 cursor-help rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {t('agents.temperatureLabel', { value: agent.temperature })}
+                        <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>{t('agents.temperatureHelp')}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {agent.max_tokens !== null && (
                   <span>{t('agents.maxTokensLabel', { value: agent.max_tokens })}</span>

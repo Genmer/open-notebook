@@ -39,7 +39,7 @@ export function ParallelLiveCard({
           {t('chat.parallelProgress', { done: doneCount, total: runs.length })}
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {runs.map((run) => (
           <Card key={run.key} className="overflow-hidden" data-testid={`parallel-run-${run.key}`}>
             <CardHeader className="p-3 pb-2 space-y-0">

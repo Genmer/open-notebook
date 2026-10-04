@@ -34,10 +34,20 @@ vi.mock('@/lib/api/agents', () => ({
   },
 }))
 
+// Mock Tooltip components to avoid Radix UI async issues in tests (project
+// precedent: AgentsList.test). Passthrough renderers keep the help text
+// assertable inline.
+vi.mock('@/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 // Radix Select won't open in jsdom (project precedent: mock it always-open
-// and assert option behavior directly). Two Selects render inside this
-// dialog (template picker + ModelSelector), so onValueChange is routed via
-// a context instead of a shared capture object.
+// and assert option behavior directly). ModelSelector still renders a Select
+// inside this dialog, so onValueChange is routed via a context instead of a
+// shared capture object.
 vi.mock('@/components/ui/select', async () => {
   const React = await import('react')
   const SelectContext = React.createContext<{
@@ -216,29 +226,15 @@ describe('AgentEditorDialog template picker', () => {
     vi.clearAllMocks()
   })
 
-  it('shows the picker in create mode with blank option and every template grouped by category', () => {
-    render(<AgentEditorDialog open onOpenChange={vi.fn()} agentId={null} />)
-
-    expect(screen.getByTestId('agent-form-template')).toBeInTheDocument()
-    expect(
-      screen.getByRole('option', { name: 'agents.templateBlank' })
-    ).toBeInTheDocument()
-    for (const tpl of AGENT_TEMPLATES) {
-      expect(
-        screen.getByRole('option', { name: pickTemplateText(tpl.name, 'en-US') })
-      ).toBeInTheDocument()
-    }
-    // category group labels come from i18n (t returns the key)
-    expect(screen.getByText('agents.templateCat.software')).toBeInTheDocument()
-    expect(screen.getByText('agents.templateCat.general')).toBeInTheDocument()
-  })
-
-  it('fills the form from the selected template and keeps values when switching back to blank', () => {
-    render(<AgentEditorDialog open onOpenChange={vi.fn()} agentId={null} />)
-
+  it('fills the form from initialTemplateKey with the template values in the current language', () => {
     const tpl = AGENT_TEMPLATES.find((t) => t.key === 'senior-software-engineer')!
-    fireEvent.click(
-      screen.getByRole('option', { name: pickTemplateText(tpl.name, 'en-US') })
+    render(
+      <AgentEditorDialog
+        open
+        onOpenChange={vi.fn()}
+        agentId={null}
+        initialTemplateKey={tpl.key}
+      />
     )
 
     expect(screen.getByTestId('agent-form-name')).toHaveValue(
@@ -255,32 +251,53 @@ describe('AgentEditorDialog template picker', () => {
       tpl.temperature
     )
     expect(screen.getByTestId('agent-form-max-tokens')).toHaveValue(tpl.maxTokens)
-
-    // blank is non-destructive: the filled form stays as-is
-    fireEvent.click(screen.getByRole('option', { name: 'agents.templateBlank' }))
-    expect(screen.getByTestId('agent-form-name')).toHaveValue(
-      pickTemplateText(tpl.name, 'en-US')
-    )
-    expect(screen.getByTestId('agent-form-prompt')).toHaveValue(
-      pickTemplateText(tpl.systemPrompt, 'en-US')
-    )
   })
 
-  it('hides the picker in edit mode', async () => {
+  it('keeps the form empty for the blank template', () => {
+    render(
+      <AgentEditorDialog
+        open
+        onOpenChange={vi.fn()}
+        agentId={null}
+        initialTemplateKey="blank"
+      />
+    )
+
+    expect(screen.getByTestId('agent-form-name')).toHaveValue('')
+    expect(screen.getByTestId('agent-form-description')).toHaveValue('')
+    expect(screen.getByTestId('agent-form-prompt')).toHaveValue('')
+    // jest-dom normalizes empty number inputs to null
+    expect(screen.getByTestId('agent-form-temperature')).toHaveValue(null)
+    expect(screen.getByTestId('agent-form-max-tokens')).toHaveValue(null)
+  })
+
+  it('ignores initialTemplateKey when editing an existing agent', async () => {
     const { agentsApi } = await import('@/lib/api/agents')
     ;(agentsApi.get as ReturnType<typeof vi.fn>).mockResolvedValue(makeAgent())
 
-    render(<AgentEditorDialog open onOpenChange={vi.fn()} agentId="agent:1" />)
+    render(
+      <AgentEditorDialog
+        open
+        onOpenChange={vi.fn()}
+        agentId="agent:1"
+        initialTemplateKey="senior-software-engineer"
+      />
+    )
 
     await waitFor(() => {
       expect(screen.getByTestId('agent-form-name')).toHaveValue('Researcher')
     })
-    expect(screen.queryByTestId('agent-form-template')).not.toBeInTheDocument()
-    for (const tpl of AGENT_TEMPLATES) {
-      expect(
-        screen.queryByRole('option', { name: pickTemplateText(tpl.name, 'en-US') })
-      ).not.toBeInTheDocument()
-    }
+    expect(screen.getByTestId('agent-form-temperature')).toHaveValue(0.2)
+  })
+
+  it('renders a help tooltip next to the temperature field label', () => {
+    render(<AgentEditorDialog open onOpenChange={vi.fn()} agentId={null} />)
+
+    // ? 按钮：aria-label 为字段名（tooltip 直通 mock 下内容也内联渲染）
+    expect(
+      screen.getByRole('button', { name: 'agents.temperatureField' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('agents.temperatureHelp')).toBeInTheDocument()
   })
 })
 

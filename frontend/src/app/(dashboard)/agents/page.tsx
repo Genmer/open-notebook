@@ -6,22 +6,39 @@ import { Button } from '@/components/ui/button'
 import { Bot, Plus, RefreshCw } from 'lucide-react'
 import { AgentsList } from './components/AgentsList'
 import { AgentEditorDialog } from './components/AgentEditorDialog'
+import { AgentTemplatePickerDialog } from './components/AgentTemplatePickerDialog'
 import { useAgents } from '@/lib/hooks/use-agents'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function AgentsPage() {
   const { t } = useTranslation()
   const { data: agents, isLoading, refetch } = useAgents()
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [initialTemplateKey, setInitialTemplateKey] = useState<string | null>(null)
 
+  // 新建智能体：先弹模板面板，选中模板（或「从空白开始」）后再进编辑弹窗。
   const handleCreate = () => {
+    setPickerOpen(true)
+  }
+
+  const handleTemplateConfirm = (templateKey: string) => {
+    setPickerOpen(false)
     setEditingId(null)
+    setInitialTemplateKey(templateKey)
     setEditorOpen(true)
+  }
+
+  const handleEditorOpenChange = (open: boolean) => {
+    setEditorOpen(open)
+    // 编辑弹窗关闭后清掉初始模板，避免下次新建残留上一次的灌入。
+    if (!open) setInitialTemplateKey(null)
   }
 
   const handleEdit = (id: string) => {
     setEditingId(id)
+    setInitialTemplateKey(null)
     setEditorOpen(true)
   }
 
@@ -57,10 +74,17 @@ export default function AgentsPage() {
             onEdit={handleEdit}
           />
 
+          <AgentTemplatePickerDialog
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onConfirm={handleTemplateConfirm}
+          />
+
           <AgentEditorDialog
             open={editorOpen}
-            onOpenChange={setEditorOpen}
+            onOpenChange={handleEditorOpenChange}
             agentId={editingId}
+            initialTemplateKey={initialTemplateKey}
           />
         </div>
       </div>

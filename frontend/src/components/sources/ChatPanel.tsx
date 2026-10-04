@@ -722,7 +722,7 @@ function ParallelGroupView({
           sourceGrouping={sourceGrouping}
         />
       )}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {(item.answers ?? []).map((answer) => (
           <div
             key={answer.id}

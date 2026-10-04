@@ -14,29 +14,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ModelSelector } from '@/components/common/ModelSelector'
 import { agentsApi } from '@/lib/api/agents'
-import {
-  AGENT_TEMPLATES,
-  AGENT_TEMPLATE_CATEGORIES,
-  pickTemplateText,
-  type AgentTemplate,
-} from '@/lib/agent-templates'
+import { AGENT_TEMPLATES, pickTemplateText } from '@/lib/agent-templates'
 import { useCreateAgent, useUpdateAgent } from '@/lib/hooks/use-agents'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { Agent } from '@/lib/types/agents'
-import { Bot, Loader2, Sparkles } from 'lucide-react'
+import { Bot, HelpCircleIcon, Loader2, Sparkles } from 'lucide-react'
 
 type EditorError = 'required' | 'temperature' | 'maxTokens' | 'load' | null
 
@@ -47,22 +34,16 @@ const ERROR_KEYS = {
   load: 'agents.loadFailed',
 } as const
 
-// Static full-key literals (not a dynamic template string) so each key stays
-// greppable — the locales unused-key test scans sources for exact key text.
-const TEMPLATE_CATEGORY_KEYS: Record<AgentTemplate['category'], string> = {
-  software: 'agents.templateCat.software',
-  llm: 'agents.templateCat.llm',
-  business: 'agents.templateCat.business',
-  education: 'agents.templateCat.education',
-  creative: 'agents.templateCat.creative',
-  general: 'agents.templateCat.general',
-}
-
 interface AgentEditorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Null = create mode; otherwise edit the agent with this id. */
   agentId: string | null
+  /**
+   * Create mode only: template key chosen in the picker dialog ('blank' or a
+   * key from AGENT_TEMPLATES). Applied once when the dialog opens.
+   */
+  initialTemplateKey?: string | null
 }
 
 interface FormState {
@@ -97,11 +78,15 @@ function toForm(agent: Agent): FormState {
   }
 }
 
-export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDialogProps) {
+export function AgentEditorDialog({
+  open,
+  onOpenChange,
+  agentId,
+  initialTemplateKey,
+}: AgentEditorDialogProps) {
   const { t, language } = useTranslation()
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [error, setError] = useState<EditorError>(null)
-  const [templateKey, setTemplateKey] = useState<string>('blank')
   const [polishing, setPolishing] = useState(false)
   const createAgent = useCreateAgent()
   const updateAgent = useUpdateAgent()
@@ -110,7 +95,6 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
   useEffect(() => {
     if (!open) return
     setError(null)
-    setTemplateKey('blank')
     setPolishing(false)
     if (agentId) {
       agentsApi
@@ -121,30 +105,27 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
           setForm(EMPTY_FORM)
         })
     } else {
-      setForm(EMPTY_FORM)
+      setForm((prev) => {
+        // 灌入逻辑迁自原 handleTemplateChange：'blank' 或未传模板时保持
+        // 非破坏语义（保留已输入内容），否则按当前语言灌入模板字段。
+        if (!initialTemplateKey || initialTemplateKey === 'blank') return EMPTY_FORM
+        const template = AGENT_TEMPLATES.find((tpl) => tpl.key === initialTemplateKey)
+        if (!template) return EMPTY_FORM
+        return {
+          ...prev,
+          name: pickTemplateText(template.name, language),
+          description: pickTemplateText(template.description, language),
+          system_prompt: pickTemplateText(template.systemPrompt, language),
+          temperature: String(template.temperature),
+          max_tokens: String(template.maxTokens),
+          enabled: true,
+        }
+      })
     }
-  }, [open, agentId])
+  }, [open, agentId, initialTemplateKey, language])
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
-  }
-
-  /** Fill the form from a template (current locale); 'blank' keeps whatever
-   * the user already typed instead of destructively clearing it. */
-  const handleTemplateChange = (value: string) => {
-    setTemplateKey(value)
-    if (value === 'blank') return
-    const template = AGENT_TEMPLATES.find((tpl) => tpl.key === value)
-    if (!template) return
-    setForm((prev) => ({
-      ...prev,
-      name: pickTemplateText(template.name, language),
-      description: pickTemplateText(template.description, language),
-      system_prompt: pickTemplateText(template.systemPrompt, language),
-      temperature: String(template.temperature),
-      max_tokens: String(template.maxTokens),
-      enabled: true,
-    }))
   }
 
   const handlePolish = async () => {
@@ -221,30 +202,6 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
-          {!agentId && (
-            <div className="grid gap-2">
-              <Label htmlFor="agent-template">{t('agents.templateLabel')}</Label>
-              <Select value={templateKey} onValueChange={handleTemplateChange}>
-                <SelectTrigger id="agent-template" data-testid="agent-form-template">
-                  <SelectValue placeholder={t('agents.templateLabel')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="blank">{t('agents.templateBlank')}</SelectItem>
-                  {AGENT_TEMPLATE_CATEGORIES.map(({ key: category }) => (
-                    <SelectGroup key={category}>
-                      <SelectLabel>{t(TEMPLATE_CATEGORY_KEYS[category])}</SelectLabel>
-                      {AGENT_TEMPLATES.filter((tpl) => tpl.category === category).map((tpl) => (
-                        <SelectItem key={tpl.key} value={tpl.key}>
-                          {pickTemplateText(tpl.name, language)}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           <div className="grid gap-2">
             <Label htmlFor="agent-name">{t('agents.nameLabel')}</Label>
             <Input
@@ -313,7 +270,23 @@ export function AgentEditorDialog({ open, onOpenChange, agentId }: AgentEditorDi
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="agent-temperature">{t('agents.temperatureField')}</Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="agent-temperature">{t('agents.temperatureField')}</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t('agents.temperatureField')}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                    >
+                      <HelpCircleIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>{t('agents.temperatureHelp')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Input
                 id="agent-temperature"
                 type="number"

@@ -850,7 +850,7 @@ function SourceDetailContentInner({
                       </Badge>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:max-w-3xl">
                     <div>
                       <p className="text-xs font-medium text-muted-foreground">{t('common.created_label')}</p>
                       <p className="text-sm">

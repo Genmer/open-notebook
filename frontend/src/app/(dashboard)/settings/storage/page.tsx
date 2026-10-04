@@ -155,8 +155,8 @@ export default function StoragePage() {
               </div>
 
               {/* Breakdown + disk donut */}
-              <div className="grid gap-4 lg:grid-cols-3">
-                <Card className="lg:col-span-2">
+              <div className="grid gap-4 lg:grid-cols-3 2xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+                <Card className="lg:col-span-2 2xl:col-span-1">
                   <CardHeader>
                     <CardTitle>{t('storage.breakdown.title')}</CardTitle>
                     <CardDescription>{t('storage.breakdown.description')}</CardDescription>

@@ -235,12 +235,12 @@ export default function UsagePage() {
 
               <div
                 className={cn(
-                  'grid gap-6 transition-opacity lg:grid-cols-3',
+                  'grid gap-6 transition-opacity lg:grid-cols-3 2xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]',
                   isPlaceholder && 'opacity-60'
                 )}
                 aria-busy={isPlaceholder || undefined}
               >
-                <Card className="lg:col-span-2">
+                <Card className="lg:col-span-2 2xl:col-span-1">
                   <CardHeader>
                     <CardTitle>{t('usage.trend')}</CardTitle>
                   </CardHeader>

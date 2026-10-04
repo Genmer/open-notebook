@@ -18,6 +18,14 @@ vi.mock('@/lib/hooks/use-models', () => ({
   }),
 }))
 
+// Mock Tooltip components to avoid Radix UI async issues in tests
+vi.mock('@/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
 const makeAgent = (overrides: Partial<Agent> = {}): Agent => ({
   id: 'agent:1',
   name: 'Researcher',
@@ -92,5 +100,14 @@ describe('AgentsList', () => {
     render(<AgentsList agents={[makeAgent()]} isLoading={false} onEdit={onEdit} />)
     fireEvent.click(screen.getByTestId('agent-edit-agent:1'))
     expect(onEdit).toHaveBeenCalledWith('agent:1')
+  })
+
+  it('renders a help tooltip next to the temperature value', () => {
+    render(<AgentsList agents={[makeAgent()]} isLoading={false} onEdit={vi.fn()} />)
+    // 触发器 span：温度文本可见，且携带帮助文案的 aria-label 与图标
+    const trigger = screen.getByText('agents.temperatureLabel').closest('span')
+    expect(trigger).toHaveAttribute('aria-label', 'agents.temperatureHelp')
+    // 提示内容本体（tooltip 直通 mock）也渲染帮助文案
+    expect(screen.getByText('agents.temperatureHelp')).toBeInTheDocument()
   })
 })
