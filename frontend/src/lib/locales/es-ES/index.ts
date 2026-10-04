@@ -2230,6 +2230,7 @@ export const esES = {
     templateUse: "Usar esta plantilla",
     templateCat: {
       software: "Software",
+      ruankao: "Preparación del examen Ruankao",
       llm: "LLM",
       business: "Negocios",
       education: "Educación",

@@ -2228,6 +2228,7 @@ export const enUS = {
     templateUse: "Use this template",
     templateCat: {
       software: "Software",
+      ruankao: "Ruankao Exam Prep",
       llm: "LLM",
       business: "Business",
       education: "Education",

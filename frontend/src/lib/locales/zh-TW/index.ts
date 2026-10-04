@@ -2229,6 +2229,7 @@ export const zhTW = {
     templateUse: "使用此範本",
     templateCat: {
       software: "軟體開發",
+      ruankao: "軟考備考",
       llm: "大模型",
       business: "商業",
       education: "教育",

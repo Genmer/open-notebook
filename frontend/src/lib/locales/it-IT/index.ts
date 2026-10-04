@@ -2229,6 +2229,7 @@ export const itIT = {
     templateUse: "Usa questo modello",
     templateCat: {
       software: "Software",
+      ruankao: "Preparazione all'esame Ruankao",
       llm: "LLM",
       business: "Business",
       education: "Istruzione",

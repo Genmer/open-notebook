@@ -2229,6 +2229,7 @@ export const caES = {
     templateUse: "Utilitza aquesta plantilla",
     templateCat: {
       software: "Programari",
+      ruankao: "Preparació de l'examen Ruankao",
       llm: "LLM",
       business: "Negocis",
       education: "Educació",

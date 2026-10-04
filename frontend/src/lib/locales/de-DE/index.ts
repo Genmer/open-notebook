@@ -2232,6 +2232,7 @@ export const deDE = {
     templateUse: "Diese Vorlage verwenden",
     templateCat: {
       software: "Software",
+      ruankao: "Ruankao-Prüfungsvorbereitung",
       llm: "LLM",
       business: "Business",
       education: "Bildung",

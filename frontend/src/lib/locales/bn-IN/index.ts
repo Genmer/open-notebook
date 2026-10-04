@@ -2230,6 +2230,7 @@ export const bnIN = {
     templateUse: "এই টেমপ্লেট ব্যবহার করুন",
     templateCat: {
       software: "সফটওয়্যার",
+      ruankao: "রুয়ানকাও প্রস্তুতি",
       llm: "এলএলএম",
       business: "ব্যবসা",
       education: "শিক্ষা",

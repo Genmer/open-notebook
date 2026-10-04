@@ -2229,6 +2229,7 @@ export const ptBR = {
     templateUse: "Usar este modelo",
     templateCat: {
       software: "Software",
+      ruankao: "Preparação para o exame Ruankao",
       llm: "LLM",
       business: "Negócios",
       education: "Educação",

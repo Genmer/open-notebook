@@ -2229,6 +2229,7 @@ export const frFR = {
     templateUse: "Utiliser ce modèle",
     templateCat: {
       software: "Logiciel",
+      ruankao: "Préparation à l'examen Ruankao",
       llm: "LLM",
       business: "Affaires",
       education: "Éducation",

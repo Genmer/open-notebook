@@ -2229,6 +2229,7 @@ export const plPL = {
     templateUse: "Użyj tego szablonu",
     templateCat: {
       software: "Oprogramowanie",
+      ruankao: "Przygotowanie do egzaminu Ruankao",
       llm: "LLM",
       business: "Biznes",
       education: "Edukacja",

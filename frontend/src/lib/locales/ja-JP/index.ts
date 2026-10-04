@@ -2229,6 +2229,7 @@ export const jaJP = {
     templateUse: "このテンプレートを使用",
     templateCat: {
       software: "ソフトウェア",
+      ruankao: "軟考試験対策",
       llm: "LLM",
       business: "ビジネス",
       education: "教育",

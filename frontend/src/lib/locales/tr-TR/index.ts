@@ -2229,6 +2229,7 @@ export const trTR = {
     templateUse: "Bu şablonu kullan",
     templateCat: {
       software: "Yazılım",
+      ruankao: "Ruankao sınav hazırlığı",
       llm: "LLM",
       business: "İş",
       education: "Eğitim",

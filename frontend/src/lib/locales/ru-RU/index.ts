@@ -2229,6 +2229,7 @@ export const ruRU = {
     templateUse: "Использовать этот шаблон",
     templateCat: {
       software: "Разработка ПО",
+      ruankao: "Подготовка к экзамену Ruankao",
       llm: "LLM",
       business: "Бизнес",
       education: "Образование",

@@ -2229,6 +2229,7 @@ export const zhCN = {
     templateUse: "使用此模板",
     templateCat: {
       software: "软件开发",
+      ruankao: "软考备考",
       llm: "大模型",
       business: "商业",
       education: "教育",
