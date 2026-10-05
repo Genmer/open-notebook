@@ -74,10 +74,14 @@ export function EmbedMissingPanel({ variant = 'default' }: EmbedMissingPanelProp
   const pending = data?.pending ?? 0
   const showProgress =
     !!data && ((submitted && !dismissed) || isBusy(data))
-  const converged = !!data && pending === 0 && !isBusy(data)
   // New failures with zero completions: the embedding model is likely unconfigured
   const failingFromStart =
     !!data && !!baseline && data.failed > baseline.failed && data.completed === 0
+  // A finished run (not queued/running) that still has failures needs the same
+  // hint — e.g. an invalid API key fails every batch without raising the count
+  // above the pre-submit baseline, which failingFromStart alone would miss.
+  const failedAfterRun = !!data && submitted && !isBusy(data) && data.failed > 0
+  const showFailureHint = failingFromStart || failedAfterRun
   const processed = data ? data.completed + data.failed : 0
   const progressPct = data && data.total_sources > 0 ? (processed / data.total_sources) * 100 : 0
 
@@ -190,7 +194,8 @@ export function EmbedMissingPanel({ variant = 'default' }: EmbedMissingPanelProp
                   <Loader2 className="ml-1.5 inline h-3 w-3 animate-spin text-muted-foreground" />
                 )}
               </span>
-              {converged && (
+              {/* 失败收敛（非 busy 但仍有 failed）也必须能关——否则进度盒永久卡死 */}
+              {!isBusy(data) && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -203,7 +208,7 @@ export function EmbedMissingPanel({ variant = 'default' }: EmbedMissingPanelProp
               )}
             </div>
 
-            {failingFromStart && (
+            {showFailureHint && (
               <p className="mb-1.5 text-xs text-destructive">
                 {t('sources.embedMissing.errorHint')}
               </p>
@@ -264,7 +269,8 @@ export function EmbedMissingPanel({ variant = 'default' }: EmbedMissingPanelProp
                 <Loader2 className="ml-2 inline h-3 w-3 animate-spin text-muted-foreground" />
               )}
             </span>
-            {converged && (
+            {/* 失败收敛（非 busy 但仍有 failed）也必须能关——否则进度盒永久卡死 */}
+            {!isBusy(data) && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -277,7 +283,7 @@ export function EmbedMissingPanel({ variant = 'default' }: EmbedMissingPanelProp
             )}
           </div>
 
-          {failingFromStart && (
+          {showFailureHint && (
             <p className="mb-2 text-xs text-destructive">
               {t('sources.embedMissing.errorHint')}
             </p>

@@ -511,7 +511,7 @@ export const zhCN = {
       confirmCta: "开始嵌入",
       startedToast: "已开始嵌入所有未完成的来源",
       progressTitle: "嵌入进度",
-      errorHint: "嵌入失败。请在「模型」页检查是否已配置嵌入模型。",
+      errorHint: "嵌入失败。请在「模型」页检查嵌入模型与 API Key 配置后重试。",
       badge: {
         notEmbedded: "未嵌入",
         queued: "排队中",
