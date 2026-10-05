@@ -18,6 +18,13 @@
    duplicate aliases into the dark block.
    ========================================================================== */
 
+@theme {
+  /* 超宽屏断点（2560px+，如 3440 带鱼屏）。注意：Tailwind v4 会把 @theme 新增
+     断点的规则排到标准断点（2xl 等）之前，层叠必输，因此使用处必须加
+     important 后缀（3xl:grid-cols-6!）才能在 2560px+ 生效。 */
+  --breakpoint-3xl: 2560px;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

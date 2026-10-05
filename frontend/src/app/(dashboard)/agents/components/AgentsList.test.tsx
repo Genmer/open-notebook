@@ -110,4 +110,21 @@ describe('AgentsList', () => {
     // 提示内容本体（tooltip 直通 mock）也渲染帮助文案
     expect(screen.getByText('agents.temperatureHelp')).toBeInTheDocument()
   })
+
+  it('applies compact design tokens: single-layer padding, 3-line clamp, gradient avatar, 6-col grid', () => {
+    render(<AgentsList agents={[makeAgent()]} isLoading={false} onEdit={vi.fn()} />)
+    // ① 渐变头像（新 testid）：完整渐变类 + 圆形 48px 白字 + 首字符
+    const avatar = screen.getByTestId('agent-avatar-agent:1')
+    expect(avatar).toHaveClass('bg-gradient-to-br', 'rounded-full', 'size-12', 'text-white')
+    expect(avatar).toHaveTextContent('R') // 'Researcher' 首字符
+    // ② 描述放开到 3 行
+    expect(screen.getByText('Default research persona')).toHaveClass('line-clamp-3')
+    // ③ 单层 padding 防回归：Card 无自身纵向 padding，CardContent 唯一 padding 层
+    const card = screen.getByTestId('agent-card-agent:1')
+    expect(card).toHaveClass('py-0', 'gap-0')
+    expect(card.querySelector('[data-slot="card-content"]')).toHaveClass('px-3', 'py-2')
+    // ④ 超宽屏第 6 列（globals.css 注册的 3xl 断点 + important 后缀：
+    //     Tailwind v4 把 @theme 新增断点排到标准断点之前，不加 ! 会被 2xl 覆盖）
+    expect(screen.getByTestId('agents-list')).toHaveClass('3xl:grid-cols-6!')
+  })
 })

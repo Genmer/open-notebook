@@ -23,14 +23,14 @@ interface AgentsListProps {
 // 头像色板（完整字面量类名，Tailwind 只提取源码里出现的完整类）：
 // 按名称哈希取色，同一智能体颜色稳定，列表不再通篇黑白。
 const AVATAR_PALETTE = [
-  'bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400',
-  'bg-violet-500/10 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400',
-  'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400',
-  'bg-amber-500/10 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400',
-  'bg-pink-500/10 text-pink-600 dark:bg-pink-500/15 dark:text-pink-400',
-  'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-400',
-  'bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400',
-  'bg-teal-500/10 text-teal-600 dark:bg-teal-500/15 dark:text-teal-400',
+  'bg-gradient-to-br from-blue-500 to-indigo-600',
+  'bg-gradient-to-br from-violet-500 to-purple-600',
+  'bg-gradient-to-br from-emerald-600 to-teal-600',
+  'bg-gradient-to-br from-amber-600 to-orange-600',
+  'bg-gradient-to-br from-pink-500 to-rose-600',
+  'bg-gradient-to-br from-cyan-600 to-sky-600',
+  'bg-gradient-to-br from-rose-500 to-red-600',
+  'bg-gradient-to-br from-teal-600 to-green-600',
 ] as const
 
 const avatarStyle = (name: string) => {
@@ -76,18 +76,23 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
   return (
     <>
       <div
-        className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+        className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6!"
         data-testid="agents-list"
       >
         {agents.map((agent) => (
-          <Card key={agent.id} className="py-4" data-testid={`agent-card-${agent.id}`}>
-            <CardContent className="p-4 space-y-2">
+          <Card
+            key={agent.id}
+            className="gap-0 border-border/80 py-0 shadow-xs transition-all duration-200 hover:border-primary/40 hover:shadow-md"
+            data-testid={`agent-card-${agent.id}`}
+          >
+            <CardContent className="px-3 py-2 space-y-1.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-1 items-start gap-3">
                   <span
                     aria-hidden
+                    data-testid={`agent-avatar-${agent.id}`}
                     className={cn(
-                      'flex size-10 shrink-0 items-center justify-center rounded-lg text-base font-semibold',
+                      'flex size-12 shrink-0 select-none items-center justify-center rounded-full text-lg font-semibold text-white shadow-sm',
                       avatarStyle(agent.name)
                     )}
                   >
@@ -95,18 +100,20 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold truncate">{agent.name}</span>
+                      <span className="text-sm font-semibold truncate">{agent.name}</span>
                       {!agent.enabled && (
-                        <Badge variant="secondary">{t('agents.disabled')}</Badge>
+                        <Badge variant="secondary" className="h-4 px-1.5 text-[10px] leading-none">
+                          {t('agents.disabled')}
+                        </Badge>
                       )}
                       {agent.in_use_session_count > 0 && (
-                        <Badge variant="outline">
+                        <Badge variant="outline" className="h-4 px-1.5 text-[10px] leading-none">
                           {t('agents.inUse', { count: agent.in_use_session_count })}
                         </Badge>
                       )}
                     </div>
                     {agent.description && (
-                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+                      <p className="mt-0.5 text-sm leading-snug text-muted-foreground line-clamp-3">
                         {agent.description}
                       </p>
                     )}
@@ -136,7 +143,7 @@ export function AgentsList({ agents, isLoading, onEdit }: AgentsListProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                 {modelName(agent.model_id) && (
                   <span className="inline-flex items-center gap-1">
                     <Bot className="h-3 w-3" />
