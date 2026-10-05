@@ -785,6 +785,8 @@ export const itIT = {
     parallelProgress: "In corso: {{done}}/{{total}} completati",
     parallelWaiting: "In attesa della risposta…",
     parallelFailed: "Domanda parallela non riuscita",
+    streamFailed: "Generazione della risposta non riuscita",
+    streamBusy: "Questa sessione sta già generando una risposta; attendi",
     synthesisPickLabel: "Sintetizza e unisci:",
     synthesisDefaultPicker: "Modello predefinito di sistema",
     synthesisRun: "Sintetizza",

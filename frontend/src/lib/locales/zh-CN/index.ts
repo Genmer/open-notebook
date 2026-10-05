@@ -785,6 +785,8 @@ export const zhCN = {
     parallelProgress: "并发进行中：{{done}}/{{total}} 完成",
     parallelWaiting: "等待回答…",
     parallelFailed: "并发问答失败",
+    streamFailed: "回复生成失败",
+    streamBusy: "该会话正在生成回复，请稍候再试",
     synthesisPickLabel: "总结合并：",
     synthesisDefaultPicker: "系统默认模型",
     synthesisRun: "生成总结",

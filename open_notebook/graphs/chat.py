@@ -89,6 +89,17 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
             )
         model = prov.langchain_model
 
+        # Token streaming (chat stream endpoint): caller opts in per-call via
+        # config.configurable. Esperanto products always carry an explicit
+        # streaming=False (to_langchain passes it through), which langchain-core's
+        # _streaming_disabled treats as a hard opt-out overriding even an attached
+        # streaming handler — messages-mode token events would never fire. Flipping
+        # a throwaway copy re-enables the invoke->stream conversion for THIS call
+        # only; callers without the flag (execute_chat, source chat) get the model
+        # untouched, byte-identical behavior.
+        if config.get("configurable", {}).get("stream_tokens"):
+            model = model.model_copy(update={"streaming": True})
+
         ai_message = model.invoke(payload)
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)

@@ -785,6 +785,8 @@ export const zhTW = {
     parallelProgress: "並行進行中：{{done}}/{{total}} 完成",
     parallelWaiting: "等待回答…",
     parallelFailed: "並行問答失敗",
+    streamFailed: "回覆產生失敗",
+    streamBusy: "此會話正在產生回覆，請稍後再試",
     synthesisPickLabel: "總結合併：",
     synthesisDefaultPicker: "系統預設模型",
     synthesisRun: "產生總結",

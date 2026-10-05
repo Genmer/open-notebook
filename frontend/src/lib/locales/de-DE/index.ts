@@ -788,6 +788,8 @@ export const deDE = {
     parallelProgress: "Läuft: {{done}}/{{total}} fertig",
     parallelWaiting: "Warte auf die Antwort…",
     parallelFailed: "Paralleles Fragen fehlgeschlagen",
+    streamFailed: "Antwort konnte nicht generiert werden",
+    streamBusy: "Diese Sitzung generiert bereits eine Antwort; bitte warten",
     synthesisPickLabel: "Zusammenführen mit:",
     synthesisDefaultPicker: "Systemstandard-Modell",
     synthesisRun: "Zusammenfassen",

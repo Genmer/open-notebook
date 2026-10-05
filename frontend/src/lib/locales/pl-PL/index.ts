@@ -785,6 +785,8 @@ export const plPL = {
     parallelProgress: "W toku: ukończono {{done}}/{{total}}",
     parallelWaiting: "Czekam na odpowiedź…",
     parallelFailed: "Pytanie równoległe nie powiodło się",
+    streamFailed: "Nie udało się wygenerować odpowiedzi",
+    streamBusy: "Ta sesja już generuje odpowiedź; poczekaj chwilę",
     synthesisPickLabel: "Zsyntetyzuj i połącz:",
     synthesisDefaultPicker: "Domyślny model systemu",
     synthesisRun: "Podsumuj",

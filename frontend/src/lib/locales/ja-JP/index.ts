@@ -785,6 +785,8 @@ export const jaJP = {
     parallelProgress: "実行中：{{done}}/{{total}} 完了",
     parallelWaiting: "回答を待っています…",
     parallelFailed: "並列質問に失敗しました",
+    streamFailed: "返信の生成に失敗しました",
+    streamBusy: "このセッションでは返信を生成中です。しばらくお待ちください",
     synthesisPickLabel: "統合してまとめる：",
     synthesisDefaultPicker: "システム既定のモデル",
     synthesisRun: "まとめを生成",

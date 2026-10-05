@@ -15,6 +15,13 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     css: false,
+    // Cap the forks pool. The default spawns ~1 worker per logical core (20
+    // on the dev box); each fork is a full Node+jsdom process, and the peak
+    // RSS across all forks can exceed the free Windows commit limit under
+    // load — Node then aborts mid-suite (exit 134) with zero failing tests.
+    // 8 workers keeps peak memory well inside the observed headroom while
+    // keeping the suite fast.
+    maxWorkers: 8,
     setupFiles: ['./src/test/setup.ts'],
     alias: {
       '@': path.resolve(__dirname, './src')

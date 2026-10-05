@@ -503,6 +503,85 @@ describe('ChatPanel fullscreen toggle', () => {
   })
 })
 
+describe('ChatPanel streaming bubble', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  // The waiting/streaming bubble is the only element carrying max-w-[80%];
+  // the composer's send button also spins an animate-spin Loader2 while
+  // isStreaming, so spinner assertions must scope inside the bubble.
+  const getBubble = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('.max-w-\\[80\\%\\]')
+
+  it('renders streaming text as plain text with a cursor, not markdown', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '# Partial answer' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    // Raw text stays literal — MarkdownRenderer would turn it into an h1
+    expect(screen.getByText('# Partial answer')).toBeInTheDocument()
+    expect(container.querySelector('h1')).toBeNull()
+    const bubble = getBubble(container)
+    // blinking cursor marks the live stream
+    expect(bubble?.querySelector('.animate-pulse')).not.toBeNull()
+    // no markdown container class inside the streaming bubble
+    expect(bubble?.textContent).toContain('# Partial answer')
+  })
+
+  it('filters think segments from the streaming text', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '<think>hidden</think>visible part' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('visible part')).toBeInTheDocument()
+    expect(screen.queryByText(/hidden/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the spinner while no delta has arrived yet', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    const bubble = getBubble(container)
+    expect(bubble?.querySelector('.animate-spin')).not.toBeNull()
+    expect(bubble?.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('falls back to the spinner when streamingMessage is not provided (source chat)', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(getBubble(container)?.querySelector('.animate-spin')).not.toBeNull()
+  })
+})
+
 describe('ChatPanel message actions grouping hand-off', () => {
   beforeEach(() => {
     vi.clearAllMocks()

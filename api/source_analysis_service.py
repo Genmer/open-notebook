@@ -148,6 +148,9 @@ async def analyze_source_section(
         )
         raise
 
+    # Both try branches assign ai_message; every handler above re-raises, so
+    # reaching here means the assignment happened (mypy can't see that).
+    assert ai_message is not None
     analysis = clean_thinking_content(extract_text_content(ai_message.content))
     await record_llm_usage(
         model=provisioned,

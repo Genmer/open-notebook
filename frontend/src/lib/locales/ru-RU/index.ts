@@ -785,6 +785,8 @@ export const ruRU = {
     parallelProgress: "Выполняется: {{done}}/{{total}} готово",
     parallelWaiting: "Ожидание ответа…",
     parallelFailed: "Параллельный вопрос не удался",
+    streamFailed: "Не удалось создать ответ",
+    streamBusy: "В этом сеансе уже создаётся ответ; подождите",
     synthesisPickLabel: "Обобщить и объединить:",
     synthesisDefaultPicker: "Системная модель по умолчанию",
     synthesisRun: "Обобщить",

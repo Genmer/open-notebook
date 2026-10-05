@@ -785,6 +785,8 @@ export const esES = {
     parallelProgress: "En curso: {{done}}/{{total}} listos",
     parallelWaiting: "Esperando la respuesta…",
     parallelFailed: "Falló la pregunta paralela",
+    streamFailed: "Error al generar la respuesta",
+    streamBusy: "Esta sesión ya está generando una respuesta; espera un momento",
     synthesisPickLabel: "Sintetizar y fusionar:",
     synthesisDefaultPicker: "Modelo predeterminado del sistema",
     synthesisRun: "Sintetizar",

@@ -785,6 +785,8 @@ export const trTR = {
     parallelProgress: "Sürüyor: {{done}}/{{total}} tamam",
     parallelWaiting: "Yanıt bekleniyor…",
     parallelFailed: "Paralel soru başarısız",
+    streamFailed: "Yanıt oluşturulamadı",
+    streamBusy: "Bu oturum zaten bir yanıt oluşturuyor; lütfen bekleyin",
     synthesisPickLabel: "Birleştir ve özetle:",
     synthesisDefaultPicker: "Sistem varsayılan modeli",
     synthesisRun: "Özetle",

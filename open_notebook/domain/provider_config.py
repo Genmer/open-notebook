@@ -195,12 +195,15 @@ class ProviderConfig(RecordModel):
     )
 
     @classmethod
-    async def get_instance(cls) -> "ProviderConfig":
+    async def get_instance(cls, force_reload: bool = False) -> "ProviderConfig":
         """
         Always fetch fresh configuration from database.
 
         Overrides parent caching behavior to ensure we always get the latest
-        configuration values.
+        configuration values. `force_reload` is accepted only for signature
+        compatibility with RecordModel.get_instance — this override already
+        bypasses the process-level cache on every call, so the flag is a
+        no-op here.
 
         Returns:
             ProviderConfig: Fresh instance with current database values

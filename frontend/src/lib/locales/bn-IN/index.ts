@@ -785,6 +785,8 @@ export const bnIN = {
     parallelProgress: "চলছে: {{done}}/{{total}} সম্পন্ন",
     parallelWaiting: "উত্তরের অপেক্ষায়…",
     parallelFailed: "সমান্তরাল প্রশ্ন ব্যর্থ",
+    streamFailed: "উত্তর তৈরি করা যায়নি",
+    streamBusy: "এই সেশনে ইতিমধ্যে একটি উত্তর তৈরি হচ্ছে; অনুগ্রহ করে অপেক্ষা করুন",
     synthesisPickLabel: "সংশ্লেষ করে একীভূত করুন:",
     synthesisDefaultPicker: "সিস্টেম ডিফল্ট মডেল",
     synthesisRun: "সংশ্লেষ করুন",

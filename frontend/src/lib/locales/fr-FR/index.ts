@@ -785,6 +785,8 @@ export const frFR = {
     parallelProgress: "En cours : {{done}}/{{total}} terminés",
     parallelWaiting: "En attente de la réponse…",
     parallelFailed: "Échec de la question parallèle",
+    streamFailed: "Échec de la génération de la réponse",
+    streamBusy: "Cette session génère déjà une réponse ; veuillez patienter",
     synthesisPickLabel: "Synthétiser et fusionner :",
     synthesisDefaultPicker: "Modèle par défaut du système",
     synthesisRun: "Synthétiser",

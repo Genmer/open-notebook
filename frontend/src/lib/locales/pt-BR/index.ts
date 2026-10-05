@@ -785,6 +785,8 @@ export const ptBR = {
     parallelProgress: "Em andamento: {{done}}/{{total}} prontos",
     parallelWaiting: "Aguardando a resposta…",
     parallelFailed: "Falha na pergunta paralela",
+    streamFailed: "Falha ao gerar a resposta",
+    streamBusy: "Esta sessão já está gerando uma resposta; aguarde",
     synthesisPickLabel: "Sintetizar e mesclar:",
     synthesisDefaultPicker: "Modelo padrão do sistema",
     synthesisRun: "Sintetizar",

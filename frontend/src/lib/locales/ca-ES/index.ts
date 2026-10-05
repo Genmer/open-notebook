@@ -785,6 +785,8 @@ export const caES = {
     parallelProgress: "En curs: {{done}}/{{total}} fets",
     parallelWaiting: "Esperant la resposta…",
     parallelFailed: "Ha fallat la pregunta en paral·lel",
+    streamFailed: "Error en generar la resposta",
+    streamBusy: "Aquesta sessió ja està generant una resposta; espereu un moment",
     synthesisPickLabel: "Sintetitza i fusiona:",
     synthesisDefaultPicker: "Model per defecte del sistema",
     synthesisRun: "Sintetitza",

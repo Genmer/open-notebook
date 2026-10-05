@@ -26,6 +26,7 @@ import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelect
 import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
 import { ParallelLiveCard } from '@/components/chat/ParallelLiveCard'
 import { groupParallelMessages } from '@/lib/utils/parallel-messages'
+import { filterStreamingContent } from '@/lib/utils/stream-text'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
@@ -54,6 +55,9 @@ interface NotebookContextStats {
 interface ChatPanelProps {
   messages: SourceChatMessage[]
   isStreaming: boolean
+  // Live token-stream text (notebook chat only). Absent on source chats —
+  // the waiting bubble keeps its plain spinner there.
+  streamingMessage?: { content: string } | null
   contextIndicators: SourceChatContextIndicator | null
   onSendMessage: (message: string, modelOverride?: string) => void
   modelOverride?: string
@@ -110,6 +114,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   messages,
   isStreaming,
+  streamingMessage,
   contextIndicators,
   onSendMessage,
   modelOverride,
@@ -192,6 +197,13 @@ export function ChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Streaming follow: jump to the latest token (omitted behavior = 'auto',
+  // instant follow) so the typing bubble stays in view; the smooth [messages]
+  // effect above stays untouched.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView()
+  }, [streamingMessage?.content])
 
   return (
     <>
@@ -305,8 +317,19 @@ export function ChatPanel({
                     <Bot className="h-4 w-4 text-teal" />
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-card border">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                <div className="rounded-lg px-4 py-2 bg-card border max-w-[80%]">
+                  {(streamingMessage?.content ?? '') === '' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    // Plain text while streaming: token-level re-parsing via
+                    // MarkdownRenderer (KaTeX/highlight) would be too costly;
+                    // the authoritative message renders markdown once
+                    // complete arrives.
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {filterStreamingContent(streamingMessage!.content)}
+                      <span aria-hidden className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
+                    </p>
+                  )}
                 </div>
               </div>
             )}

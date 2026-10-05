@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { buildChatContextConfig } from '@/lib/utils/source-context'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { chatApi } from '@/lib/api/chat'
+import { chatApi, ChatStreamEvent } from '@/lib/api/chat'
 import { useParallelChat } from '@/lib/hooks/use-parallel-chat'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import {
@@ -17,6 +17,10 @@ import {
   NoteResponse
 } from '@/lib/types/api'
 import { ContextSelections } from '@/app/(dashboard)/notebooks/[id]/page'
+
+// Re-arm on every SSE event/byte chunk; only fires when the stream goes
+// genuinely silent (same technique as use-parallel-chat).
+const STREAM_IDLE_TIMEOUT_MS = 120_000
 
 interface UseNotebookChatParams {
   notebookId: string
@@ -39,6 +43,24 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [pendingAgentOverride, setPendingAgentOverride] = useState<string | null>(null)
   // Parallel answers (PDR-004): live fan-out state shared with the composer
   const parallel = useParallelChat()
+  // Single-run token streaming: the accumulating text lives in its own state
+  // (never a per-token setMessages — that would re-run groupParallelMessages
+  // and re-map the whole list on every chunk). null = not streaming.
+  const [streamingContent, setStreamingContent] = useState<string | null>(null)
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const streamTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const streamMountedRef = useRef(false)
+
+  // Unmount safety (use-parallel-chat technique): clear the watchdog and
+  // abort any in-flight stream so nothing leaks past the component lifetime.
+  useEffect(() => {
+    streamMountedRef.current = true
+    return () => {
+      streamMountedRef.current = false
+      if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current)
+      streamAbortRef.current?.abort()
+    }
+  }, [])
 
   // Fetch sessions for this notebook
   const {
@@ -187,7 +209,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   }, [currentSessionId, notebookId, pendingModelOverride, pendingAgentOverride, queryClient, t])
 
-  // Send message (synchronous, no streaming)
+  // Send message (token-streamed over SSE; /chat/execute stays as the
+  // compatibility/rollback path on the backend). Signature unchanged.
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
     const sessionId = await ensureSessionId(message)
     if (!sessionId) return
@@ -201,31 +224,97 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
     setMessages(prev => [...prev, userMessage])
     setIsSending(true)
+    setStreamingContent('')
+
+    const abortController = new AbortController()
+    streamAbortRef.current = abortController
+
+    const clearStreamTimeout = () => {
+      if (streamTimeoutRef.current) {
+        clearTimeout(streamTimeoutRef.current)
+        streamTimeoutRef.current = null
+      }
+    }
+    // 120s idle watchdog; re-armed on every SSE event AND every received
+    // byte chunk (so the backend's 15s `: ping` keep-alive counts).
+    const armStreamTimeout = () => {
+      clearStreamTimeout()
+      streamTimeoutRef.current = setTimeout(() => {
+        abortController.abort()
+      }, STREAM_IDLE_TIMEOUT_MS)
+    }
 
     try {
       // Build context and send message
       const context = await buildContext()
-      const response = await chatApi.sendMessage({
-        session_id: sessionId,
-        message,
-        context,
-        model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
-        agent_override: currentSession?.agent ?? undefined
-      })
 
-      // Update messages with API response
-      setMessages(response.messages)
+      // Flow state as local variables (useState would stale-close inside
+      // the SSE event callback).
+      let sawComplete = false
+      let streamError: string | null = null
+      const onEvent = (ev: ChatStreamEvent) => {
+        armStreamTimeout()
+        if (ev.type === 'delta') {
+          if (streamMountedRef.current) {
+            setStreamingContent(prev => (prev ?? '') + ev.content)
+          }
+        } else if (ev.type === 'complete') {
+          sawComplete = true
+          if (streamMountedRef.current) {
+            setStreamingContent(null)
+            // Authoritative replace, same semantics as the old sync path.
+            setMessages(ev.messages)
+          }
+        } else if (ev.type === 'error') {
+          streamError = ev.message
+        }
+      }
 
-      // Refetch current session to get updated data
-      await refetchCurrentSession()
-    } catch (err: unknown) {
+      armStreamTimeout()
+      await chatApi.streamRun(
+        sessionId,
+        {
+          message,
+          context,
+          model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+          agent_override: currentSession?.agent ?? undefined
+        },
+        onEvent,
+        abortController.signal,
+        armStreamTimeout
+      )
+
+      if (sawComplete) {
+        // Refetch only after the stream ended (same ordering as before);
+        // complete already replaced the message list authoritatively.
+        await refetchCurrentSession()
+      } else {
+        // error event or the stream was cut before complete
+        throw new Error(streamError || 'Chat stream ended without completing')
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
-      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      const detail = error.response?.data?.detail || error.message || ''
+      if (detail.includes('already in progress')) {
+        // 409 in-flight guard: a generation is already running for this session
+        toast.error(t('chat.streamBusy'))
+      } else {
+        toast.error(t('chat.streamFailed'), {
+          description: getApiErrorMessage(detail, (key) => t(key))
+        })
+      }
+      // Always reconcile with the checkpoint: the backend has almost
+      // certainly already stored the user message (input application writes
+      // it before generation), so deleting only the temp- message would
+      // desync the UI from the session state.
+      await refetchCurrentSession()
     } finally {
       setIsSending(false)
+      setStreamingContent(null)
+      clearStreamTimeout()
+      streamAbortRef.current = null
     }
   }, [
     currentSession,
@@ -329,6 +418,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     currentSessionId,
     messages,
     isSending,
+    // Live streaming text (null when idle); the waiting/streaming bubble in
+    // ChatPanel renders it as plain text + cursor while isSending is true.
+    streamingMessage: streamingContent === null ? null : { content: streamingContent },
     loadingSessions,
     tokenCount,
     charCount,

@@ -783,6 +783,8 @@ export const enUS = {
     parallelProgress: "Running: {{done}}/{{total}} done",
     parallelWaiting: "Waiting for the answer…",
     parallelFailed: "Parallel ask failed",
+    streamFailed: "Failed to generate a reply",
+    streamBusy: "This session is already generating a reply; please wait",
     synthesisPickLabel: "Synthesize & merge:",
     synthesisDefaultPicker: "System default model",
     synthesisRun: "Synthesize",
