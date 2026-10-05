@@ -20,7 +20,7 @@ import {
   SourceListResponse
 } from '@/lib/types/api'
 import type { ContextMode, ContextSelections } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import { ModelSelector } from './ModelSelector'
 import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelector'
 import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
@@ -101,7 +101,7 @@ interface ChatPanelProps {
   refetchSources?: () => void
   contextSelections?: ContextSelections
   onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
-  onBulkSourceContext?: (action: SourceBulkAction) => void
+  onBulkSourceContext?: BulkContextHandler
   onGroupingChange?: (filters: NotebookSourceFilters) => void
   notes?: NoteResponse[]
   notesLoading?: boolean
@@ -442,7 +442,7 @@ function ChatFullscreenPanels({
   refetchSources?: () => void
   contextSelections?: ContextSelections
   onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
-  onBulkSourceContext?: (action: SourceBulkAction) => void
+  onBulkSourceContext?: BulkContextHandler
   grouping?: NotebookSourceFilters
   onGroupingChange?: (filters: NotebookSourceFilters) => void
   notes?: NoteResponse[]

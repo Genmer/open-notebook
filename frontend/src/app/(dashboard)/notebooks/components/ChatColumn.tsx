@@ -12,7 +12,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import type { ContextMode } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 
 interface ChatColumnProps {
   notebookId: string
@@ -25,7 +25,7 @@ interface ChatColumnProps {
   /** 全屏侧栏复用真工作区列所需的数据/回调（GeminiSourcesColumn 等）。 */
   refetchSources?: () => void
   onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
-  onBulkSourceContext?: (action: SourceBulkAction) => void
+  onBulkSourceContext?: BulkContextHandler
   onGroupingChange?: (filters: NotebookSourceFilters) => void
   notes?: NoteResponse[]
   notesLoading?: boolean

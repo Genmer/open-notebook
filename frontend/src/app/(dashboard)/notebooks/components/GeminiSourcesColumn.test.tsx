@@ -495,6 +495,48 @@ describe('GeminiSourcesColumn', () => {
     }
   })
 
+  it('select-all bulk passes the context-tree-merged full list, not just paginated sources', () => {
+    // source:3 只存在于 context-tree（分页未加载），全选批量必须把它带上，
+    // 否则树里它的勾选状态永远纹丝不动（只改到已分页的来源）。
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        ...mockTreeData,
+        sources: [
+          ...mockTreeData.sources,
+          { id: 'source:3', title: '分页外文献', insights_count: 0, embedded: true, embedding_status: null },
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    const handleBulk = vi.fn()
+    render(
+      <GeminiSourcesColumn
+        {...baseProps}
+        onBulkContextModeChange={handleBulk}
+      />,
+      { wrapper: createWrapper().TestWrapper }
+    )
+
+    // 顶栏计数分母也是全量口径：分页 2 条 + tree-only 1 条 = 3
+    expect(screen.getByText('3/3')).toBeInTheDocument()
+
+    // contextSelections 为空 → 全部默认勾选 → 点击即「全不选」，并带全量列表
+    const label = screen.getByText('geminiSources.deselectAll')
+    const checkbox = label.parentElement?.querySelector('button[role="checkbox"]')
+    expect(checkbox).toBeInTheDocument()
+    if (checkbox) {
+      fireEvent.click(checkbox)
+      expect(handleBulk).toHaveBeenCalledTimes(1)
+      const [action, items] = handleBulk.mock.calls[0]
+      expect(action).toBe('exclude')
+      const ids = (items as Array<{ id: string }>).map((i) => i.id)
+      expect(ids).toEqual(expect.arrayContaining(['source:1', 'source:2', 'source:3']))
+      expect(ids).toHaveLength(3)
+    }
+  })
+
   it('switches to Web Research tab and allows research input', () => {
     render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
 

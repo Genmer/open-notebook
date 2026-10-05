@@ -14,7 +14,7 @@ import { FileText, StickyNote, MessageSquare } from 'lucide-react'
 import type { NotebookResponse, SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { ContextSelections, ContextMode, NoteContextMode } from '@/lib/types/notebook-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
-import type { SourceBulkAction, NoteContextDefault } from '@/lib/utils/source-context'
+import type { NoteContextDefault, BulkContextHandler } from '@/lib/utils/source-context'
 
 export interface ClassicNotebookViewProps {
   notebookId: string
@@ -32,7 +32,7 @@ export interface ClassicNotebookViewProps {
   contextSelections: ContextSelections
   handleSourceContextModeChange: (sourceId: string, mode: ContextMode) => void
   handleNoteContextModeChange: (noteId: string, mode: NoteContextMode) => void
-  handleBulkSourceContext: (action: SourceBulkAction) => void
+  handleBulkSourceContext: BulkContextHandler
   handleBulkNoteContext: (action: NoteContextDefault) => void
   setArtifactDialogOpen: (open: boolean) => void
   setContextPickerOpen: (open: boolean) => void

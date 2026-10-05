@@ -31,7 +31,7 @@ import {
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { ContextMode, ContextTreeGroup } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import {
   Select,
@@ -75,7 +75,7 @@ interface GeminiSourcesColumnProps {
   onRefresh: () => void
   contextSelections: Record<string, ContextMode>
   onContextModeChange: (sourceId: string, mode: ContextMode) => void
-  onBulkContextModeChange: (action: SourceBulkAction) => void
+  onBulkContextModeChange: BulkContextHandler
   grouping?: NotebookSourceFilters
   onGroupingChange?: (filters: NotebookSourceFilters) => void
 }
@@ -417,13 +417,14 @@ export function GeminiSourcesColumn({
     (s) => (contextSelections[s.id] ?? 'full') !== 'off'
   ).length
 
-  // 全选 / 全不选切换
+  // 全选 / 全不选切换：带上 fullSources（分页 + context-tree 合并的全量），
+  // 否则批量只改到已分页加载的来源，树里其余来源的勾选状态纹丝不动。
   const allIncluded = fullSources.length > 0 && includedCount === fullSources.length
   const handleToggleSelectAll = () => {
     if (allIncluded) {
-      onBulkContextModeChange('exclude')
+      onBulkContextModeChange('exclude', fullSources)
     } else {
-      onBulkContextModeChange('full')
+      onBulkContextModeChange('full', fullSources)
     }
   }
 
@@ -788,7 +789,7 @@ export function GeminiSourcesColumn({
               {t('navigation.sources')}
             </CardTitle>
             <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 font-normal">
-              {includedCount}/{sources.length}
+              {includedCount}/{fullSources.length}
             </Badge>
           </div>
           <div className="flex items-center gap-1">

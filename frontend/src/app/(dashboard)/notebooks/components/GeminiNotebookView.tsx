@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { BookOpen, Sparkles, MessageSquare } from 'lucide-react'
 import type { NotebookResponse, SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { ContextSelections, ContextMode } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 
 export interface GeminiNotebookViewProps {
@@ -27,7 +27,7 @@ export interface GeminiNotebookViewProps {
   setSourceGrouping?: (filters: NotebookSourceFilters) => void
   contextSelections: ContextSelections
   handleSourceContextModeChange: (sourceId: string, mode: ContextMode) => void
-  handleBulkSourceContext: (action: SourceBulkAction) => void
+  handleBulkSourceContext: BulkContextHandler
   setContextPickerOpen: (open: boolean) => void
 }
 

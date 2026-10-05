@@ -25,6 +25,8 @@ import {
   computeSourceSelections,
   computeNoteSelections,
   scopedFolderSelections,
+  ALL_SCOPE_PREF_FOLDER,
+  type BulkContextItem,
   type SourceContextDefault,
   type SourceBulkAction,
   type NoteContextDefault,
@@ -94,12 +96,15 @@ export default function NotebookPage() {
   // 来源沿用该意图（偏好表只按来源存，刷新后回到默认 full）。
   const [folderBulkAction, setFolderBulkAction] = useState<SourceBulkAction | null>(null)
 
-  // Saved (notebook, folder, source) preferences for the browsed scope.
+  // Saved (notebook, folder, source) preferences for the browsed scope. The
+  // unscoped "all" view persists under the ALL_SCOPE_PREF_FOLDER sentinel so
+  // re-entering the notebook restores the last source selection instead of
+  // resetting to the implicit include-everything default.
   const queryClient = useQueryClient()
   const contextPrefsQuery = useContextPreferences(
     notebookId,
-    folderScopeActive ? prefFolderId : null,
-    folderScopeActive,
+    folderScopeActive ? prefFolderId : ALL_SCOPE_PREF_FOLDER,
+    true,
   )
   const savedPrefs = contextPrefsQuery.data
 
@@ -120,6 +125,45 @@ export default function NotebookPage() {
     })
   }
 
+  // 「全部」视图的持久化：与文件夹范围同构，落在 ALL_SCOPE_PREF_FOLDER
+  // 哨兵下。写入走串行合并队列——「全选」的大批量 PUT 在服务端逐条 UPSERT
+  // 期间，紧随其后的手动微调若并发直发，会被批量请求里的旧值覆盖回去
+  // （同一来源后到者赢），因此 pending 条目必须等在途请求完成后再发，
+  // 保证后写的变更后到达服务器。
+  const allScopeSaveQueueRef = useRef<{
+    inFlight: boolean
+    pending: Record<string, ContextMode> | null
+  }>({ inFlight: false, pending: null })
+  const persistAllScopeContext = (selections: Record<string, ContextMode>) => {
+    if (folderScopeActive || !notebookId) return
+    if (Object.keys(selections).length === 0) return
+    queryClient.setQueryData<Record<string, ContextMode>>(
+      QUERY_KEYS.contextPreferences(notebookId, ALL_SCOPE_PREF_FOLDER),
+      prev => ({ ...prev, ...selections }),
+    )
+    const queue = allScopeSaveQueueRef.current
+    queue.pending = { ...(queue.pending ?? {}), ...selections }
+    if (queue.inFlight) return
+    queue.inFlight = true
+    const flush = async () => {
+      try {
+        while (queue.pending) {
+          const entries = Object.entries(queue.pending).map(([source_id, mode]) => ({
+            source_id,
+            mode,
+          }))
+          queue.pending = null
+          await contextPrefsApi.save(notebookId, ALL_SCOPE_PREF_FOLDER, entries)
+        }
+      } catch {
+        toast.error(t('chat.contextPrefSaveFailed'))
+      } finally {
+        queue.inFlight = false
+      }
+    }
+    void flush()
+  }
+
   // 「全部」视图：沿用原有默认（include→有见解 insights、无见解 full），
   // 保留已有选择、只填充新加载的来源。占位数据（上一范围列表）期间跳过。
   useEffect(() => {
@@ -137,6 +181,28 @@ export default function NotebookPage() {
   // 范围的包含状态泄漏进当前范围。偏好拉取最终失败时降级为空偏好重建
   // （回到范围内默认 full、范围外 off），否则开关会整列消失且上下文陈旧。
   const notifiedPrefErrorRef = useRef(false)
+
+  // 「全部」视图：进入笔记本时用哨兵范围保存的偏好恢复上次的选择，每次
+  // 挂载只恢复一次；此后分页陆续到达的来源沿用上面的默认 effect（保留
+  // 恢复出的选择、只补默认）。偏好拉取失败时保持隐式默认并提示一次。
+  const restoredAllScopeRef = useRef(false)
+  useEffect(() => {
+    if (folderScopeActive || sourcesPlaceholder) return
+    if (contextPrefsQuery.isError) {
+      if (!notifiedPrefErrorRef.current) {
+        notifiedPrefErrorRef.current = true
+        toast.error(t('chat.contextPrefLoadFailed'))
+      }
+      return
+    }
+    if (!contextPrefsQuery.isSuccess || restoredAllScopeRef.current) return
+    restoredAllScopeRef.current = true
+    setContextSelections(prev => ({
+      ...prev,
+      sources: computeSourceSelections(savedPrefs ?? {}, sources ?? [], sourceContextDefault),
+    }))
+  }, [folderScopeActive, contextPrefsQuery.isSuccess, contextPrefsQuery.isError, savedPrefs, sources, sourceContextDefault, sourcesPlaceholder, t])
+
   useEffect(() => {
     if (!folderScopeActive || sourcesPlaceholder) return
     if (contextPrefsQuery.isError) {
@@ -204,9 +270,12 @@ export default function NotebookPage() {
         [sourceId]: mode
       }
     }))
-    // 文件夹范围内的单来源调整按 (笔记本, 文件夹, 来源) 持久化
+    // 文件夹范围内的单来源调整按 (笔记本, 文件夹, 来源) 持久化；
+    // 「全部」视图落在哨兵范围，重进笔记本时恢复。
     if (folderScopeActive) {
       persistFolderContext([{ source_id: sourceId, mode }])
+    } else {
+      persistAllScopeContext({ [sourceId]: mode })
     }
   }
 
@@ -237,6 +306,8 @@ export default function NotebookPage() {
       persistFolderContext(
         Object.entries(next).map(([source_id, mode]) => ({ source_id, mode })),
       )
+    } else {
+      persistAllScopeContext(next)
     }
   }
 
@@ -255,14 +326,19 @@ export default function NotebookPage() {
       persistFolderContext(
         (sources ?? []).map(s => ({ source_id: s.id, mode: 'off' as ContextMode })),
       )
+    } else {
+      persistAllScopeContext(nextSources)
     }
   }
 
   // Bulk-apply a context action (insights-only / full / exclude) to every
   // source at once (#223). Also records the action as the default for sources
   // loaded later (#915). In a folder scope the action is persisted per source
-  // instead of touching the unscoped "all" default.
-  const handleBulkSourceContext = (action: SourceBulkAction) => {
+  // instead of touching the unscoped "all" default. `items` lets callers pass
+  // the full (context-tree) source list so the batch also covers sources the
+  // paginated listing has not loaded; in a folder scope the paginated list
+  // stays authoritative because that is the scoped listing.
+  const handleBulkSourceContext = (action: SourceBulkAction, items?: BulkContextItem[]) => {
     if (folderScopeActive) {
       const sourceList = sources ?? []
       setFolderBulkAction(action)
@@ -276,11 +352,14 @@ export default function NotebookPage() {
       )
       return
     }
+    const sourceList = items ?? sources ?? []
     setSourceContextDefault(action)
+    const nextSources = applyBulkSourceContext(contextSelections.sources, sourceList, action)
     setContextSelections(prev => ({
       ...prev,
-      sources: applyBulkSourceContext(prev.sources, sources ?? [], action),
+      sources: nextSources,
     }))
+    persistAllScopeContext(nextSources)
   }
 
   // Bulk include/exclude every note from the chat context at once (#223).
