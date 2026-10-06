@@ -35,6 +35,8 @@ KNOWN_GOOD_PROVIDERS = [
     "xiaomi_mimo",
     "xiaomi_mimo_token_plan",
     "novita",
+    "siliconflow",
+    "zai",
     "ppq",
     "cohere",
     "voyage",
@@ -120,6 +122,8 @@ class TestProviderRegistryIsTheSourceOfTruth:
             "xiaomi_mimo": "https://api.xiaomimimo.com/v1/models",
             "xiaomi_mimo_token_plan": "https://token-plan-cn.xiaomimimo.com/v1/models",
             "novita": "https://api.novita.ai/openai/models",
+            "siliconflow": "https://api.siliconflow.com/v1/models",
+            "zai": "https://api.z.ai/api/paas/v4/models",
             "ppq": "https://api.ppq.ai/v1/models?type=all",
         }
         assert {

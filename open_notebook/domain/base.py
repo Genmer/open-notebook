@@ -57,9 +57,10 @@ class ObjectModel(BaseModel):
                     raise InvalidInputError(f"Invalid order_by field: '{parts[0]}'")
                 validated_clauses.append(parts[0].lower())
             elif len(parts) == 2:
-                if not allowed_field_pattern.match(
-                    parts[0].lower()
-                ) or parts[1].lower() not in allowed_directions:
+                if (
+                    not allowed_field_pattern.match(parts[0].lower())
+                    or parts[1].lower() not in allowed_directions
+                ):
                     raise InvalidInputError(
                         f"Invalid order_by clause: '{clause.strip()}'"
                     )
@@ -123,16 +124,17 @@ class ObjectModel(BaseModel):
             if not result:
                 raise NotFoundError(f"{table_name} with id {id} not found")
             return target_class(**result[0])
-        except NotFoundError:
+        except (NotFoundError, InvalidInputError):
             raise
         except Exception as e:
-            # Record exists but failed to load (e.g. schema drift): masking this
-            # as NotFoundError makes clients show "not found" for a broken row.
+            # A database failure (connection, SurrealDB transaction conflict...)
+            # is not "not found": callers treat NotFoundError as permanent (404,
+            # no retry), so surface it as DatabaseOperationError instead.
             logger.error(f"Error fetching object with id {id}: {str(e)}")
             logger.exception(e)
             raise DatabaseOperationError(
                 f"Failed to load {table_name} with id {id}: {str(e)}"
-            )
+            ) from e
 
     @classmethod
     def _get_class_by_table_name(cls, table_name: str) -> Optional[Type["ObjectModel"]]:

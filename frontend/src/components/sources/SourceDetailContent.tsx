@@ -14,7 +14,7 @@ import { SourceDetailResponse } from '@/lib/types/api'
 import { Transformation } from '@/lib/types/transformations'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ContentUnavailable } from '@/components/common/ContentUnavailable'
-import { isNotFoundError } from '@/lib/utils/error-handler'
+import { getApiErrorMessage, isNotFoundError } from '@/lib/utils/error-handler'
 import { displayTransformationTitle } from '@/lib/utils/transformation-display'
 import { InlineEdit } from '@/components/common/InlineEdit'
 import { Button } from '@/components/ui/button'
@@ -203,6 +203,7 @@ function SourceDetailContentInner({
       const response = await insightsApi.create(sourceId, {
         transformation_id: selectedTransformation
       })
+
       // Show toast for async operation
       toast.success(t('sources.insightGenerationStarted'))
       setSelectedTransformation('')
@@ -227,7 +228,10 @@ function SourceDetailContentInner({
       }
     } catch (err) {
       console.error('Failed to create insight:', err)
-      toast.error(t('common.error'))
+      // Show the server's reason when there is one; a network error has no
+      // detail and keeps the localized generic message.
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(getApiErrorMessage(detail ?? '', (key) => t(key), 'common.error'))
     } finally {
       setCreatingInsight(false)
     }

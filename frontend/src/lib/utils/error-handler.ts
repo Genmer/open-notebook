@@ -39,6 +39,8 @@ export const ERROR_MAP: Record<string, string> = {
   "A group with this name already exists at this level": "apiErrors.groupDuplicateName",
   // Prefix match: the trailing number comes from MAX_GROUP_DEPTH
   "Group nesting exceeds the maximum depth of": "apiErrors.groupDepthExceeded",
+  "Source has no text content": "apiErrors.sourceHasNoText",
+  "There is no text content to transform": "apiErrors.sourceHasNoText",
 };
 
 /**

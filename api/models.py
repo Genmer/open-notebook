@@ -824,6 +824,8 @@ SupportedProvider = Literal[
     "xiaomi_mimo",
     "xiaomi_mimo_token_plan",
     "novita",
+    "siliconflow",
+    "zai",
     "ppq",
     "cohere",
     "voyage",

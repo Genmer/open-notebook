@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { insightsApi } from '@/lib/api/insights'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { isActiveInsightJobStatus } from '@/lib/hooks/use-sources'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { toast } from 'sonner'
 
 // Poll cadence for an in-flight insight command.
@@ -122,7 +123,9 @@ export function useInsightJobWatcher({
     // failed / canceled / unknown
     const detail = jobStatus.error_message?.trim()
     toast.error(t('sources.insightGenerationFailed'), {
-      description: detail || undefined,
+      description: detail
+        ? getApiErrorMessage(detail, (key) => t(key))
+        : undefined,
     })
     finishJob(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps

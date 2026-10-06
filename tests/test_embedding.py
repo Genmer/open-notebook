@@ -40,6 +40,7 @@ def _build_text_exceeding_tokens(fragment: str, threshold_tokens: int) -> str:
         text += fragment
     return text
 
+
 # ============================================================================
 # TEST SUITE 1: Mean Pooling
 # ============================================================================
@@ -83,6 +84,7 @@ class TestMeanPoolEmbeddings:
         # Result should be same direction, just normalized
         # Original is already normalized if we normalize it
         import numpy as np
+
         orig_norm = np.linalg.norm(embedding)
         expected = [v / orig_norm for v in embedding]
         for i in range(4):
@@ -104,6 +106,7 @@ class TestMeanPoolEmbeddings:
         result = await mean_pool_embeddings(embeddings)
         # Check result is unit length
         import numpy as np
+
         norm = np.linalg.norm(result)
         assert abs(norm - 1.0) < 0.001
 
@@ -111,6 +114,7 @@ class TestMeanPoolEmbeddings:
     async def test_high_dimensional(self):
         """Test mean pooling with high-dimensional embeddings."""
         import numpy as np
+
         # Create random embeddings of dimension 768 (typical embedding size)
         np.random.seed(42)
         embeddings = [

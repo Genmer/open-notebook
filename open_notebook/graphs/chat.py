@@ -14,7 +14,7 @@ from open_notebook.ai.provision import provision_langchain_model_with_info
 from open_notebook.ai.usage import record_llm_usage_sync
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Notebook
-from open_notebook.exceptions import OpenNotebookError
+from open_notebook.exceptions import IncompleteGenerationError, OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
@@ -79,6 +79,13 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
         cleaned_content = clean_thinking_content(content)
+        if not cleaned_content.strip():
+            # Raising inside the node keeps LangGraph from checkpointing a
+            # blank AI message that would be replayed as context later.
+            raise IncompleteGenerationError(
+                "The model returned an empty response. Try again, or pick a "
+                "different model if this keeps happening."
+            )
         cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
 
         record_llm_usage_sync(
