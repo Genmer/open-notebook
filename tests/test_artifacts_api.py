@@ -55,15 +55,16 @@ def _context_data():
                 "full_text": "Long source text about photosynthesis.",
             }
         ],
-        "notes": [
-            {"id": "note:n1", "title": "My note", "content": "Note content"}
-        ],
+        "notes": [{"id": "note:n1", "title": "My note", "content": "Note content"}],
     }
 
 
 class TestSubmitEndpoint:
     @pytest.mark.asyncio
-    @patch("api.routers.notebooks.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.notebooks.CommandService.submit_command_job",
+        new_callable=AsyncMock,
+    )
     @patch.object(Notebook, "get", new_callable=AsyncMock)
     async def test_submit_returns_job_id(self, mock_get, mock_submit, client):
         mock_get.return_value = _notebook()
@@ -91,7 +92,10 @@ class TestSubmitEndpoint:
         )
 
     @pytest.mark.asyncio
-    @patch("api.routers.notebooks.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.notebooks.CommandService.submit_command_job",
+        new_callable=AsyncMock,
+    )
     @patch.object(Notebook, "get", new_callable=AsyncMock)
     async def test_submit_passes_context_config(self, mock_get, mock_submit, client):
         mock_get.return_value = _notebook()
@@ -195,9 +199,7 @@ class TestGenerateArtifactCommand:
             )
         )
         stack.enter_context(
-            patch(
-                "commands.artifact_commands.record_llm_usage", new_callable=AsyncMock
-            )
+            patch("commands.artifact_commands.record_llm_usage", new_callable=AsyncMock)
         )
         return llm_patcher, stack
 
@@ -211,9 +213,12 @@ class TestGenerateArtifactCommand:
             saved["note"] = self
             return "embed_job:1"
 
-        with stack, llm_patcher, patch.object(
-            Note, "save", capture_note_save
-        ), patch.object(Note, "add_to_notebook", new_callable=AsyncMock):
+        with (
+            stack,
+            llm_patcher,
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
+        ):
             result = await generate_artifact_command(
                 ArtifactGenerationInput(
                     notebook_id=NOTEBOOK_ID,
@@ -238,9 +243,12 @@ class TestGenerateArtifactCommand:
             saved["note"] = self
             return "embed_job:1"
 
-        with stack, llm_patcher, patch.object(
-            Note, "save", capture_note_save
-        ), patch.object(Note, "add_to_notebook", new_callable=AsyncMock):
+        with (
+            stack,
+            llm_patcher,
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
+        ):
             result = await generate_artifact_command(
                 ArtifactGenerationInput(
                     notebook_id=NOTEBOOK_ID,
@@ -262,9 +270,12 @@ class TestGenerateArtifactCommand:
             saved["note"] = self
             return "embed_job:1"
 
-        with stack, llm_patcher, patch.object(
-            Note, "save", capture_note_save
-        ), patch.object(Note, "add_to_notebook", new_callable=AsyncMock):
+        with (
+            stack,
+            llm_patcher,
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
+        ):
             result = await generate_artifact_command(
                 ArtifactGenerationInput(
                     notebook_id=NOTEBOOK_ID,

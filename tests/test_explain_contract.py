@@ -14,7 +14,9 @@ from api.explain_service import ACTION_LABEL_KEYS, _facts
 from api.routers.explain import ExplainResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CARD_PATH = REPO_ROOT / "frontend" / "src" / "components" / "tasks" / "TaskExplainCard.tsx"
+CARD_PATH = (
+    REPO_ROOT / "frontend" / "src" / "components" / "tasks" / "TaskExplainCard.tsx"
+)
 EXPLAIN_TS_PATH = REPO_ROOT / "frontend" / "src" / "lib" / "api" / "explain.ts"
 LOCALE_TEST_PATH = (
     REPO_ROOT / "frontend" / "src" / "lib" / "locales" / "explain-labels.test.ts"

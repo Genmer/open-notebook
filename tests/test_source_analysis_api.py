@@ -273,7 +273,9 @@ async def test_analyze_streaming_empty_stream_raises(model_mocks):
 
 
 @pytest.mark.asyncio
-async def test_analyze_streaming_timeout_maps_to_external_error(model_mocks, monkeypatch):
+async def test_analyze_streaming_timeout_maps_to_external_error(
+    model_mocks, monkeypatch
+):
     from langchain_core.messages import AIMessageChunk
 
     import api.source_analysis_service as service
@@ -335,9 +337,7 @@ class SectionStateRecorder:
 async def test_section_command_writes_state_stream_and_cleans_up(monkeypatch):
     from commands.source_commands import AnalyzeSectionInput, analyze_section_command
 
-    monkeypatch.setattr(
-        "commands.source_commands.SECTION_STATE_FLUSH_SECONDS", 0.0
-    )
+    monkeypatch.setattr("commands.source_commands.SECTION_STATE_FLUSH_SECONDS", 0.0)
     recorder = SectionStateRecorder()
 
     async def fake_analyze(**kwargs):
@@ -392,7 +392,9 @@ async def test_section_command_cleans_state_on_failure(monkeypatch):
 
     with (
         patch("commands.source_commands.repo_query", new=recorder),
-        patch("api.source_analysis_service.analyze_source_section", new=failing_analyze),
+        patch(
+            "api.source_analysis_service.analyze_source_section", new=failing_analyze
+        ),
     ):
         with pytest.raises(RuntimeError):
             await analyze_section_command(

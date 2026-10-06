@@ -123,7 +123,9 @@ class TestEmptyStrategyHandling:
         state = cast(ThreadState, {"question": "q"})
         with patch(
             "open_notebook.graphs.ask.provision_langchain_model_with_info",
-            new=AsyncMock(return_value=_provision_returning(_strategy_json(["", "", ""]))),
+            new=AsyncMock(
+                return_value=_provision_returning(_strategy_json(["", "", ""]))
+            ),
         ):
             with pytest.raises(ExternalServiceError, match="no search terms"):
                 await call_model_with_messages(state, EMPTY_CONFIG)

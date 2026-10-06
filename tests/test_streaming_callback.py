@@ -209,10 +209,7 @@ def test_multithreading_concurrency():
             handler.on_llm_new_token(f"{prefix}{i} ", run_id=run_id)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [
-            executor.submit(send_tokens, 25, f"t{idx}_")
-            for idx in range(4)
-        ]
+        futures = [executor.submit(send_tokens, 25, f"t{idx}_") for idx in range(4)]
         for f in futures:
             f.result()
 
@@ -220,4 +217,3 @@ def test_multithreading_concurrency():
     assert prog.token_count == 100
     assert len(prog.window_text) <= 500
     assert prog.total_chars > 0
-

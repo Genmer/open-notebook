@@ -160,7 +160,9 @@ class TestNotebookIdBackwardCompat:
     """
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_singular_notebook_id_creates_reference(
@@ -317,7 +319,9 @@ class TestSourceEmbeddingStatusPayload:
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
-    async def test_status_returns_running_with_progress(self, mock_get, mock_repo_query, client):
+    async def test_status_returns_running_with_progress(
+        self, mock_get, mock_repo_query, client
+    ):
         """T2-1: while embedding runs, the status endpoint reports the live
         progress the UI progress bar renders."""
         source = self._source_with(
@@ -362,7 +366,9 @@ class TestSourceEmbeddingStatusPayload:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
-    async def test_legacy_source_without_fields_derives_not_embedded(self, mock_get, client):
+    async def test_legacy_source_without_fields_derives_not_embedded(
+        self, mock_get, client
+    ):
         """T2-3: sources predating migration 27 (no embedding fields at all)
         must derive a status instead of erroring."""
         source = self._source_with(embedding_status=None, embedded_chunks=None)
@@ -391,7 +397,9 @@ class TestSourceEmbeddingStatusPayload:
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
-    async def test_unknown_status_string_maps_to_not_embedded(self, mock_get, mock_repo_query, client):
+    async def test_unknown_status_string_maps_to_not_embedded(
+        self, mock_get, mock_repo_query, client
+    ):
         """Defensive: a garbage status value must not break the response model
         (its Literal rejects unknown strings)."""
         source = self._source_with(embedding_status="bogus-value")
@@ -502,7 +510,9 @@ class TestEmbeddingStatusBackfillFallback:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
-    async def test_completed_without_counters_resolves_chunk_count(self, mock_get, client):
+    async def test_completed_without_counters_resolves_chunk_count(
+        self, mock_get, client
+    ):
         source = MagicMock()
         source.command = None  # legacy branch: no command status lookup
         source.embedding_status = "completed"
@@ -582,7 +592,9 @@ class TestSourceTitlesEndpoint:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_titles_null_when_no_title_and_no_asset(self, mock_repo_query, client):
+    async def test_titles_null_when_no_title_and_no_asset(
+        self, mock_repo_query, client
+    ):
         mock_repo_query.return_value = [
             {"id": "source:abc", "title": None, "asset": None},
         ]
@@ -627,7 +639,9 @@ class TestSourceTitlesEndpoint:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_titles_reject_malformed_ids_with_colons(self, mock_repo_query, client):
+    async def test_titles_reject_malformed_ids_with_colons(
+        self, mock_repo_query, client
+    ):
         """note:xyz / source:a:b must map to 400, not a RecordID ValueError 500."""
         for bad_ids in ("note:xyz", "abc,source:a:b", "source:"):
             response = client.get(f"/api/sources/titles?ids={bad_ids}")

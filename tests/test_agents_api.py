@@ -67,9 +67,7 @@ def test_create_agent_persists_and_reads_back():
 
     with (
         patch.object(Agent, "save", autospec=True, side_effect=capture_save),
-        patch(
-            "api.routers.agents.Model.get", new_callable=AsyncMock
-        ) as mock_model_get,
+        patch("api.routers.agents.Model.get", new_callable=AsyncMock) as mock_model_get,
         patch(
             "api.routers.agents.repo_query",
             side_effect=_usage_side_effect(),
@@ -115,9 +113,7 @@ def test_create_agent_rejects_unknown_model():
         raise NotFoundError("model not found")
 
     with (
-        patch(
-            "api.routers.agents.Model.get", side_effect=raise_not_found
-        ),
+        patch("api.routers.agents.Model.get", side_effect=raise_not_found),
         patch.object(Agent, "save", new_callable=AsyncMock) as mock_save,
     ):
         response = client.post("/api/agents", json=_create_payload())
@@ -143,9 +139,7 @@ def test_update_agent_clears_model_on_explicit_null():
         patch.object(Agent, "save", autospec=True, side_effect=capture_save),
         patch(
             "api.routers.agents.repo_query",
-            side_effect=_usage_side_effect(
-                rows=[{"agent": "agent:123", "total": 3}]
-            ),
+            side_effect=_usage_side_effect(rows=[{"agent": "agent:123", "total": 3}]),
         ),
     ):
         response = client.put("/api/agents/agent:123", json={"model": None})
@@ -217,9 +211,7 @@ def test_list_agents_filters_disabled_and_maps_usage():
         ) as mock_get_all,
         patch(
             "api.routers.agents.repo_query",
-            side_effect=_usage_side_effect(
-                rows=[{"agent": "agent:on", "total": 2}]
-            ),
+            side_effect=_usage_side_effect(rows=[{"agent": "agent:on", "total": 2}]),
         ),
     ):
         response = client.get("/api/agents", params={"enabled": True})
@@ -345,9 +337,7 @@ def test_polish_prompt_rejects_draft_over_8000_chars():
     client = _client()
 
     with patch("api.routers.agents.provision_langchain_model_with_info") as mock_prov:
-        response = client.post(
-            "/api/agents/polish-prompt", json={"draft": "a" * 8001}
-        )
+        response = client.post("/api/agents/polish-prompt", json={"draft": "a" * 8001})
 
     assert response.status_code == 422
     mock_prov.assert_not_awaited()

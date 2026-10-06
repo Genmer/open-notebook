@@ -91,9 +91,7 @@ class TestSettingsUpdateValidation:
         monkeypatch.setattr(
             "api.routers.settings.ContentSettings.get_instance", _get_instance
         )
-        monkeypatch.setattr(
-            "api.routers.settings.ContentSettings.update", _update
-        )
+        monkeypatch.setattr("api.routers.settings.ContentSettings.update", _update)
         response = client.put(
             "/api/settings", json={"chunk_size": 400, "chunk_overlap": 400}
         )

@@ -1085,9 +1085,7 @@ async def text_search(
         f"Text search for '{keyword}' returned no results; "
         f"retrying with split terms: {sub_terms}"
     )
-    return await _search_by_sub_terms(
-        sub_terms, results, source, note, notebook_ids
-    )
+    return await _search_by_sub_terms(sub_terms, results, source, note, notebook_ids)
 
 
 async def vector_search(

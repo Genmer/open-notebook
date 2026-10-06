@@ -85,9 +85,7 @@ def _wire(graph, model, session=None):
     sqlite file per test), which is what makes the complete event assertable.
     """
     session = session or _session()
-    prov = SimpleNamespace(
-        langchain_model=model, model_name="fake-stream-model"
-    )
+    prov = SimpleNamespace(langchain_model=model, model_name="fake-stream-model")
     patches = [
         patch(
             "api.routers.chat_stream.get_session_or_404",
@@ -118,7 +116,7 @@ def _sse_events(resp) -> list:
         if isinstance(line, bytes):
             line = line.decode("utf-8")
         if line.startswith("data: "):
-            events.append(json.loads(line[len("data: "):]))
+            events.append(json.loads(line[len("data: ") :]))
     return events
 
 
@@ -192,9 +190,7 @@ def test_b1a_empty_model_output_yields_error_event(tmp_path):
     assert len(errors) == 1
     assert "No generations found" in errors[0]["message"]
 
-    state = graph.get_state(
-        RunnableConfig(configurable={"thread_id": FULL_SESSION_ID})
-    )
+    state = graph.get_state(RunnableConfig(configurable={"thread_id": FULL_SESSION_ID}))
     checkpoint_messages = list(state.values.get("messages", []))
     assert len(checkpoint_messages) == 1
     assert checkpoint_messages[0].type == "human"
@@ -213,9 +209,7 @@ def test_b2_checkpoint_matches_complete_event(tmp_path):
     assert response.status_code == 200
     complete = next(e for e in _sse_events(response) if e["type"] == "complete")
 
-    state = graph.get_state(
-        RunnableConfig(configurable={"thread_id": FULL_SESSION_ID})
-    )
+    state = graph.get_state(RunnableConfig(configurable={"thread_id": FULL_SESSION_ID}))
     checkpoint_messages = list(state.values.get("messages", []))
     assert len(checkpoint_messages) == 2
     assert checkpoint_messages[0].type == "human"
@@ -272,9 +266,7 @@ def test_b4_error_event_and_orphan_human_message(tmp_path):
 
     # documented orphan behavior: input application already wrote the human
     # message into the checkpoint before the node failed
-    state = graph.get_state(
-        RunnableConfig(configurable={"thread_id": FULL_SESSION_ID})
-    )
+    state = graph.get_state(RunnableConfig(configurable={"thread_id": FULL_SESSION_ID}))
     checkpoint_messages = list(state.values.get("messages", []))
     assert len(checkpoint_messages) == 1
     assert checkpoint_messages[0].type == "human"
@@ -376,9 +368,7 @@ def test_b8b_node_flip_is_config_gated(tmp_path, stream_tokens):
     object stays untouched (execute_chat equivalence — 0 deltas)."""
     graph = _make_graph(tmp_path)
     model = _fake_model("Hello streamed world")
-    prov = SimpleNamespace(
-        langchain_model=model, model_name="fake-stream-model"
-    )
+    prov = SimpleNamespace(langchain_model=model, model_name="fake-stream-model")
 
     configurable = {"thread_id": "chat_session:t-b8"}
     if stream_tokens:

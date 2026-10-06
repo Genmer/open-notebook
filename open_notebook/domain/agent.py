@@ -60,7 +60,10 @@ class Agent(ObjectModel):
             raise InvalidInputError(
                 f"system_prompt exceeds {SYSTEM_PROMPT_MAX_CHARS} characters"
             )
-        if self.description is not None and len(self.description) > DESCRIPTION_MAX_CHARS:
+        if (
+            self.description is not None
+            and len(self.description) > DESCRIPTION_MAX_CHARS
+        ):
             raise InvalidInputError(
                 f"description exceeds {DESCRIPTION_MAX_CHARS} characters"
             )

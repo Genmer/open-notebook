@@ -71,7 +71,9 @@ def _source_ref(source_id: str) -> RecordID:
         raise HTTPException(status_code=400, detail=f"Invalid source id: {source_id}")
 
 
-def _pref_ref(notebook_ref: str, folder_ref: Optional[str], source_ref: str) -> RecordID:
+def _pref_ref(
+    notebook_ref: str, folder_ref: Optional[str], source_ref: str
+) -> RecordID:
     """Deterministic record id for the (notebook, folder, source) triple."""
     basis = "|".join((notebook_ref, folder_ref or "", source_ref))
     digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:32]
@@ -153,7 +155,11 @@ async def save_context_preferences(
         raise HTTPException(status_code=404, detail="Notebook not found")
 
     invalid_modes = sorted(
-        {selection.mode for selection in request.selections if selection.mode not in CONTEXT_MODES}
+        {
+            selection.mode
+            for selection in request.selections
+            if selection.mode not in CONTEXT_MODES
+        }
     )
     if invalid_modes:
         raise HTTPException(
@@ -206,6 +212,4 @@ async def save_context_preferences(
         logger.error(
             f"Error saving context preferences for notebook {notebook_id}: {e}"
         )
-        raise HTTPException(
-            status_code=500, detail="Error saving context preferences"
-        )
+        raise HTTPException(status_code=500, detail="Error saving context preferences")

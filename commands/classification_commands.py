@@ -84,7 +84,11 @@ def _clean_group_name(name: str) -> str:
 
 
 async def _set_progress(
-    view_id: str, stage: str, percent: int, message: str = "", error: Optional[str] = None
+    view_id: str,
+    stage: str,
+    percent: int,
+    message: str = "",
+    error: Optional[str] = None,
 ) -> None:
     try:
         await repo_query(
@@ -121,7 +125,10 @@ async def _llm_classification_plan(
         content = clean_thinking_content(extract_text_content(ai_message.content))
         plan = parser.parse(content)
         await record_llm_usage(
-            model=prov, ai_message=ai_message, call_type="classification", correlation_id=view_id
+            model=prov,
+            ai_message=ai_message,
+            call_type="classification",
+            correlation_id=view_id,
         )
         return plan
     except Exception as e:
@@ -143,10 +150,15 @@ async def _plan_with_retry(
         return await _llm_classification_plan(prompt_template, data, view_id)
     except (OutputParserException, ValidationError):
         # One feedback round with the parser error, then give up permanently.
-        logger.warning(f"First classification attempt failed for view {view_id}, retrying with error feedback")
+        logger.warning(
+            f"First classification attempt failed for view {view_id}, retrying with error feedback"
+        )
         return await _llm_classification_plan(
             prompt_template,
-            {**data, "previous_error": "The previous output could not be parsed as the requested JSON."},
+            {
+                **data,
+                "previous_error": "The previous output could not be parsed as the requested JSON.",
+            },
             view_id,
         )
 
@@ -181,7 +193,9 @@ def _kmeans_clusters(
         centroids.append(centroid)
         cid = str(cluster)
         cluster_members[cid] = [main_pool[i] for i in member_idx]
-        ranked = sorted(member_idx.tolist(), key=lambda i: -float(normalized[i] @ centroid))
+        ranked = sorted(
+            member_idx.tolist(), key=lambda i: -float(normalized[i] @ centroid)
+        )
         clusters.append(
             {
                 "cluster_id": cid,
@@ -279,7 +293,8 @@ async def _classify_title(
 
     by_name: Dict[str, ClusterAssignment] = {}
     batches = [
-        items[i : i + _TITLE_BATCH_SIZE] for i in range(0, len(items), _TITLE_BATCH_SIZE)
+        items[i : i + _TITLE_BATCH_SIZE]
+        for i in range(0, len(items), _TITLE_BATCH_SIZE)
     ]
     for index, batch in enumerate(batches):
         percent = 30 + int(50 * (index + 1) / len(batches))
@@ -303,9 +318,11 @@ async def _classify_title(
                 if sid not in existing.extra_source_ids:
                     existing.extra_source_ids.append(sid)
 
-    return ClassificationPlan(groups=list(by_name.values())), {
-        str(row["id"]) for row in source_rows
-    }, untitled
+    return (
+        ClassificationPlan(groups=list(by_name.values())),
+        {str(row["id"]) for row in source_rows},
+        untitled,
+    )
 
 
 def _resolve_assignments(
@@ -373,7 +390,9 @@ async def _persist_groups(view_id: str, groups: Dict[str, List[str]]) -> None:
 
 
 @command("classify_sources", app="open_notebook", retry=CLASSIFY_RETRY_CONFIG)
-async def classify_sources_command(input_data: ClassifySourcesInput) -> ClassifySourcesOutput:
+async def classify_sources_command(
+    input_data: ClassifySourcesInput,
+) -> ClassifySourcesOutput:
     start_time = time.time()
     view_id = input_data.view_id
     try:
@@ -384,7 +403,9 @@ async def classify_sources_command(input_data: ClassifySourcesInput) -> Classify
             raise ValueError(f"Source view {view_id} not found")
 
         if input_data.method == "content":
-            plan, cluster_members, valid_ids, untitled = await _classify_content(view_id)
+            plan, cluster_members, valid_ids, untitled = await _classify_content(
+                view_id
+            )
         else:
             plan, valid_ids, untitled = await _classify_title(view_id)
             cluster_members = {}

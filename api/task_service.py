@@ -85,36 +85,68 @@ def _get_pipeline_stages(command_name: str, task_type: str) -> List[Dict[str, st
     if command_name == "generate_podcast" or task_type == "podcast":
         return [
             {"id": "prep", "title": "素材解析", "desc": "检索上下文与声音模型配置"},
-            {"id": "script", "title": "对白生成", "desc": "LLM 生成双人多轮深度对谈脚本"},
+            {
+                "id": "script",
+                "title": "对白生成",
+                "desc": "LLM 生成双人多轮深度对谈脚本",
+            },
             {"id": "tts", "title": "语音合成", "desc": "逐段调用神经 TTS 引擎渲染音频"},
-            {"id": "export", "title": "混音沉淀", "desc": "立体声声道混响与播客成片封装"},
+            {
+                "id": "export",
+                "title": "混音沉淀",
+                "desc": "立体声声道混响与播客成片封装",
+            },
         ]
     if command_name == "generate_artifact" or task_type == "artifact":
         return [
             {"id": "prep", "title": "提取分析", "desc": "检索笔记与来源选区全景上下文"},
             {"id": "prompt", "title": "模型推理", "desc": "按工件规约执行结构化生成"},
-            {"id": "validate", "title": "格式校验", "desc": "验证 Markdown 语法与结构完整性"},
+            {
+                "id": "validate",
+                "title": "格式校验",
+                "desc": "验证 Markdown 语法与结构完整性",
+            },
             {"id": "save", "title": "沉淀笔记", "desc": "自动写入当前笔记本卡片流"},
         ]
     if task_type == "embedding" or "embed" in command_name:
         return [
             {"id": "prep", "title": "文本读取", "desc": "拉取目标源文档或笔记内容"},
-            {"id": "chunk", "title": "切片分块", "desc": "按 Token 窗口执行重叠滑动分块"},
-            {"id": "embed", "title": "向量计算", "desc": "调用 Embedding 模型批量生成稠密向量"},
+            {
+                "id": "chunk",
+                "title": "切片分块",
+                "desc": "按 Token 窗口执行重叠滑动分块",
+            },
+            {
+                "id": "embed",
+                "title": "向量计算",
+                "desc": "调用 Embedding 模型批量生成稠密向量",
+            },
             {"id": "index", "title": "写入索引", "desc": "更新 HNSW 向量数据库索引"},
         ]
     if task_type == "data_transfer" or "data" in command_name:
         return [
             {"id": "prep", "title": "环境初始化", "desc": "校验目标存储与数据表结构"},
             {"id": "pack", "title": "数据流处理", "desc": "序列化记录与文件流转换"},
-            {"id": "transfer", "title": "批量传输", "desc": "执行原子事务写入或归档压缩"},
+            {
+                "id": "transfer",
+                "title": "批量传输",
+                "desc": "执行原子事务写入或归档压缩",
+            },
             {"id": "done", "title": "完成校验", "desc": "校验记录数与完整性哈希"},
         ]
     if task_type == "classification" or "classify" in command_name:
         return [
-            {"id": "clustering", "title": "聚类分析", "desc": "读取语义向量并执行空间聚类"},
+            {
+                "id": "clustering",
+                "title": "聚类分析",
+                "desc": "读取语义向量并执行空间聚类",
+            },
             {"id": "llm", "title": "智能命名", "desc": "调用大模型提炼主题与标签"},
-            {"id": "assigning", "title": "分组写入", "desc": "原子事务批量绑定关联成员"},
+            {
+                "id": "assigning",
+                "title": "分组写入",
+                "desc": "原子事务批量绑定关联成员",
+            },
             {"id": "done", "title": "完成校验", "desc": "更新视图分组与持久化缓存"},
         ]
     if task_type == "processing" or "process" in command_name:
@@ -127,7 +159,11 @@ def _get_pipeline_stages(command_name: str, task_type: str) -> List[Dict[str, st
     if command_name == "analyze_source_section" or task_type == "section_analysis":
         return [
             {"id": "fetching", "title": "读取章节", "desc": "加载来源与章节上下文"},
-            {"id": "prompting", "title": "组装提示", "desc": "按章节规约构建推理提示词"},
+            {
+                "id": "prompting",
+                "title": "组装提示",
+                "desc": "按章节规约构建推理提示词",
+            },
             {"id": "streaming", "title": "模型推理", "desc": "流式生成章节分析内容"},
             {"id": "done", "title": "结果沉淀", "desc": "固化分析结果到任务产物"},
         ]
@@ -215,8 +251,7 @@ async def _enrich_progress(
         if sid:
             try:
                 rows = await repo_query(
-                    "SELECT embedding_status, embedded_chunks, total_chunks "
-                    "FROM $sid",
+                    "SELECT embedding_status, embedded_chunks, total_chunks FROM $sid",
                     {"sid": ensure_record_id(str(sid))},
                 )
             except Exception as e:
@@ -230,7 +265,9 @@ async def _enrich_progress(
                     "kind": "embedding",
                     "embedded_chunks": embedded,
                     "total_chunks": total,
-                    "percent": int(embedded / total * 100) if total > 0 else (100 if is_completed else None),
+                    "percent": int(embedded / total * 100)
+                    if total > 0
+                    else (100 if is_completed else None),
                 }
         return {
             "kind": "embedding",
@@ -249,7 +286,9 @@ async def _enrich_progress(
             "total_chunks": 1,
             "percent": 100 if is_completed else 50,
             "stage": "完成校验" if is_completed else "向量计算",
-            "message": f"{target_kind}向量嵌入已完成" if is_completed else f"正在生成{target_kind}向量嵌入...",
+            "message": f"{target_kind}向量嵌入已完成"
+            if is_completed
+            else f"正在生成{target_kind}向量嵌入...",
         }
 
     if name == "rebuild_embeddings":
@@ -258,7 +297,9 @@ async def _enrich_progress(
             "kind": "embedding",
             "stage": "完成校验" if is_completed else "重建向量索引",
             "percent": 100 if is_completed else 50,
-            "message": f"全量重建 ({mode}) 已完成" if is_completed else f"全量重建模式 ({mode})：正在同步向量索引...",
+            "message": f"全量重建 ({mode}) 已完成"
+            if is_completed
+            else f"全量重建模式 ({mode})：正在同步向量索引...",
         }
 
     if name in ("import_data", "export_data"):
@@ -274,7 +315,9 @@ async def _enrich_progress(
                 return {
                     "kind": "data_transfer",
                     "stage": progress.get("stage") or f"数据{label}",
-                    "percent": int(progress.get("percent") or (100 if is_completed else 0)),
+                    "percent": int(
+                        progress.get("percent") or (100 if is_completed else 0)
+                    ),
                     "message": progress.get("message") or f"正在执行数据{label}...",
                 }
         except Exception as e:
@@ -299,7 +342,9 @@ async def _enrich_progress(
                     return {
                         "kind": "classification",
                         "stage": prog.get("stage") or "智能分类",
-                        "percent": int(prog.get("percent") or (100 if is_completed else 0)),
+                        "percent": int(
+                            prog.get("percent") or (100 if is_completed else 0)
+                        ),
                         "message": prog.get("message") or "正在分析来源内容并聚类...",
                     }
             except Exception as e:
@@ -308,7 +353,9 @@ async def _enrich_progress(
             "kind": "classification",
             "stage": "完成" if is_completed else "智能分类",
             "percent": 100 if is_completed else 30,
-            "message": "来源聚类与分类完成" if is_completed else "正在聚类分组与生成主题...",
+            "message": "来源聚类与分类完成"
+            if is_completed
+            else "正在聚类分组与生成主题...",
         }
 
     if name == "generate_podcast":
@@ -350,7 +397,9 @@ async def _enrich_progress(
             "kind": "podcast",
             "stage": "完成" if is_completed else "播客生成",
             "percent": 100 if is_completed else 35,
-            "message": "播客生成已完成" if is_completed else "正在生成双人播客对白与合成音频...",
+            "message": "播客生成已完成"
+            if is_completed
+            else "正在生成双人播客对白与合成音频...",
         }
 
     if name == "generate_artifact":
@@ -359,7 +408,9 @@ async def _enrich_progress(
             "kind": "artifact",
             "stage": "产物沉淀" if is_completed else "模型推理",
             "percent": 100 if is_completed else 45,
-            "message": f"{artifact_type} 生成完成并已存为笔记" if is_completed else f"正在基于笔记选区生成 {artifact_type}...",
+            "message": f"{artifact_type} 生成完成并已存为笔记"
+            if is_completed
+            else f"正在基于笔记选区生成 {artifact_type}...",
         }
 
     if name == "process_source":
@@ -382,7 +433,11 @@ async def _enrich_progress(
                     elif emb_status == "running":
                         stage = "向量索引"
                         percent = 80
-                        msg = f"正在建立向量索引 ({embedded}/{total} 块)..." if total > 0 else "正在建立向量索引..."
+                        msg = (
+                            f"正在建立向量索引 ({embedded}/{total} 块)..."
+                            if total > 0
+                            else "正在建立向量索引..."
+                        )
                     else:
                         stage = "结构转换"
                         percent = 40
@@ -454,7 +509,9 @@ async def _enrich_progress(
             "kind": "insight",
             "stage": "完成" if is_completed else f"洞察{label}",
             "percent": 100 if is_completed else 50,
-            "message": f"洞察{label}已完成" if is_completed else f"正在执行 AI 洞察{label}...",
+            "message": f"洞察{label}已完成"
+            if is_completed
+            else f"正在执行 AI 洞察{label}...",
         }
 
     # Universal fallback for any custom, future or unrecognized command
@@ -548,14 +605,17 @@ async def list_tasks(
             params["statuses"] = statuses
     where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
 
-    rows = await repo_query(
-        f"""
+    rows = (
+        await repo_query(
+            f"""
         SELECT id, name, args, status, error_message, created, updated
         FROM command {where}
         ORDER BY created DESC LIMIT $lim START AT $off
         """,
-        params,
-    ) or []
+            params,
+        )
+        or []
+    )
 
     filter_params = {k: v for k, v in params.items() if k not in ("lim", "off")}
     total = await _matched_total(where, filter_params, fallback=offset + len(rows))
@@ -679,10 +739,16 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
                 break
         if matched_idx >= 0:
             stage_index = matched_idx
-            percent = int(prog_percent) if prog_percent is not None else int(((stage_index + 0.5) / total_stages) * 100)
+            percent = (
+                int(prog_percent)
+                if prog_percent is not None
+                else int(((stage_index + 0.5) / total_stages) * 100)
+            )
         elif prog_percent is not None:
             percent = int(prog_percent)
-            stage_index = min(total_stages - 1, max(0, int((percent / 100) * total_stages)))
+            stage_index = min(
+                total_stages - 1, max(0, int((percent / 100) * total_stages))
+            )
         else:
             if elapsed_seconds < 3:
                 stage_index = 0
@@ -736,7 +802,14 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
         "section_analysis",
     ) or any(
         k in command_name
-        for k in ("podcast", "artifact", "transformation", "insight", "classify", "analyze_section")
+        for k in (
+            "podcast",
+            "artifact",
+            "transformation",
+            "insight",
+            "classify",
+            "analyze_section",
+        )
     )
     if is_model:
         usage_rows = []
@@ -759,17 +832,27 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
             u = usage_rows[0]
             prompt_tokens = int(u.get("input_tokens") or 0)
             completion_tokens = int(u.get("output_tokens") or 0)
-            total_tokens = int(u.get("total_tokens") or (prompt_tokens + completion_tokens))
+            total_tokens = int(
+                u.get("total_tokens") or (prompt_tokens + completion_tokens)
+            )
             model_name = u.get("model_name") or "default-model"
         else:
             prompt_tokens = 1250 + (len(command_name) * 37)
             completion_tokens = (
-                680 if status == "completed" else min(840, max(12, int(elapsed_seconds * 38)))
+                680
+                if status == "completed"
+                else min(840, max(12, int(elapsed_seconds * 38)))
             )
             total_tokens = prompt_tokens + completion_tokens
-            model_name = "gemini-1.5-pro" if "podcast" in command_name else "default-model"
+            model_name = (
+                "gemini-1.5-pro" if "podcast" in command_name else "default-model"
+            )
 
-        tps = round(completion_tokens / max(1.0, elapsed_seconds), 1) if status == "running" else 0.0
+        tps = (
+            round(completion_tokens / max(1.0, elapsed_seconds), 1)
+            if status == "running"
+            else 0.0
+        )
         tokens_dict = {
             "is_model": True,
             "prompt_tokens": prompt_tokens,
@@ -876,13 +959,22 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
             stream_text = f"[{current_stage_title}] 正在计算稠密语义向量切片 ({chunks_info})... (已耗时: {stopwatch})"
 
     elif task_type == "data_transfer" or "data" in command_name:
-        stream_text = progress.get("message") or f"[{current_stage_title}] 数据流传输与打包中... (进度: {percent}%)"
+        stream_text = (
+            progress.get("message")
+            or f"[{current_stage_title}] 数据流传输与打包中... (进度: {percent}%)"
+        )
 
     elif task_type == "classification" or "classify" in command_name:
-        stream_text = progress.get("message") or f"[{current_stage_title}] 正在执行语义聚类与 LLM 智能分类分组..."
+        stream_text = (
+            progress.get("message")
+            or f"[{current_stage_title}] 正在执行语义聚类与 LLM 智能分类分组..."
+        )
 
     elif task_type == "processing" or "process" in command_name:
-        stream_text = progress.get("message") or f"[{current_stage_title}] 来源文档解析、文本清洗与实体提取中..."
+        stream_text = (
+            progress.get("message")
+            or f"[{current_stage_title}] 来源文档解析、文本清洗与实体提取中..."
+        )
 
     else:
         if status == "completed":

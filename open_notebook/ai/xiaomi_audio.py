@@ -4,6 +4,7 @@ MiMo's audio models (mimo-v2.5-tts / mimo-v2.5-asr) are not served on the
 OpenAI /audio/* endpoints (404) but through chat/completions, so the stock
 OpenAI-compatible classes cannot reach them.
 """
+
 import base64
 import os
 from pathlib import Path
@@ -39,7 +40,9 @@ class XiaomiChatTextToSpeechModel(TextToSpeechModel):
             config={**(config or {}), **kwargs},
         )
         if not self.base_url:
-            raise ValueError("Xiaomi MiMo TTS requires a base_url (credential or default)")
+            raise ValueError(
+                "Xiaomi MiMo TTS requires a base_url (credential or default)"
+            )
         self.base_url = self.base_url.rstrip("/")
         self._create_http_clients()
 
@@ -52,8 +55,10 @@ class XiaomiChatTextToSpeechModel(TextToSpeechModel):
     def _handle_error(self, response: httpx.Response) -> None:
         if response.status_code >= 400:
             try:
-                error_message = response.json().get("error", {}).get(
-                    "message", f"HTTP {response.status_code}"
+                error_message = (
+                    response.json()
+                    .get("error", {})
+                    .get("message", f"HTTP {response.status_code}")
                 )
             except Exception:
                 error_message = f"HTTP {response.status_code}: {response.text}"
@@ -63,7 +68,9 @@ class XiaomiChatTextToSpeechModel(TextToSpeechModel):
     def available_voices(self) -> Dict[str, Voice]:
         # The verified protocol has no voice field; the server picks the voice.
         return {
-            "default": Voice(name="default", id="default", gender="UNKNOWN", language_code=None)
+            "default": Voice(
+                name="default", id="default", gender="UNKNOWN", language_code=None
+            )
         }
 
     @property
@@ -181,7 +188,9 @@ class XiaomiChatSpeechToTextModel(SpeechToTextModel):
             config={**(config or {}), **kwargs},
         )
         if not self.base_url:
-            raise ValueError("Xiaomi MiMo STT requires a base_url (credential or default)")
+            raise ValueError(
+                "Xiaomi MiMo STT requires a base_url (credential or default)"
+            )
         self.base_url = self.base_url.rstrip("/")
         self._create_http_clients()
 
@@ -194,8 +203,10 @@ class XiaomiChatSpeechToTextModel(SpeechToTextModel):
     def _handle_error(self, response: httpx.Response) -> None:
         if response.status_code >= 400:
             try:
-                error_message = response.json().get("error", {}).get(
-                    "message", f"HTTP {response.status_code}"
+                error_message = (
+                    response.json()
+                    .get("error", {})
+                    .get("message", f"HTTP {response.status_code}")
                 )
             except Exception:
                 error_message = f"HTTP {response.status_code}: {response.text}"
@@ -252,7 +263,9 @@ class XiaomiChatSpeechToTextModel(SpeechToTextModel):
         )
         self._handle_error(response)
         text = response.json()["choices"][0]["message"]["content"]
-        return TranscriptionResponse(text=text, model=self.model_name, provider=self.PROVIDER)
+        return TranscriptionResponse(
+            text=text, model=self.model_name, provider=self.PROVIDER
+        )
 
     async def atranscribe(
         self,
@@ -284,7 +297,9 @@ class XiaomiChatSpeechToTextModel(SpeechToTextModel):
         )
         self._handle_error(response)
         text = response.json()["choices"][0]["message"]["content"]
-        return TranscriptionResponse(text=text, model=self.model_name, provider=self.PROVIDER)
+        return TranscriptionResponse(
+            text=text, model=self.model_name, provider=self.PROVIDER
+        )
 
 
 # One subclass per provider so the default host and env key match the credential

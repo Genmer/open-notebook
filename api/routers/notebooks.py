@@ -423,9 +423,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         )
 
 
-@router.post(
-    "/notebooks/{notebook_id}/artifacts", response_model=ArtifactJobResponse
-)
+@router.post("/notebooks/{notebook_id}/artifacts", response_model=ArtifactJobResponse)
 async def generate_artifact(notebook_id: str, request: ArtifactCreate):
     """Submit an async study-artifact generation (study guide / FAQ /
     flashcards). The result is stored as an AI note; poll the generic job

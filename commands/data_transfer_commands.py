@@ -222,9 +222,7 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
         "embedding_batch_size",
         "usage_tracking_enabled",
     ),
-    "default_prompts": (
-        "transformation_instructions",
-    ),
+    "default_prompts": ("transformation_instructions",),
     "annotation_settings": (
         "color_names",
         "updated",
@@ -620,10 +618,14 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             "export", stage, percent, message, stages=stage_stats, **kw
         )
 
-    counted_tables: Tuple[str, ...] = MODEL_CONFIG_TABLES if models_scope else (
-        ALL_TABLES
-        if include_models
-        else DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES
+    counted_tables: Tuple[str, ...] = (
+        MODEL_CONFIG_TABLES
+        if models_scope
+        else (
+            ALL_TABLES
+            if include_models
+            else DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES
+        )
     )
     if models_scope:
         export_tables: Tuple[str, ...] = ("credential", "model")
@@ -956,9 +958,7 @@ def _parse_member_row(table: str, line: str) -> Dict[str, Any]:
     return row
 
 
-def _open_member(
-    zf: zipfile.ZipFile, table: str
-) -> ContextManager[Iterator[bytes]]:
+def _open_member(zf: zipfile.ZipFile, table: str) -> ContextManager[Iterator[bytes]]:
     """Line iterator over data/<table>.ndjson; empty when the member is absent."""
     member = f"data/{table}.ndjson"
     if member not in zf.namelist():
@@ -1080,9 +1080,7 @@ def _validate_package(zf: zipfile.ZipFile) -> PackageManifest:
             f"(supported: {', '.join(str(v) for v in SUPPORTED_FORMAT_VERSIONS)})"
         )
     if manifest.format_version < 2 and data_tables & set(MODEL_CONFIG_TABLES):
-        raise ValueError(
-            "Model configuration members require package format_version 2"
-        )
+        raise ValueError("Model configuration members require package format_version 2")
     if manifest.package_type == "models" and data_tables - set(MODEL_CONFIG_TABLES):
         unexpected = sorted(data_tables - set(MODEL_CONFIG_TABLES))
         raise ValueError(
@@ -1224,7 +1222,10 @@ async def _import_model_config(
                 continue
             pkg_fp = record_fingerprint("credential", row, api_key_plain=plain_key)
             local_fp = _safe_fingerprint("credential", local)
-            if local_fp == pkg_fp or decisions.get(("credential", rid_str)) != "overwrite":
+            if (
+                local_fp == pkg_fp
+                or decisions.get(("credential", rid_str)) != "overwrite"
+            ):
                 skipped["credential"] = skipped.get("credential", 0) + 1
                 continue
             # Overwrite keeps the local name/provider; only the secret and
@@ -1263,11 +1264,16 @@ async def _import_model_config(
             else:
                 pkg_fp = record_fingerprint("model", row)
                 local_fp = _safe_fingerprint("model", local)
-                if local_fp == pkg_fp or decisions.get(("model", rid_str)) != "overwrite":
+                if (
+                    local_fp == pkg_fp
+                    or decisions.get(("model", rid_str)) != "overwrite"
+                ):
                     skipped["model"] = skipped.get("model", 0) + 1
                 else:
                     prepared = _prepare_import_row("model", row, warnings)
-                    values = {field: prepared.get(field) for field in MODEL_OVERWRITE_FIELDS}
+                    values = {
+                        field: prepared.get(field) for field in MODEL_OVERWRITE_FIELDS
+                    }
                     values["updated"] = datetime.now(timezone.utc)
                     assignments = ", ".join(f"{f} = ${f}" for f in values)
                     await repo_query(
@@ -1328,6 +1334,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
         await set_transfer_state(
             "import", stage, percent, message, stages=stage_stats, **kw
         )
+
     permanent = False
     completed = False
     await report("starting", 0, command_id=cmd_id)
@@ -1443,9 +1450,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                 - existing_ids.get(EMBEDDING_TABLE, set())
             )
             total_import += est_embedding
-            total_skip += (
-                len(package_ids.get(EMBEDDING_TABLE, set())) - est_embedding
-            )
+            total_skip += len(package_ids.get(EMBEDDING_TABLE, set())) - est_embedding
             for edge in EDGE_TABLES:
                 pairs = package_ids.get(edge, set())
                 to_import = len(pairs - existing_pairs.get(edge, set()))
@@ -1497,9 +1502,8 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         if table == "transformation":
                             title = str(prepared.get("title") or "")
                             if title in existing_transformation_titles:
-                                if (
-                                    existing_transformation_titles[title]
-                                    != str(prepared.get("prompt") or "")
+                                if existing_transformation_titles[title] != str(
+                                    prepared.get("prompt") or ""
                                 ):
                                     warnings.add(
                                         "transformationPromptConflict",
@@ -1533,9 +1537,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         await _write_create_batch(table, batch, imported)
                 await report(
                     "metadata",
-                    _stage_percent(
-                        IMPORT_STAGES, "metadata", i + 1, len(DATA_TABLES)
-                    ),
+                    _stage_percent(IMPORT_STAGES, "metadata", i + 1, len(DATA_TABLES)),
                     f"Writing {table} ({i + 1}/{len(DATA_TABLES)})",
                     detail={
                         "table": table,
@@ -1616,9 +1618,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                     )
                 await report(
                     "files",
-                    _stage_percent(
-                        IMPORT_STAGES, "files", idx + 1, len(pending_files)
-                    ),
+                    _stage_percent(IMPORT_STAGES, "files", idx + 1, len(pending_files)),
                     f"Saving files ({idx + 1}/{len(pending_files)})",
                     detail={
                         "current": idx + 1,
@@ -1639,9 +1639,10 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         rid = ensure_record_id(row["id"])
                         # Chunks of a skipped source and already-present rows
                         # are skipped whole (id-skip semantics).
-                        if str(rid) in existing_ids.get(EMBEDDING_TABLE, set()) or str(
-                            row.get("source")
-                        ) not in imported_source_ids:
+                        if (
+                            str(rid) in existing_ids.get(EMBEDDING_TABLE, set())
+                            or str(row.get("source")) not in imported_source_ids
+                        ):
                             skipped[EMBEDDING_TABLE] = (
                                 skipped.get(EMBEDDING_TABLE, 0) + 1
                             )

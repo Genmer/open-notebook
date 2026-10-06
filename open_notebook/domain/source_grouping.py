@@ -63,7 +63,9 @@ async def ensure_default_views() -> None:
             logger.info(f"Created default source view {view_id}")
         except Exception:
             # Concurrent boot may have created it first; that's success for us.
-            if not await repo_query("SELECT id FROM $id", {"id": ensure_record_id(view_id)}):
+            if not await repo_query(
+                "SELECT id FROM $id", {"id": ensure_record_id(view_id)}
+            ):
                 raise
 
 

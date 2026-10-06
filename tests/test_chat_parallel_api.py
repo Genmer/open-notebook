@@ -108,7 +108,7 @@ def _sse_events(resp) -> list:
         if isinstance(line, bytes):
             line = line.decode("utf-8")
         if line.startswith("data: "):
-            events.append(json.loads(line[len("data: "):]))
+            events.append(json.loads(line[len("data: ") :]))
     return events
 
 
@@ -223,9 +223,7 @@ def test_parallel_dangling_agent_degrades_to_run_error():
                 new=AsyncMock(return_value=None),
             )
         )
-        stack.enter_context(
-            patch("api.routers.chat_parallel.chat_graph.update_state")
-        )
+        stack.enter_context(patch("api.routers.chat_parallel.chat_graph.update_state"))
         response = client.post(
             "/api/chat/sessions/chat_session:s1/parallel",
             json={
@@ -291,7 +289,10 @@ async def test_orchestration_archives_without_consumer():
         ),
         patch("api.routers.chat_parallel.record_llm_usage_sync"),
         patch.object(ChatSession, "save", new=AsyncMock()),
-        patch("api.routers.chat_parallel.chat_graph.update_state", side_effect=fake_update_state),
+        patch(
+            "api.routers.chat_parallel.chat_graph.update_state",
+            side_effect=fake_update_state,
+        ),
     ):
         # fire and forget: nobody awaits/consumes the queue
         task = asyncio.create_task(

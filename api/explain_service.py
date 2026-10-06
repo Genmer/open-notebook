@@ -181,9 +181,7 @@ _explain_cache = _ResultCache(maxsize=50, ttl_seconds=600.0)
 # A module-level asyncio.Semaphore binds to its first event loop and raises on
 # any other loop (pytest-asyncio uses a fresh loop per test), so gates are
 # kept per-loop and dropped with the loop itself.
-_MODEL_GATES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
-    weakref.WeakKeyDictionary()
-)
+_MODEL_GATES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
 
 
 def _model_gate() -> asyncio.Semaphore:
@@ -265,8 +263,7 @@ async def _embedding_state(args: Dict[str, Any]) -> str:
     sid = args.get("source_id")
     if sid:
         rows = await repo_query(
-            "SELECT embedding_status, embedded_chunks, total_chunks "
-            "FROM $sid",
+            "SELECT embedding_status, embedded_chunks, total_chunks FROM $sid",
             {"sid": ensure_record_id(str(sid))},
         )
         if rows:
@@ -290,8 +287,7 @@ async def _process_source_state(args: Dict[str, Any]) -> str:
     sid = args.get("source_id")
     if sid:
         rows = await repo_query(
-            "SELECT embedding_status, embedded_chunks, total_chunks "
-            "FROM $sid",
+            "SELECT embedding_status, embedded_chunks, total_chunks FROM $sid",
             {"sid": ensure_record_id(str(sid))},
         )
         if rows:
@@ -425,9 +421,7 @@ async def _completed_run_recovery(
     return {"recovered": True, "detail": detail}
 
 
-async def _recovery_status(
-    name: str, args: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
+async def _recovery_status(name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Is the entity this failure targeted healthy again?
 
     Command rows carry no reliable timestamps, so recovery is judged from the
@@ -587,21 +581,13 @@ def _filter_suggestions(
         action = str(item.get("action") or "")
         if action not in ALLOWED_ACTIONS or action in seen:
             continue
-        if action == "retry" and (
-            recovered or command_name not in RETRYABLE_COMMANDS
-        ):
+        if action == "retry" and (recovered or command_name not in RETRYABLE_COMMANDS):
             continue
         seen.add(action)
-        suggestions.append(
-            {"action": action, "label_key": ACTION_LABEL_KEYS[action]}
-        )
+        suggestions.append({"action": action, "label_key": ACTION_LABEL_KEYS[action]})
     # The model decides suggestions freely, so a retryable command can come
     # back without the one action the user actually needs — guarantee it.
-    if (
-        not recovered
-        and command_name in RETRYABLE_COMMANDS
-        and "retry" not in seen
-    ):
+    if not recovered and command_name in RETRYABLE_COMMANDS and "retry" not in seen:
         suggestions.insert(
             0, {"action": "retry", "label_key": ACTION_LABEL_KEYS["retry"]}
         )
@@ -768,8 +754,11 @@ async def explain_failed_command(
     try:
         async with _model_gate():
             provisioned = await provision_langchain_model_with_info(
-                prompt, None, "qa",
-                max_tokens=MODEL_MAX_TOKENS, temperature=MODEL_TEMPERATURE,
+                prompt,
+                None,
+                "qa",
+                max_tokens=MODEL_MAX_TOKENS,
+                temperature=MODEL_TEMPERATURE,
             )
             # DashScope/GLM-style providers reject a messages array without a
             # user turn ("messages 参数非法", code 1214) — mirror chat.py's shape.

@@ -86,7 +86,9 @@ async def create_source_annotation(payload: SourceAnnotationCreate):
             # MVP: position picker ships in P1; persist NULL no matter what.
             display_position=None,
             quote=payload.quote,
-            text_anchor=payload.text_anchor.model_dump() if payload.text_anchor else None,
+            text_anchor=payload.text_anchor.model_dump()
+            if payload.text_anchor
+            else None,
             pdf_anchor=payload.pdf_anchor.model_dump() if payload.pdf_anchor else None,
         )
         await annotation.save()

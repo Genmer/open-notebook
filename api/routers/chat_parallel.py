@@ -66,7 +66,9 @@ class SynthesizeRequest(BaseModel):
 
 class ParallelChatRequest(BaseModel):
     message: str = Field(..., description="User message content")
-    context: Dict[str, Any] = Field(..., description="Chat context with sources and notes")
+    context: Dict[str, Any] = Field(
+        ..., description="Chat context with sources and notes"
+    )
     runs: List[str] = Field(
         ...,
         description=(
@@ -81,12 +83,12 @@ def _parse_run_key(key: str) -> Tuple[str, Optional[str]]:
     if key == "default":
         return "default", None
     if key.startswith("agent:"):
-        agent_id = key[len("agent:"):]
+        agent_id = key[len("agent:") :]
         if not agent_id:
             raise ValueError(f"missing agent id in run key: {key!r}")
         return "agent", agent_id
     if key.startswith("model:"):
-        model_id = key[len("model:"):]
+        model_id = key[len("model:") :]
         if not model_id:
             raise ValueError(f"missing model id in run key: {key!r}")
         return "model", model_id
@@ -150,7 +152,9 @@ async def _answer_once(
     return archived, prov, ai_message
 
 
-async def _record_usage(prov: Any, ai_message: Any, thread_id: str, error: Optional[str]) -> None:
+async def _record_usage(
+    prov: Any, ai_message: Any, thread_id: str, error: Optional[str]
+) -> None:
     try:
         await asyncio.to_thread(
             record_llm_usage_sync,
@@ -229,9 +233,7 @@ async def _orchestrate(
                 )
                 return None
 
-        answers = await asyncio.gather(
-            *(run_participant(p) for p in participants)
-        )
+        answers = await asyncio.gather(*(run_participant(p) for p in participants))
 
         # Archive exactly once: the human message + every successful answer
         # carry the group_id so the UI can render them as one comparison block.
@@ -394,14 +396,14 @@ async def synthesize_parallel(session_id: str, request: SynthesizeRequest):
     if request.agent:
         if not request.agent.startswith("agent:"):
             raise HTTPException(status_code=400, detail="agent must be 'agent:<id>'")
-        agent = await resolve_agent_binding(request.agent[len("agent:"):])
+        agent = await resolve_agent_binding(request.agent[len("agent:") :])
         if agent is None:
             raise HTTPException(status_code=400, detail="Agent not available")
         model_id = agent.model_id
     elif request.model:
         if not request.model.startswith("model:"):
             raise HTTPException(status_code=400, detail="model must be 'model:<id>'")
-        model_id = request.model[len("model:"):]
+        model_id = request.model[len("model:") :]
 
     current_state = await asyncio.to_thread(
         chat_graph.get_state,

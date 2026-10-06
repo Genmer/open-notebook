@@ -101,9 +101,7 @@ class TestCredentialModelDiscovery:
     """Tests for credential-backed model discovery."""
 
     @pytest.mark.asyncio
-    async def test_non_openai_provider_discovery_respects_base_url(
-        self, monkeypatch
-    ):
+    async def test_non_openai_provider_discovery_respects_base_url(self, monkeypatch):
         """T2.2: any registry provider (not just openai) with a credential
         base_url must discover against that base_url — e.g. DashScope
         dedicated endpoints — while keeping the DNS-pinned request path."""

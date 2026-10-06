@@ -37,9 +37,7 @@ SECTION_ANALYSIS_TIMEOUT_SECONDS = 300
 DeltaCallback = Callable[[str], Awaitable[None]]
 
 
-async def _stream_invoke(
-    model: Any, payload: list, on_delta: DeltaCallback
-) -> Any:
+async def _stream_invoke(model: Any, payload: list, on_delta: DeltaCallback) -> Any:
     """Consume the model's token stream, forwarding deltas and returning the
     aggregated message (usage_metadata lands on the summed final chunk)."""
     chunks = []
@@ -49,7 +47,9 @@ async def _stream_invoke(
         if delta:
             await on_delta(delta)
     if not chunks:
-        raise ExternalServiceError("Model returned an empty stream for section analysis")
+        raise ExternalServiceError(
+            "Model returned an empty stream for section analysis"
+        )
     aggregated = chunks[0]
     for chunk in chunks[1:]:
         aggregated = aggregated + chunk
@@ -106,7 +106,7 @@ async def analyze_source_section(
             SystemMessage(content=prompt),
             HumanMessage(
                 content=(
-                    f"Analyze the section \"{section_title}\" now, "
+                    f'Analyze the section "{section_title}" now, '
                     "following the OUTPUT FORMAT exactly."
                 )
             ),

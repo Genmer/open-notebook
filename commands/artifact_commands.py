@@ -162,13 +162,13 @@ async def generate_artifact_command(
         )
         context_text = _render_context_text(context_data)
         if not context_text:
-            raise ValueError(
-                "No context selected: include at least one source or note"
-            )
+            raise ValueError("No context selected: include at least one source or note")
 
         # User instruction is passed as a plain render variable, never as
         # Jinja template source (see docs/7-DEVELOPMENT/security.md).
-        prompt = Prompter(prompt_template=f"artifact/{input_data.artifact_type}").render(
+        prompt = Prompter(
+            prompt_template=f"artifact/{input_data.artifact_type}"
+        ).render(
             data={
                 "notebook": notebook,
                 "context": context_text,

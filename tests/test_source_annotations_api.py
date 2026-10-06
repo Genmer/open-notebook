@@ -184,9 +184,7 @@ class TestCreateAndList:
         assert listed.status_code == 200
         assert len(listed.json()) == 2
 
-        one_page = client.get(
-            f"/api/source-annotations?source_id={SOURCE_ID}&page=9"
-        )
+        one_page = client.get(f"/api/source-annotations?source_id={SOURCE_ID}&page=9")
         assert one_page.status_code == 200
         rows = one_page.json()
         assert len(rows) == 1
@@ -252,9 +250,7 @@ class TestMvpNormalization:
     def test_create_persists_null_display_position(self, client, store):
         resp = client.post(
             "/api/source-annotations",
-            json=_create_payload(
-                body="我的理解", display_position="margin"
-            ),
+            json=_create_payload(body="我的理解", display_position="margin"),
         )
         assert resp.status_code == 200
         assert resp.json()["display_position"] is None
@@ -274,9 +270,7 @@ class TestMvpNormalization:
 
 class TestUpdateDelete:
     def test_update_changes_color_and_refreshes_updated(self, client, store):
-        created = client.post(
-            "/api/source-annotations", json=_create_payload()
-        ).json()
+        created = client.post("/api/source-annotations", json=_create_payload()).json()
         before = created["updated"]
         resp = client.put(
             f"/api/source-annotations/{created['id']}",
@@ -296,9 +290,7 @@ class TestUpdateDelete:
         assert resp.status_code == 404
 
     def test_delete_removes_annotation(self, client, store):
-        created = client.post(
-            "/api/source-annotations", json=_create_payload()
-        ).json()
+        created = client.post("/api/source-annotations", json=_create_payload()).json()
         resp = client.delete(f"/api/source-annotations/{created['id']}")
         assert resp.status_code == 200
         assert client.get(f"/api/source-annotations?source_id={SOURCE_ID}").json() == []

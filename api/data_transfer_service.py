@@ -50,6 +50,7 @@ def pending_zip_path() -> str:
 def pending_sidecar_path() -> str:
     return os.path.join(IMPORTS_FOLDER, PENDING_SCAN_SIDECAR_NAME)
 
+
 # state.progress.stage fallbacks for when the command record is gone (the
 # command record itself stays authoritative while it exists).
 _STAGE_STATUS = {
@@ -225,8 +226,12 @@ def _credential_conflict(
             # can only be resolved by the user's skip/overwrite decision.
             local_readable = False
     if local_readable:
-        local_fp = record_fingerprint("credential", local_row, api_key_plain=local_plain)
-        if local_fp == record_fingerprint("credential", pkg_row, api_key_plain=pkg_plain):
+        local_fp = record_fingerprint(
+            "credential", local_row, api_key_plain=local_plain
+        )
+        if local_fp == record_fingerprint(
+            "credential", pkg_row, api_key_plain=pkg_plain
+        ):
             return None
         diff = _diff_fields("credential", local_row, pkg_row, local_plain, pkg_plain)
     else:
@@ -235,12 +240,8 @@ def _credential_conflict(
     return ImportScanConflictItem(
         kind="credential",
         id=rid_str,
-        local=_credential_summary(
-            local_row, local_plain, local_counts.get(rid_str, 0)
-        ),
-        package=_credential_summary(
-            pkg_row, pkg_plain, pkg_counts.get(rid_str, 0)
-        ),
+        local=_credential_summary(local_row, local_plain, local_counts.get(rid_str, 0)),
+        package=_credential_summary(pkg_row, pkg_plain, pkg_counts.get(rid_str, 0)),
         diff_fields=diff,
     )
 
@@ -387,7 +388,9 @@ async def execute_import(request: ImportExecuteRequest) -> str:
             "import_data",
             {
                 "package_path": pending_zip_path(),
-                "model_decisions": [decision.model_dump() for decision in request.decisions],
+                "model_decisions": [
+                    decision.model_dump() for decision in request.decisions
+                ],
             },
         )
     except Exception as e:

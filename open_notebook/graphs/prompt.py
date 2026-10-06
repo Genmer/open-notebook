@@ -29,7 +29,9 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
         system_prompt = Prompter(
             prompt_template="pattern/generic", parser=state.get("parser")
         ).render(data=state)
-        payload = [SystemMessage(content=system_prompt)] + [HumanMessage(content=content)]
+        payload = [SystemMessage(content=system_prompt)] + [
+            HumanMessage(content=content)
+        ]
         prov = await provision_langchain_model_with_info(
             str(payload),
             config.get("configurable", {}).get("model_id"),

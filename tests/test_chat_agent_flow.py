@@ -321,9 +321,7 @@ def test_resolve_agent_binding_degrades_on_not_found():
     async def raise_not_found(agent_id):
         raise NotFoundError("gone")
 
-    with patch(
-        "open_notebook.domain.agent.Agent.get", side_effect=raise_not_found
-    ):
+    with patch("open_notebook.domain.agent.Agent.get", side_effect=raise_not_found):
         assert asyncio.run(resolve_agent_binding("agent:gone")) is None
 
     disabled = _agent(enabled=False)
@@ -397,17 +395,16 @@ def test_graph_node_passes_agent_sampling_params_to_provisioning():
         "context": None,
     }
 
-    with patch(
-        "open_notebook.graphs.chat.provision_langchain_model_with_info",
-        side_effect=fake_provision,
-    ), patch(
-        "open_notebook.graphs.chat.record_llm_usage_sync"
+    with (
+        patch(
+            "open_notebook.graphs.chat.provision_langchain_model_with_info",
+            side_effect=fake_provision,
+        ),
+        patch("open_notebook.graphs.chat.record_llm_usage_sync"),
     ):
         result = call_model_with_messages(state, {"configurable": {}})  # type: ignore[arg-type]
 
-    assert provision_calls == [
-        {"max_tokens": 512, "temperature": 0.4}
-    ]
+    assert provision_calls == [{"max_tokens": 512, "temperature": 0.4}]
     ai_message = result["messages"]
     assert ai_message.additional_kwargs["model_name"] == "gpt-test"
     assert ai_message.additional_kwargs["agent_name"] == "Researcher"
@@ -445,11 +442,12 @@ def test_graph_node_defaults_without_agent_params():
         "context": None,
     }
 
-    with patch(
-        "open_notebook.graphs.chat.provision_langchain_model_with_info",
-        side_effect=fake_provision,
-    ), patch(
-        "open_notebook.graphs.chat.record_llm_usage_sync"
+    with (
+        patch(
+            "open_notebook.graphs.chat.provision_langchain_model_with_info",
+            side_effect=fake_provision,
+        ),
+        patch("open_notebook.graphs.chat.record_llm_usage_sync"),
     ):
         call_model_with_messages(state, {"configurable": {}})  # type: ignore[arg-type]
 

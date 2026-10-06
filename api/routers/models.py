@@ -94,9 +94,7 @@ async def _refresh_price_background(model_id: str, name: str, provider: str) -> 
 
 
 def _schedule_price_fetch(model_id: str, name: str, provider: str) -> None:
-    task = asyncio.create_task(
-        _refresh_price_background(model_id, name, provider)
-    )
+    task = asyncio.create_task(_refresh_price_background(model_id, name, provider))
     _price_fetch_tasks.add(task)
     task.add_done_callback(_price_fetch_tasks.discard)
 
@@ -311,9 +309,7 @@ async def create_model(model_data: ModelCreate):
 
         # Fire-and-forget: fetch the public price for this model in the
         # background so the listing shows an estimate without blocking save.
-        _schedule_price_fetch(
-            str(new_model.id), model_data.name, model_data.provider
-        )
+        _schedule_price_fetch(str(new_model.id), model_data.name, model_data.provider)
 
         return ModelResponse(
             id=new_model.id or "",
@@ -356,7 +352,9 @@ async def delete_model(model_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
 
 
-@router.post("/models/{model_id}/price/refresh", response_model=ModelPriceRefreshResponse)
+@router.post(
+    "/models/{model_id}/price/refresh", response_model=ModelPriceRefreshResponse
+)
 async def refresh_model_price(model_id: str):
     """Re-fetch the public price for a model from the LiteLLM price database."""
     try:

@@ -84,6 +84,8 @@ async def provision_langchain_model_with_info(
 async def provision_langchain_model(
     content, model_id, default_type, **kwargs
 ) -> BaseChatModel:
-    return (await provision_langchain_model_with_info(
-        content, model_id, default_type, **kwargs
-    )).langchain_model
+    return (
+        await provision_langchain_model_with_info(
+            content, model_id, default_type, **kwargs
+        )
+    ).langchain_model

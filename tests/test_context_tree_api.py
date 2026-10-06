@@ -71,9 +71,10 @@ class TestContextTree:
                 return rows["sources"]
             raise AssertionError(f"Unexpected query: {sql[:120]!r}")
 
-        with patch("api.routers.notebooks.repo_query", new=repo_query), patch(
-            "api.routers.notebooks.Notebook"
-        ) as mock_notebook:
+        with (
+            patch("api.routers.notebooks.repo_query", new=repo_query),
+            patch("api.routers.notebooks.Notebook") as mock_notebook,
+        ):
             mock_notebook.get = AsyncMock(return_value=object())
             response = client.get(
                 f"/api/notebooks/{NOTEBOOK_ID}/context-tree?view_id={VIEW_ID}"
@@ -121,9 +122,10 @@ class TestContextTree:
                 return rows["sources"][:1]
             raise AssertionError(f"Unexpected query: {sql[:120]!r}")
 
-        with patch("api.routers.notebooks.repo_query", new=repo_query), patch(
-            "api.routers.notebooks.Notebook"
-        ) as mock_notebook:
+        with (
+            patch("api.routers.notebooks.repo_query", new=repo_query),
+            patch("api.routers.notebooks.Notebook") as mock_notebook,
+        ):
             mock_notebook.get = AsyncMock(return_value=object())
             response = client.get(f"/api/notebooks/{NOTEBOOK_ID}/context-tree")
 
@@ -144,9 +146,10 @@ class TestContextTree:
                 return []
             raise AssertionError(f"Unexpected query: {sql[:120]!r}")
 
-        with patch("api.routers.notebooks.repo_query", new=repo_query), patch(
-            "api.routers.notebooks.Notebook"
-        ) as mock_notebook:
+        with (
+            patch("api.routers.notebooks.repo_query", new=repo_query),
+            patch("api.routers.notebooks.Notebook") as mock_notebook,
+        ):
             mock_notebook.get = AsyncMock(return_value=object())
             response = client.get(
                 f"/api/notebooks/{NOTEBOOK_ID}/context-tree?view_id={VIEW_ID}"

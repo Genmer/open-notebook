@@ -59,7 +59,9 @@ def kmeans(
     return best_labels
 
 
-def _kmeanspp_seeds(normalized: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
+def _kmeanspp_seeds(
+    normalized: np.ndarray, k: int, rng: np.random.Generator
+) -> np.ndarray:
     n = len(normalized)
     seeds = [int(rng.integers(n))]
     # Squared cosine distance to the closest chosen seed, cumulative for the draw.
@@ -70,7 +72,9 @@ def _kmeanspp_seeds(normalized: np.ndarray, k: int, rng: np.random.Generator) ->
             seeds.append(int(rng.integers(n)))
             continue
         seeds.append(int(rng.choice(n, p=dist / total)))
-        dist = np.minimum(dist, np.sum((normalized - normalized[seeds[-1]]) ** 2, axis=1))
+        dist = np.minimum(
+            dist, np.sum((normalized - normalized[seeds[-1]]) ** 2, axis=1)
+        )
     return normalized[seeds]
 
 
@@ -94,7 +98,9 @@ def _single_kmeans(
                 worst = int(np.argmin(np.max(normalized @ centroids.T, axis=1)))
                 new_centroids[cluster] = normalized[worst]
             else:
-                new_centroids[cluster] = _l2_normalize(members.mean(axis=0)[np.newaxis, :])[0]
+                new_centroids[cluster] = _l2_normalize(
+                    members.mean(axis=0)[np.newaxis, :]
+                )[0]
 
         if np.allclose(new_centroids, centroids):
             centroids = new_centroids

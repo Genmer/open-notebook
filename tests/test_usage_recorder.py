@@ -56,7 +56,11 @@ class TestExtractTokenUsage:
         message = SimpleNamespace(
             usage_metadata=None,
             response_metadata={
-                "token_usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+                "token_usage": {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 3,
+                    "total_tokens": 10,
+                }
             },
         )
         assert extract_token_usage(message) == (7, 3, 10)
@@ -150,7 +154,8 @@ class TestRecordLlmUsage:
     @pytest.mark.asyncio
     async def test_repo_insert_error_does_not_propagate(self, tracking_on):
         with patch(
-            "open_notebook.ai.usage.repo_insert", new=AsyncMock(side_effect=RuntimeError("db down"))
+            "open_notebook.ai.usage.repo_insert",
+            new=AsyncMock(side_effect=RuntimeError("db down")),
         ):
             await record_llm_usage(model=None, ai_message=None, call_type="chat")
 
@@ -165,7 +170,9 @@ class TestRecordLlmUsageSync:
                 time.sleep(0.01)
         assert write_row.await_count == 1
 
-    def test_sync_recorder_survives_repo_failure_without_blocking_caller(self, tracking_on):
+    def test_sync_recorder_survives_repo_failure_without_blocking_caller(
+        self, tracking_on
+    ):
         """Sync graph nodes (chat threads) must neither block nor crash when the
         usage write fails - the daemon thread swallows the error."""
         write_row = AsyncMock(side_effect=RuntimeError("db down"))
@@ -195,7 +202,9 @@ class TestRecordLlmUsageSync:
 
 class TestTrackingSwitchEmbedding:
     @pytest.mark.asyncio
-    async def test_switch_disabled_embedding_writes_nothing(self, write_row, tracking_off):
+    async def test_switch_disabled_embedding_writes_nothing(
+        self, write_row, tracking_off
+    ):
         """The switch gates the embedding path too: no new rows when off."""
         await record_embedding_usage(
             model=SimpleNamespace(model_name="embed", provider="openai"), texts=["a"]
@@ -203,7 +212,9 @@ class TestTrackingSwitchEmbedding:
         write_row.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_embedding_fail_open_when_settings_read_fails(self, write_row, monkeypatch):
+    async def test_embedding_fail_open_when_settings_read_fails(
+        self, write_row, monkeypatch
+    ):
         """Fail-open: an unreadable settings read keeps recording enabled."""
         monkeypatch.setattr(
             "open_notebook.database.repository.repo_query",
@@ -211,7 +222,8 @@ class TestTrackingSwitchEmbedding:
         )
         with patch("open_notebook.utils.token_utils.token_count", return_value=3):
             await record_embedding_usage(
-                model=SimpleNamespace(model_name="embed", provider="openai"), texts=["a"]
+                model=SimpleNamespace(model_name="embed", provider="openai"),
+                texts=["a"],
             )
         write_row.assert_awaited_once()
 
@@ -237,7 +249,10 @@ class TestRecordEmbeddingUsage:
     async def test_failure_row(self, write_row, tracking_on):
         with patch("open_notebook.utils.token_utils.token_count", return_value=0):
             await record_embedding_usage(
-                model=SimpleNamespace(model_name="embed"), texts=["a"], success=False, error="boom"
+                model=SimpleNamespace(model_name="embed"),
+                texts=["a"],
+                success=False,
+                error="boom",
             )
         row = write_row.await_args.args[1][0]
         assert row["success"] is False

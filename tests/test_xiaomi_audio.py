@@ -62,7 +62,9 @@ class TestTTS:
         client.post.return_value = _tts_http_response()
         output_file = tmp_path / "out.wav"
 
-        response = model.generate_speech("你好世界", voice="alloy", output_file=output_file)
+        response = model.generate_speech(
+            "你好世界", voice="alloy", output_file=output_file
+        )
 
         call = client.post.call_args
         assert call.args[0] == "https://example.com/v1/chat/completions"
@@ -97,7 +99,9 @@ class TestTTS:
             },
         )
 
-        with pytest.raises(RuntimeError, match="messages must contain an assistant role"):
+        with pytest.raises(
+            RuntimeError, match="messages must contain an assistant role"
+        ):
             model.generate_speech("hi")
 
     def test_missing_audio_field_raises_runtime_error(self):
@@ -110,7 +114,9 @@ class TestTTS:
             model.generate_speech("hi")
 
     def test_base_url_falls_back_to_provider_default(self):
-        model = XiaomiMimoTextToSpeechModel(model_name="mimo-v2.5-tts", config={"api_key": "x"})
+        model = XiaomiMimoTextToSpeechModel(
+            model_name="mimo-v2.5-tts", config={"api_key": "x"}
+        )
         assert model.base_url == "https://api.xiaomimimo.com/v1"
         token_plan = XiaomiTokenPlanSpeechToTextModel(
             model_name="mimo-v2.5-asr", config={"api_key": "x"}
@@ -138,7 +144,9 @@ class TestSTT:
         (part,) = message["content"]
         assert part["type"] == "input_audio"
         assert part["input_audio"]["format"] == "mp3"
-        assert part["input_audio"]["data"] == base64.b64encode(b"ID3-fake-mp3-bytes").decode("ascii")
+        assert part["input_audio"]["data"] == base64.b64encode(
+            b"ID3-fake-mp3-bytes"
+        ).decode("ascii")
         assert response.text == "你好世界"
         assert response.model == "mimo-v2.5-asr"
         assert isinstance(response, TranscriptionResponse)
@@ -215,14 +223,14 @@ class TestFactoryRouting:
             "xiaomi_mimo_token_plan", model_name="mimo-v2.5-asr", config=config
         )
         tts_payg = AIFactory.create_text_to_speech(
-            "xiaomi_mimo", model_name="mimo-v2.5-tts", config=dict(
-                api_key="x", base_url="https://api.xiaomimimo.com/v1"
-            )
+            "xiaomi_mimo",
+            model_name="mimo-v2.5-tts",
+            config=dict(api_key="x", base_url="https://api.xiaomimimo.com/v1"),
         )
         stt_payg = AIFactory.create_speech_to_text(
-            "xiaomi_mimo", model_name="mimo-v2.5-asr", config=dict(
-                api_key="x", base_url="https://api.xiaomimimo.com/v1"
-            )
+            "xiaomi_mimo",
+            model_name="mimo-v2.5-asr",
+            config=dict(api_key="x", base_url="https://api.xiaomimimo.com/v1"),
         )
 
         assert isinstance(tts, XiaomiChatTextToSpeechModel)
@@ -335,7 +343,5 @@ class TestConsumerIntegration:
 
         assert isinstance(response, TranscriptionResponse)
         assert response.text == "hello"
-        part = async_client.post.call_args.kwargs["json"]["messages"][0][
-            "content"
-        ][0]
+        part = async_client.post.call_args.kwargs["json"]["messages"][0]["content"][0]
         assert part["input_audio"]["format"] == "mp3"

@@ -105,9 +105,7 @@ class TestSubmitEndpoint:
         assert mock_submit.call_args.kwargs["command_args"]["artifact_type"] == (
             "essay_draft"
         )
-        assert (
-            mock_submit.call_args.kwargs["command_args"]["instruction"] == QUESTION
-        )
+        assert mock_submit.call_args.kwargs["command_args"]["instruction"] == QUESTION
 
 
 class TestEssayDraftCommand:
@@ -136,9 +134,7 @@ class TestEssayDraftCommand:
             )
         )
         stack.enter_context(
-            patch(
-                "commands.artifact_commands.record_llm_usage", new_callable=AsyncMock
-            )
+            patch("commands.artifact_commands.record_llm_usage", new_callable=AsyncMock)
         )
         saved: Dict[str, Note] = {}
 
@@ -147,10 +143,12 @@ class TestEssayDraftCommand:
             saved["note"] = self
             return "embed_job:1"
 
-        with stack, llm_patcher, patch(
-            "commands.artifact_commands.Prompter", _CapturePrompter
-        ), patch.object(Note, "save", capture_note_save), patch.object(
-            Note, "add_to_notebook", new_callable=AsyncMock
+        with (
+            stack,
+            llm_patcher,
+            patch("commands.artifact_commands.Prompter", _CapturePrompter),
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
         ):
             result = await generate_artifact_command(
                 ArtifactGenerationInput(

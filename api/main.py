@@ -427,9 +427,7 @@ app.include_router(
 )
 app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
-app.include_router(
-    source_groups.router, prefix="/api", tags=["source-groups"]
-)
+app.include_router(source_groups.router, prefix="/api", tags=["source-groups"])
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(explain.router, prefix="/api", tags=["explain"])
@@ -446,9 +444,7 @@ app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
 app.include_router(usage.router, prefix="/api", tags=["usage"])
-app.include_router(
-    storage.router, prefix="/api", tags=["storage"]
-)
+app.include_router(storage.router, prefix="/api", tags=["storage"])
 app.include_router(data_transfer.router, prefix="/api", tags=["data-transfer"])
 
 

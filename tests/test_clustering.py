@@ -22,7 +22,9 @@ def _blobs(seed=0, per_blob=15):
 
 class TestPoolEmbeddings:
     def test_means_per_key(self):
-        pooled = pool_embeddings([("a", [1.0, 1.0]), ("a", [3.0, 3.0]), ("b", [0.0, 5.0])])
+        pooled = pool_embeddings(
+            [("a", [1.0, 1.0]), ("a", [3.0, 3.0]), ("b", [0.0, 5.0])]
+        )
         assert set(pooled) == {"a", "b"}
         assert pooled["a"] == pytest.approx([2.0, 2.0])
         assert pooled["b"] == pytest.approx([0.0, 5.0])

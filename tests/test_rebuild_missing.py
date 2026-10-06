@@ -115,9 +115,7 @@ class TestCollectItemsMissingMode:
 
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
-    async def test_missing_mode_sweeps_running_with_vanished_owner(
-        self, repo_query
-    ):
+    async def test_missing_mode_sweeps_running_with_vanished_owner(self, repo_query):
         repo_query.side_effect = [
             [],
             [{"id": "source:x", "embedding_command": "command:gone"}],
@@ -131,9 +129,7 @@ class TestCollectItemsMissingMode:
 
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
-    async def test_missing_mode_sweeps_queued_sources_without_owner(
-        self, repo_query
-    ):
+    async def test_missing_mode_sweeps_queued_sources_without_owner(self, repo_query):
         """Regression: sources parked in 'queued' with no owning command (the
         worker died between status flip and job submit) were unreachable from
         missing mode forever; the sweep must cover 'queued' too."""
@@ -141,7 +137,10 @@ class TestCollectItemsMissingMode:
             [],  # no regular missing sources
             [
                 {"id": "source:q", "embedding_command": None},  # queued, no owner
-                {"id": "source:q2", "embedding_command": "command:dead"},  # queued under dead owner
+                {
+                    "id": "source:q2",
+                    "embedding_command": "command:dead",
+                },  # queued under dead owner
             ],
             [{"status": "failed"}],  # owner of q2 is terminal
         ]
@@ -157,9 +156,7 @@ class TestCollectItemsMissingMode:
 
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
-    async def test_missing_mode_owner_lookup_failure_is_conservative(
-        self, repo_query
-    ):
+    async def test_missing_mode_owner_lookup_failure_is_conservative(self, repo_query):
         """A transient failure checking the owner must not claim the source."""
         repo_query.side_effect = [
             [],
@@ -263,9 +260,7 @@ class TestStaleRunningClaim:
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.submit_command")
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
-    async def test_stale_running_claimed_via_optimistic_lock(
-        self, repo_query, submit
-    ):
+    async def test_stale_running_claimed_via_optimistic_lock(self, repo_query, submit):
         repo_query.side_effect = [
             [],  # regular claim: running source doesn't match the predicate
             [{"id": "source:stale1"}],  # optimistic-lock claim succeeds
@@ -308,9 +303,7 @@ class TestStaleRunningClaim:
     @pytest.mark.asyncio
     @patch("commands.embedding_commands.submit_command")
     @patch("commands.embedding_commands.repo_query", new_callable=AsyncMock)
-    async def test_ownerless_running_claimed_via_is_none_lock(
-        self, repo_query, submit
-    ):
+    async def test_ownerless_running_claimed_via_is_none_lock(self, repo_query, submit):
         repo_query.side_effect = [[], [{"id": "source:orphan"}]]
 
         submitted, failed = await _claim_and_submit_sources(
@@ -411,14 +404,15 @@ class TestEmbedSourceStaleCommandGuard:
                 new=AsyncMock(),
             ),
             patch("commands.embedding_commands.repo_query", new=repo_query),
-            patch("commands.embedding_commands.repo_insert", new=AsyncMock(return_value=[])),
+            patch(
+                "commands.embedding_commands.repo_insert",
+                new=AsyncMock(return_value=[]),
+            ),
             patch(
                 "commands.embedding_commands.chunk_text",
                 MagicMock(return_value=["c1"]),
             ),
-            patch(
-                "commands.embedding_commands.iter_embedding_batches", new=_one_batch
-            ),
+            patch("commands.embedding_commands.iter_embedding_batches", new=_one_batch),
         ):
             output = await embed_source_command(input_data)
 
@@ -455,14 +449,15 @@ class TestEmbedSourceStaleCommandGuard:
                 new=AsyncMock(),
             ),
             patch("commands.embedding_commands.repo_query", new=repo_query),
-            patch("commands.embedding_commands.repo_insert", new=AsyncMock(return_value=[])),
+            patch(
+                "commands.embedding_commands.repo_insert",
+                new=AsyncMock(return_value=[]),
+            ),
             patch(
                 "commands.embedding_commands.chunk_text",
                 MagicMock(return_value=["c1"]),
             ),
-            patch(
-                "commands.embedding_commands.iter_embedding_batches", new=_one_batch
-            ),
+            patch("commands.embedding_commands.iter_embedding_batches", new=_one_batch),
         ):
             output = await embed_source_command(input_data)
 
@@ -537,9 +532,7 @@ class TestEmbedSourceStaleCommandGuard:
                 "commands.embedding_commands.chunk_text",
                 MagicMock(return_value=["c1"]),
             ),
-            patch(
-                "commands.embedding_commands.iter_embedding_batches", new=_one_batch
-            ),
+            patch("commands.embedding_commands.iter_embedding_batches", new=_one_batch),
         ):
             output = await embed_source_command(input_data)
 

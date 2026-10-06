@@ -50,7 +50,9 @@ async def test_set_embedding_state_best_effort_swallows_db_errors():
         new=AsyncMock(side_effect=RuntimeError("db down")),
     ):
         # Must not raise.
-        await source.set_embedding_state(status="running", embedded_chunks=1, best_effort=True)
+        await source.set_embedding_state(
+            status="running", embedded_chunks=1, best_effort=True
+        )
 
         # Strict mode still surfaces DB problems to the caller.
         with pytest.raises(RuntimeError):

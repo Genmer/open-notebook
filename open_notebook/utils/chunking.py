@@ -301,9 +301,7 @@ def _get_plain_splitter(params: EmbeddingParams) -> RecursiveCharacterTextSplitt
     )
 
 
-def _apply_secondary_chunking(
-    chunks: List[str], params: EmbeddingParams
-) -> List[str]:
+def _apply_secondary_chunking(chunks: List[str], params: EmbeddingParams) -> List[str]:
     """
     Apply secondary chunking to ensure no chunk exceeds the chunk size limit.
 

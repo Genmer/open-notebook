@@ -316,10 +316,12 @@ async def web_research_search(req: WebSearchRequest):
                     if isinstance(item, dict) and item.get("title") and item.get("url"):
                         results.append(
                             WebSearchItem(
-                                id=f"web-{idx+1}",
+                                id=f"web-{idx + 1}",
                                 title=str(item.get("title")),
                                 url=str(item.get("url")),
-                                snippet=str(item.get("snippet") or "权威参考资料与分析要点"),
+                                snippet=str(
+                                    item.get("snippet") or "权威参考资料与分析要点"
+                                ),
                             )
                         )
     except Exception as e:
@@ -348,4 +350,3 @@ async def web_research_search(req: WebSearchRequest):
         ]
 
     return WebSearchResponse(query=query, mode=req.mode, results=results)
-

@@ -35,9 +35,7 @@ from open_notebook.domain.source_grouping import (
 )
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 
-_SOURCE_COUNT_PROJECTION = (
-    "(SELECT VALUE count() FROM source_group_member WHERE out = $parent.id GROUP ALL)[0].count ?? 0"
-)
+_SOURCE_COUNT_PROJECTION = "(SELECT VALUE count() FROM source_group_member WHERE out = $parent.id GROUP ALL)[0].count ?? 0"
 
 _CLASSIFIABLE_VIEW_TYPES = {"ai_content": "content", "ai_title": "title"}
 _CLASSIFY_COMMAND = "classify_sources"
@@ -212,7 +210,9 @@ async def create_group(
             )
 
     group = SourceGroup(
-        name=group_name, source_view=_to_record_id(view_id, "source_view"), parent=parent_ref
+        name=group_name,
+        source_view=_to_record_id(view_id, "source_view"),
+        parent=parent_ref,
     )
     await group.save()
     return SourceGroupResponse(
@@ -238,9 +238,7 @@ def _assert_name_free(
             )
 
 
-async def update_group(
-    group_id: str, update: SourceGroupUpdate
-) -> SourceGroupResponse:
+async def update_group(group_id: str, update: SourceGroupUpdate) -> SourceGroupResponse:
     group = await _get_group_or_404(group_id)
     groups = await _groups_of_view(str(group.source_view))
     group_ref = ensure_record_id(str(group.id))
@@ -302,8 +300,7 @@ async def delete_group(group_id: str, delete_sources: bool) -> GroupDeleteRespon
     group = await _get_group_or_404(group_id)
     groups = await _groups_of_view(str(group.source_view))
     subtree_ids = [
-        ensure_record_id(gid)
-        for gid in collect_subtree_ids(groups, str(group.id))
+        ensure_record_id(gid) for gid in collect_subtree_ids(groups, str(group.id))
     ]
 
     deleted_sources = 0
@@ -385,9 +382,7 @@ def _member_scope(view_ref: RecordID, suffix: str = "") -> str:
     )
 
 
-async def move_members_to_group(
-    group_id: str, source_ids: List[str]
-) -> Dict[str, int]:
+async def move_members_to_group(group_id: str, source_ids: List[str]) -> Dict[str, int]:
     group = await _get_group_or_404(group_id)
     view_ref = ensure_record_id(str(group.source_view))
     group_ref = ensure_record_id(str(group.id))
@@ -455,7 +450,9 @@ def _clone_physical_file(source: Source) -> Optional[str]:
                 shutil.copy2(old_path, candidate)
                 return str(candidate)
             except OSError as e:
-                logger.warning(f"Failed to clone file {file_path} for a source copy: {e}")
+                logger.warning(
+                    f"Failed to clone file {file_path} for a source copy: {e}"
+                )
                 return None
 
 
@@ -480,9 +477,7 @@ async def copy_sources_to_group(
             # One bad source must not abort the batch.
             logger.warning(f"Failed to copy source {ref} to group {group_id}: {e}")
             failed.append(
-                CopyFailure(
-                    source_id=str(ref), reason=_truncate_reason(str(e))
-                )
+                CopyFailure(source_id=str(ref), reason=_truncate_reason(str(e)))
             )
     return CopyToGroupResponse(created=created, failed=failed)
 
@@ -539,9 +534,7 @@ async def _copy_single_source(ref: RecordID, group_ref: RecordID) -> str:
         "old": ref,
     }
     if notebook_refs:
-        statements.append(
-            "FOR $nb IN $notebooks { RELATE $new_id->reference->$nb; };"
-        )
+        statements.append("FOR $nb IN $notebooks { RELATE $new_id->reference->$nb; };")
         params["notebooks"] = notebook_refs
     if completed:
         statements.append(

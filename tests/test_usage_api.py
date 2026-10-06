@@ -13,7 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 # repo_query call order inside get_usage_summary
-Q_TOTALS, Q_BY_MODEL, Q_BY_DAY, Q_PIVOT, Q_PREVIOUS, Q_EST_MODEL, Q_EST_TOTALS = range(7)
+Q_TOTALS, Q_BY_MODEL, Q_BY_DAY, Q_PIVOT, Q_PREVIOUS, Q_EST_MODEL, Q_EST_TOTALS = range(
+    7
+)
 Q_MODEL_PRICES = 7  # per-model CNY prices loaded after the token rollups
 
 
@@ -24,7 +26,9 @@ def client():
     return TestClient(app)
 
 
-def _seed_row(i: int, *, input_tokens=None, call_type="chat", model="gpt", day="2026-09-20"):
+def _seed_row(
+    i: int, *, input_tokens=None, call_type="chat", model="gpt", day="2026-09-20"
+):
     return {
         "id": f"model_usage:row{i}",
         "created": f"2026-09-20T10:0{i}:00Z",
@@ -75,7 +79,12 @@ class TestUsageSummary:
         assert body["unpriced_models"] == []
 
     def test_seed_rows_aggregate_with_null_tokens_as_zero(self, client):
-        totals = {"calls": 3, "input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+        totals = {
+            "calls": 3,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+        }
         # Row without any token data: the `?? 0` coalescing maps it to 0.
         by_model = [
             {
@@ -95,10 +104,16 @@ class TestUsageSummary:
                 "total_tokens": None,
             },
         ]
-        by_day = [{"day": "2026-09-20", "calls": 3, "input_tokens": 100, "output_tokens": 50, "total_tokens": 150}]
-        repo = AsyncMock(
-            side_effect=[[totals], by_model, by_day, [], [], [], [], []]
-        )
+        by_day = [
+            {
+                "day": "2026-09-20",
+                "calls": 3,
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+            }
+        ]
+        repo = AsyncMock(side_effect=[[totals], by_model, by_day, [], [], [], [], []])
 
         with patch("api.usage_service.repo_query", repo):
             response = client.get("/api/usage/summary?days=7")
@@ -121,14 +136,45 @@ class TestUsageSummary:
         assert "WHERE created >= $from_ts" in repo.await_args_list[Q_TOTALS].args[0]
 
     def test_daily_by_model_pivot_across_models_and_days(self, client):
-        totals = {"calls": 3, "input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+        totals = {
+            "calls": 3,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+        }
         by_model = [
-            {"model_name": "gpt", "provider": "openai", "calls": 2, "input_tokens": 90, "output_tokens": 45, "total_tokens": 90},
-            {"model_name": "claude", "provider": "anthropic", "calls": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 60},
+            {
+                "model_name": "gpt",
+                "provider": "openai",
+                "calls": 2,
+                "input_tokens": 90,
+                "output_tokens": 45,
+                "total_tokens": 90,
+            },
+            {
+                "model_name": "claude",
+                "provider": "anthropic",
+                "calls": 1,
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 60,
+            },
         ]
         by_day = [
-            {"day": "2026-09-19", "calls": 1, "input_tokens": 40, "output_tokens": 20, "total_tokens": 40},
-            {"day": "2026-09-20", "calls": 2, "input_tokens": 60, "output_tokens": 30, "total_tokens": 110},
+            {
+                "day": "2026-09-19",
+                "calls": 1,
+                "input_tokens": 40,
+                "output_tokens": 20,
+                "total_tokens": 40,
+            },
+            {
+                "day": "2026-09-20",
+                "calls": 2,
+                "input_tokens": 60,
+                "output_tokens": 30,
+                "total_tokens": 110,
+            },
         ]
         daily_by_model = [
             {"day": "2026-09-19", "model_name": "gpt", "total_tokens": 40},
@@ -229,7 +275,7 @@ class TestTzOffset:
             client.get("/api/usage/summary?days=1&tz_offset=480")
         from_ts = repo.await_args_list[Q_BY_DAY].args[1]["from_ts"]
         by_day_sql = repo.await_args_list[Q_BY_DAY].args[0]
-        assert 'time::format(created + 480m' in by_day_sql
+        assert "time::format(created + 480m" in by_day_sql
         # Window boundary translated back from the same local midnight.
         assert from_ts + timedelta(minutes=480) == (
             datetime.now(timezone.utc) + timedelta(minutes=480)
@@ -254,11 +300,19 @@ class TestTzOffset:
 
 class TestPreviousTotals:
     def test_previous_window_aggregates_exclusively(self, client):
-        current = {"calls": 10, "input_tokens": 400, "output_tokens": 100, "total_tokens": 500}
-        previous = {"calls": 4, "input_tokens": 150, "output_tokens": 50, "total_tokens": 200}
-        repo = AsyncMock(
-            side_effect=[[current], [], [], [], [previous], [], [], []]
-        )
+        current = {
+            "calls": 10,
+            "input_tokens": 400,
+            "output_tokens": 100,
+            "total_tokens": 500,
+        }
+        previous = {
+            "calls": 4,
+            "input_tokens": 150,
+            "output_tokens": 50,
+            "total_tokens": 200,
+        }
+        repo = AsyncMock(side_effect=[[current], [], [], [], [previous], [], [], []])
 
         with patch("api.usage_service.repo_query", repo):
             response = client.get("/api/usage/summary?days=7")
@@ -288,13 +342,36 @@ class TestPreviousTotals:
 
 class TestEstimatedTokens:
     def test_estimated_sums_merged_into_by_model_and_totals(self, client):
-        totals = {"calls": 5, "input_tokens": 300, "output_tokens": 90, "total_tokens": 390}
+        totals = {
+            "calls": 5,
+            "input_tokens": 300,
+            "output_tokens": 90,
+            "total_tokens": 390,
+        }
         by_model = [
-            {"model_name": "text-embedding-v4", "provider": "openai", "calls": 3, "input_tokens": 200, "output_tokens": 0, "total_tokens": 200},
-            {"model_name": "gpt", "provider": "openai", "calls": 2, "input_tokens": 100, "output_tokens": 90, "total_tokens": 190},
+            {
+                "model_name": "text-embedding-v4",
+                "provider": "openai",
+                "calls": 3,
+                "input_tokens": 200,
+                "output_tokens": 0,
+                "total_tokens": 200,
+            },
+            {
+                "model_name": "gpt",
+                "provider": "openai",
+                "calls": 2,
+                "input_tokens": 100,
+                "output_tokens": 90,
+                "total_tokens": 190,
+            },
         ]
         est_by_model = [
-            {"model_name": "text-embedding-v4", "provider": "openai", "estimated_tokens": 200},
+            {
+                "model_name": "text-embedding-v4",
+                "provider": "openai",
+                "estimated_tokens": 200,
+            },
         ]
         est_totals = [{"estimated_tokens": 200}]
         repo = AsyncMock(
@@ -327,15 +404,32 @@ class TestEstimatedTokens:
 
 class TestCostEstimation:
     def test_priced_models_get_costs_unpriced_listed(self, client):
-        totals = {"calls": 4, "input_tokens": 1_500_000, "output_tokens": 500_000, "total_tokens": 2_000_000}
+        totals = {
+            "calls": 4,
+            "input_tokens": 1_500_000,
+            "output_tokens": 500_000,
+            "total_tokens": 2_000_000,
+        }
         by_model = [
-            {"model_name": "gpt", "provider": "openai", "calls": 3, "input_tokens": 1_000_000, "output_tokens": 500_000, "total_tokens": 1_500_000},
-            {"model_name": "local-model", "provider": "openai_compatible", "calls": 1, "input_tokens": 500_000, "output_tokens": 0, "total_tokens": 500_000},
+            {
+                "model_name": "gpt",
+                "provider": "openai",
+                "calls": 3,
+                "input_tokens": 1_000_000,
+                "output_tokens": 500_000,
+                "total_tokens": 1_500_000,
+            },
+            {
+                "model_name": "local-model",
+                "provider": "openai_compatible",
+                "calls": 1,
+                "input_tokens": 500_000,
+                "output_tokens": 0,
+                "total_tokens": 500_000,
+            },
         ]
         prices = [{"name": "gpt", "price_input_per_m": 2.0, "price_output_per_m": 8.0}]
-        repo = AsyncMock(
-            side_effect=[[totals], by_model, [], [], [], [], [], prices]
-        )
+        repo = AsyncMock(side_effect=[[totals], by_model, [], [], [], [], [], prices])
 
         with patch("api.usage_service.repo_query", repo):
             response = client.get("/api/usage/summary")
@@ -353,14 +447,24 @@ class TestCostEstimation:
         assert "FROM model" in price_sql
 
     def test_cost_name_matching_is_case_insensitive(self, client):
-        totals = {"calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000}
+        totals = {
+            "calls": 1,
+            "input_tokens": 1_000_000,
+            "output_tokens": 0,
+            "total_tokens": 1_000_000,
+        }
         by_model = [
-            {"model_name": "GPT", "provider": "openai", "calls": 1, "input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000},
+            {
+                "model_name": "GPT",
+                "provider": "openai",
+                "calls": 1,
+                "input_tokens": 1_000_000,
+                "output_tokens": 0,
+                "total_tokens": 1_000_000,
+            },
         ]
         prices = [{"name": "gpt", "price_input_per_m": 2.0, "price_output_per_m": 8.0}]
-        repo = AsyncMock(
-            side_effect=[[totals], by_model, [], [], [], [], [], prices]
-        )
+        repo = AsyncMock(side_effect=[[totals], by_model, [], [], [], [], [], prices])
 
         with patch("api.usage_service.repo_query", repo):
             response = client.get("/api/usage/summary")

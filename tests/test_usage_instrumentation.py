@@ -48,9 +48,7 @@ class TestChatInstrumentation:
                 "open_notebook.graphs.chat.provision_langchain_model_with_info",
                 new=AsyncMock(return_value=prov),
             ),
-            patch(
-                "open_notebook.graphs.chat.record_llm_usage_sync"
-            ) as record_sync,
+            patch("open_notebook.graphs.chat.record_llm_usage_sync") as record_sync,
         ):
             state = cast(ThreadState, {"messages": [HumanMessage("hi")]})
             config = cast(RunnableConfig, {"configurable": {"thread_id": "thread-42"}})
@@ -76,9 +74,7 @@ class TestChatInstrumentation:
                 "open_notebook.graphs.chat.provision_langchain_model_with_info",
                 new=AsyncMock(side_effect=ConfigurationError("no model")),
             ),
-            patch(
-                "open_notebook.graphs.chat.record_llm_usage_sync"
-            ) as record_sync,
+            patch("open_notebook.graphs.chat.record_llm_usage_sync") as record_sync,
         ):
             with pytest.raises(Exception):
                 call_model_with_messages(
@@ -156,7 +152,9 @@ class TestAskInstrumentation:
         )
         plain_prov = _provision_returning()
 
-        with patch("open_notebook.graphs.ask.record_llm_usage", new=AsyncMock()) as record:
+        with patch(
+            "open_notebook.graphs.ask.record_llm_usage", new=AsyncMock()
+        ) as record:
             with patch(
                 "open_notebook.graphs.ask.provision_langchain_model_with_info",
                 new=AsyncMock(return_value=strategy_prov),

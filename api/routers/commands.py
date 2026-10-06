@@ -118,9 +118,7 @@ async def get_command_job_live_progress(job_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching live progress for {job_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch job live progress"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch job live progress")
 
 
 @router.post("/commands/jobs/{job_id}/retry", response_model=CommandJobResponse)
@@ -145,9 +143,7 @@ async def retry_command_job(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error retrying command job: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to retry command job"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retry command job")
 
 
 @router.get("/commands/jobs", response_model=TaskListResponse)

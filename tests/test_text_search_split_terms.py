@@ -106,9 +106,7 @@ class TestTextSearchSubTermFallback:
             keyword = params["keyword"]
             if keyword == "微服务治理":
                 return []
-            return [
-                {"id": f"source:{keyword}-{n}", "relevance": 1.0} for n in range(2)
-            ]
+            return [{"id": f"source:{keyword}-{n}", "relevance": 1.0} for n in range(2)]
 
         with patch.object(
             notebook_module,

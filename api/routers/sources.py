@@ -121,6 +121,7 @@ def _normalize_file_ext(ext: str) -> str:
         )
     return normalized
 
+
 EMBEDDING_STATUSES = {
     "not_embedded",
     "queued",
@@ -220,9 +221,7 @@ async def _collect_insight_jobs(source_id: str, limit: int = 10) -> List[dict]:
             {
                 "command_id": str(row["id"]),
                 "transformation_id": tid,
-                "transformation_title": titles.get(
-                    (tid or "").split(":")[-1]
-                ),
+                "transformation_title": titles.get((tid or "").split(":")[-1]),
                 "status": str(row.get("status") or "unknown"),
                 "error_message": row.get("error_message"),
             }
@@ -323,11 +322,17 @@ def _compute_processing_steps(
 
     trunc = _truncate_error(cmd_error)
     return [
-        SourceProcessingStep(key="extraction", status=extraction, error=trunc if extraction == "failed" else None),
+        SourceProcessingStep(
+            key="extraction",
+            status=extraction,
+            error=trunc if extraction == "failed" else None,
+        ),
         SourceProcessingStep(
             key="embedding",
             status=embedding_step,
-            current=embedding.embedded_chunks if embedding_step == "in_progress" else None,
+            current=embedding.embedded_chunks
+            if embedding_step == "in_progress"
+            else None,
             total=embedding.total_chunks if embedding_step == "in_progress" else None,
             error=embedding.error if embedding_step == "failed" else None,
         ),
@@ -787,14 +792,18 @@ async def get_source_type_groups():
         # Extension buckets: most common first, ties broken alphabetically
         groups.extend(
             SourceTypeGroupResponse(key=key, count=count)
-            for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            for key, count in sorted(
+                counts.items(), key=lambda item: (-item[1], item[0])
+            )
         )
         return groups
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error computing source type groups: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error computing source type groups")
+        raise HTTPException(
+            status_code=500, detail="Error computing source type groups"
+        )
 
 
 @router.get("/sources/titles", response_model=List[SourceTitleResponse])
@@ -814,9 +823,7 @@ async def get_source_titles(
     # shape before RecordID.parse, which raises a bare ValueError on colons etc.
     SOURCE_ID_PATTERN = re.compile(r"^(source:)?[A-Za-z0-9_-]+$")
     if any(not SOURCE_ID_PATTERN.match(raw) for raw in raw_ids):
-        raise InvalidInputError(
-            "ids must be source IDs like abc123 or source:abc123"
-        )
+        raise InvalidInputError("ids must be source IDs like abc123 or source:abc123")
 
     record_ids = [
         ensure_record_id(raw if raw.startswith("source:") else f"source:{raw}")

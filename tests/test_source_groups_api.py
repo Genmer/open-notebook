@@ -40,7 +40,9 @@ def client():
     return TestClient(app)
 
 
-def _group_row(group_id: str, parent: str = None, name: str = None, view: str = VIEW_ID):
+def _group_row(
+    group_id: str, parent: str = None, name: str = None, view: str = VIEW_ID
+):
     return {
         "id": group_id,
         "source_view": view,
@@ -51,7 +53,9 @@ def _group_row(group_id: str, parent: str = None, name: str = None, view: str = 
     }
 
 
-def _view(group_id_view: str = VIEW_ID, name: str = "Custom", view_type: str = "custom"):
+def _view(
+    group_id_view: str = VIEW_ID, name: str = "Custom", view_type: str = "custom"
+):
     return SourceView(id=group_id_view, name=name, view_type=view_type)
 
 
@@ -85,7 +89,10 @@ class TestMigration29:
         assert "DEFINE TABLE IF NOT EXISTS source_group SCHEMAFULL" in sql
         assert "TYPE RELATION" in sql
         assert "FROM source TO source_group" in sql
-        assert "DEFINE EVENT IF NOT EXISTS source_membership_cleanup ON TABLE source" in sql
+        assert (
+            "DEFINE EVENT IF NOT EXISTS source_membership_cleanup ON TABLE source"
+            in sql
+        )
 
     def test_down_removes_event_then_tables_deepest_first(self):
         lines = [
@@ -191,7 +198,9 @@ class TestViewsApi:
 
     @pytest.mark.asyncio
     async def test_create_view_rejects_blank_name(self, client):
-        response = client.post("/api/views", json={"name": "   ", "view_type": "custom"})
+        response = client.post(
+            "/api/views", json={"name": "   ", "view_type": "custom"}
+        )
         assert response.status_code == 400
 
     @pytest.mark.asyncio
@@ -366,7 +375,9 @@ class TestGroupsApi:
         mock_view_get.return_value = _view()
         chain = [_group_row("source_group:g1")]
         for i in range(2, MAX_GROUP_DEPTH + 1):
-            chain.append(_group_row(f"source_group:g{i}", parent=f"source_group:g{i-1}"))
+            chain.append(
+                _group_row(f"source_group:g{i}", parent=f"source_group:g{i - 1}")
+            )
         repo_query.return_value = chain
         mock_group_get.return_value = SourceGroup(
             **_group_row(f"source_group:g{MAX_GROUP_DEPTH}")
@@ -409,7 +420,9 @@ class TestUpdateGroupApi:
     def _chain_rows():
         rows = [_group_row("source_group:g1")]
         for i in (2, 3):
-            rows.append(_group_row(f"source_group:g{i}", parent=f"source_group:g{i-1}"))
+            rows.append(
+                _group_row(f"source_group:g{i}", parent=f"source_group:g{i - 1}")
+            )
         return rows
 
     @pytest.mark.asyncio
@@ -467,7 +480,9 @@ class TestUpdateGroupApi:
         # n1..n4 form a chain at depth 1-4; r is a root with child x (height 2)
         rows = [_group_row("source_group:n1")]
         for i in (2, 3, 4):
-            rows.append(_group_row(f"source_group:n{i}", parent=f"source_group:n{i-1}"))
+            rows.append(
+                _group_row(f"source_group:n{i}", parent=f"source_group:n{i - 1}")
+            )
         rows.append(_group_row("source_group:r"))
         rows.append(_group_row("source_group:x", parent="source_group:r"))
         repo_query.return_value = rows
@@ -567,7 +582,9 @@ class TestDeleteGroupApi:
     @pytest.mark.asyncio
     @patch.object(SourceGroup, "get", new_callable=AsyncMock)
     @patch("api.source_group_service.repo_query", new_callable=AsyncMock)
-    async def test_delete_group_ungroups_sources(self, repo_query, mock_group_get, client):
+    async def test_delete_group_ungroups_sources(
+        self, repo_query, mock_group_get, client
+    ):
         mock_group_get.return_value = SourceGroup(**_group_row("source_group:g1"))
         repo_query.side_effect = [self._rows(), []]
 
@@ -599,9 +616,7 @@ class TestDeleteGroupApi:
             [],  # group delete
         ]
 
-        response = client.delete(
-            "/api/groups/source_group:g1?delete_sources=true"
-        )
+        response = client.delete("/api/groups/source_group:g1?delete_sources=true")
 
         assert response.status_code == 200
         assert response.json() == {"deleted_groups": 2, "deleted_sources": 2}
@@ -822,9 +837,7 @@ class TestSourcesFilterParams:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_file_ext_filter_rejects_too_long_extension(
-        self, repo_query, client
-    ):
+    async def test_file_ext_filter_rejects_too_long_extension(self, repo_query, client):
         response = client.get("/api/sources", params={"file_ext": "a" * 11})
 
         assert response.status_code == 400
@@ -848,7 +861,9 @@ class TestSourcesFilterParams:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_file_ext_other_matches_extension_less_files(self, repo_query, client):
+    async def test_file_ext_other_matches_extension_less_files(
+        self, repo_query, client
+    ):
         repo_query.return_value = []
 
         response = client.get("/api/sources", params={"file_ext": "other"})
@@ -876,9 +891,7 @@ class TestSourcesFilterParams:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_file_ext_filter_rejects_special_characters(
-        self, repo_query, client
-    ):
+    async def test_file_ext_filter_rejects_special_characters(self, repo_query, client):
         for bad_ext in ("pd/f", "p*d", "ta.gz%", "pd;--"):
             response = client.get("/api/sources", params={"file_ext": bad_ext})
             assert response.status_code == 400, bad_ext
@@ -1019,7 +1032,9 @@ def _source_row(
 class TestMemberValidation:
     async def _call(self, source_ids):
         with patch.object(SourceGroup, "get", new_callable=AsyncMock) as mock_group:
-            mock_group.return_value = SourceGroup(id=GROUP_ID, name="G", source_view=VIEW_ID)
+            mock_group.return_value = SourceGroup(
+                id=GROUP_ID, name="G", source_view=VIEW_ID
+            )
             with patch("api.source_group_service.repo_query", new_callable=AsyncMock):
                 await move_members_to_group(GROUP_ID, source_ids)
 
@@ -1036,7 +1051,9 @@ class TestMemberValidation:
     @pytest.mark.asyncio
     async def test_missing_source_rejected_with_id_list(self):
         with patch.object(SourceGroup, "get", new_callable=AsyncMock) as mock_group:
-            mock_group.return_value = SourceGroup(id=GROUP_ID, name="G", source_view=VIEW_ID)
+            mock_group.return_value = SourceGroup(
+                id=GROUP_ID, name="G", source_view=VIEW_ID
+            )
             with patch(
                 "api.source_group_service.repo_query", new_callable=AsyncMock
             ) as repo_query:
@@ -1095,7 +1112,9 @@ class TestMoveMembersApi:
     @pytest.mark.asyncio
     @patch.object(SourceGroup, "get", new_callable=AsyncMock)
     @patch("api.source_group_service.repo_query", new_callable=AsyncMock)
-    async def test_move_empty_body_list_returns_400(self, _repo, mock_group_get, client):
+    async def test_move_empty_body_list_returns_400(
+        self, _repo, mock_group_get, client
+    ):
         mock_group_get.return_value = SourceGroup(
             id=GROUP_ID, name="G", source_view=VIEW_ID
         )
@@ -1381,9 +1400,7 @@ class TestClonePhysicalFile:
             raise OSError("no space left on device")
 
         monkeypatch.setattr("api.source_group_service.os.link", always_fail)
-        monkeypatch.setattr(
-            "api.source_group_service.shutil.copy2", always_fail
-        )
+        monkeypatch.setattr("api.source_group_service.shutil.copy2", always_fail)
 
         cloned = _clone_physical_file(self._source_with_file(original))
 
@@ -1393,9 +1410,7 @@ class TestClonePhysicalFile:
         uploads_dir, _ = uploads
         monkeypatch.setattr("api.source_group_service.UPLOADS_FOLDER", str(uploads_dir))
 
-        cloned = _clone_physical_file(
-            self._source_with_file(uploads_dir / "ghost.pdf")
-        )
+        cloned = _clone_physical_file(self._source_with_file(uploads_dir / "ghost.pdf"))
 
         assert cloned is None
 
@@ -1413,9 +1428,7 @@ class TestCopyTransactionFailure:
         uploads_dir.mkdir()
         original = tmp_path / "doc.pdf"
         original.write_text("content")
-        monkeypatch.setattr(
-            "api.source_group_service.UPLOADS_FOLDER", str(uploads_dir)
-        )
+        monkeypatch.setattr("api.source_group_service.UPLOADS_FOLDER", str(uploads_dir))
 
         mock_group_get.return_value = SourceGroup(
             id=GROUP_ID, name="G", source_view=VIEW_ID
@@ -1433,9 +1446,7 @@ class TestCopyTransactionFailure:
             asset=Asset(file_path=str(original)),
             embedding_status="not_embedded",
         )
-        with patch.object(
-            Source, "get", new_callable=AsyncMock, return_value=source
-        ):
+        with patch.object(Source, "get", new_callable=AsyncMock, return_value=source):
             response = client.post(
                 f"/api/groups/{GROUP_ID}/copy",
                 json={"source_ids": [SOURCE_ID]},
@@ -1480,7 +1491,10 @@ class TestClassifyApi:
         self, mock_get, repo_query, mock_provision, mock_submit, client
     ):
         mock_get.return_value = self._ai_view()
-        repo_query.side_effect = [[{"total": 10}], []]  # source count; no running commands
+        repo_query.side_effect = [
+            [{"total": 10}],
+            [],
+        ]  # source count; no running commands
         mock_submit.return_value = "command:abc123"
 
         response = client.post(f"/api/views/{VIEW_ID}/classify")

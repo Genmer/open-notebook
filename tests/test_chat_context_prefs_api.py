@@ -88,9 +88,7 @@ class TestGetContextPreferences:
             _pref_row("source:s2", "full"),
         ]
 
-        response = client.get(
-            f"/api/notebooks/{NOTEBOOK_ID}/context-preferences"
-        )
+        response = client.get(f"/api/notebooks/{NOTEBOOK_ID}/context-preferences")
 
         assert response.status_code == 200
         assert response.json() == {"prefs": {"source:s1": "off", "source:s2": "full"}}
@@ -104,9 +102,7 @@ class TestGetContextPreferences:
         mock_get.return_value = MagicMock()
         repo_query.return_value = []
 
-        response = client.get(
-            f"/api/notebooks/{NOTEBOOK_ID}/context-preferences"
-        )
+        response = client.get(f"/api/notebooks/{NOTEBOOK_ID}/context-preferences")
 
         assert response.status_code == 200
         query = repo_query.await_args.args[0]
@@ -141,9 +137,7 @@ class TestGetContextPreferences:
     async def test_get_missing_notebook_returns_404(self, mock_get, client):
         mock_get.side_effect = NotFoundError("notebook not found")
 
-        response = client.get(
-            f"/api/notebooks/{NOTEBOOK_ID}/context-preferences"
-        )
+        response = client.get(f"/api/notebooks/{NOTEBOOK_ID}/context-preferences")
 
         assert response.status_code == 404
 
@@ -431,7 +425,10 @@ class TestCascadeCleanup:
     ):
         mock_group_get.return_value = SourceGroup(**_group_row("source_group:g1"))
         repo_query.side_effect = [
-            [_group_row("source_group:g1"), _group_row("source_group:g2", "source_group:g1")],
+            [
+                _group_row("source_group:g1"),
+                _group_row("source_group:g2", "source_group:g1"),
+            ],
             [],  # merged memberships + groups + prefs
         ]
 
@@ -456,7 +453,10 @@ class TestCascadeCleanup:
         source.delete = AsyncMock(return_value=True)
         mock_source_get.return_value = source
         repo_query.side_effect = [
-            [_group_row("source_group:g1"), _group_row("source_group:g2", "source_group:g1")],
+            [
+                _group_row("source_group:g1"),
+                _group_row("source_group:g2", "source_group:g1"),
+            ],
             ["source:s1"],  # member source ids
             [],  # membership sweep
             [],  # merged groups + prefs delete

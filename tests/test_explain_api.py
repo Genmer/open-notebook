@@ -81,7 +81,10 @@ async def test_explain_happy_path_shape(model_mocks):
     # retry backstop prepends retry for retryable, not-recovered commands
     assert result["suggestions"] == [
         {"action": "retry", "label_key": "tasks.explain.actionRetry"},
-        {"action": "open_credentials", "label_key": "tasks.explain.actionOpenCredentials"},
+        {
+            "action": "open_credentials",
+            "label_key": "tasks.explain.actionOpenCredentials",
+        },
     ]
     facts = {f["label_key"]: f["value"] for f in result["facts"]}
     assert facts["tasks.explain.factCommand"] == "classify_sources"
@@ -121,9 +124,7 @@ async def test_explain_cache_hit_and_refresh(model_mocks):
     repo_query.return_value = [COMMAND_ROW]
     provision.return_value = _provisioned()
 
-    first = await explain_failed_command(
-        "command:x1", None, [], "en-US", refresh=False
-    )
+    first = await explain_failed_command("command:x1", None, [], "en-US", refresh=False)
     second = await explain_failed_command(
         "command:x1", None, [], "en-US", refresh=False
     )
@@ -374,9 +375,7 @@ def test_explain_endpoint_returns_200_degraded_when_model_unconfigured(client):
     from open_notebook.exceptions import ConfigurationError
 
     with (
-        patch(
-            "api.explain_service.repo_query", new_callable=AsyncMock
-        ) as repo_query,
+        patch("api.explain_service.repo_query", new_callable=AsyncMock) as repo_query,
         patch(
             "api.explain_service.provision_langchain_model_with_info",
             new_callable=AsyncMock,
@@ -549,9 +548,7 @@ async def test_recovery_embed_note_same_entity_completed_run(repo_query):
         {
             "id": "command:ok1",
             "args": {"note_id": "note:n1"},
-            "result": {
-                "execution_metadata": {"started_at": "2026-09-27T10:00:00Z"}
-            },
+            "result": {"execution_metadata": {"started_at": "2026-09-27T10:00:00Z"}},
         },
         # a completed run for a DIFFERENT note must not count
         {
@@ -737,12 +734,17 @@ async def test_recovery_same_entity_completed_row_missing_key_never_matches(repo
 
 @pytest.mark.asyncio
 @patch("api.explain_service.repo_query", new_callable=AsyncMock)
-async def test_recovery_same_entity_partial_present_keys_compare_on_those_only(repo_query):
+async def test_recovery_same_entity_partial_present_keys_compare_on_those_only(
+    repo_query,
+):
     """Failed args missing part of the key tuple compare on the present keys only."""
     repo_query.return_value = [
         {
             "id": "command:ok1",
-            "args": {"source_id": "source:s1", "transformation_id": "transformation:t1"},
+            "args": {
+                "source_id": "source:s1",
+                "transformation_id": "transformation:t1",
+            },
             "result": None,
         }
     ]
@@ -772,7 +774,9 @@ async def test_recovery_classify_sources_accepts_source_view_alias(repo_query):
     """Stored arg key is view_id; the source_view spelling must also resolve."""
     repo_query.return_value = [{"last_classified_at": "2026-09-26T08:00:00Z"}]
 
-    result = await _recovery_status("classify_sources", {"source_view": "source_view:v9"})
+    result = await _recovery_status(
+        "classify_sources", {"source_view": "source_view:v9"}
+    )
 
     assert result is not None
     assert result["recovered"] is True
@@ -839,9 +843,7 @@ async def _explain_with_recovery(model_mocks, source_rows, output=MODEL_OUTPUT):
     }
     repo_query.side_effect = [[row], source_rows, source_rows]
     provision.return_value = _provisioned(output)
-    return await explain_failed_command(
-        "command:e1", None, [], "en-US", refresh=False
-    )
+    return await explain_failed_command("command:e1", None, [], "en-US", refresh=False)
 
 
 @pytest.mark.asyncio
@@ -899,7 +901,9 @@ async def test_explain_cache_key_includes_recovery_state(model_mocks):
     provision.return_value = _provisioned()
 
     first = await explain_failed_command("command:e1", None, [], "en-US", refresh=False)
-    second = await explain_failed_command("command:e1", None, [], "en-US", refresh=False)
+    second = await explain_failed_command(
+        "command:e1", None, [], "en-US", refresh=False
+    )
 
     assert first["from_cache"] is False
     assert first["recovery"]["recovered"] is False

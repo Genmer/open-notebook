@@ -178,7 +178,9 @@ async def get_storage_summary() -> Dict[str, Any]:
     upload_bytes = disk["sections"]["uploads"]["bytes"]
 
     text_bytes = sources["estimated_bytes"] + insights["estimated_bytes"]
-    export_estimate = await _export_estimate(text_bytes, embeddings["estimated_bytes"], upload_bytes)
+    export_estimate = await _export_estimate(
+        text_bytes, embeddings["estimated_bytes"], upload_bytes
+    )
 
     return {
         "database": {

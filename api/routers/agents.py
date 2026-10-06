@@ -76,7 +76,9 @@ async def _require_unique_name(name: str, exclude_id: Optional[str] = None) -> N
         params["exclude_id"] = ensure_record_id(exclude_id)
     rows = await repo_query(query, params)
     if rows:
-        raise HTTPException(status_code=400, detail=f"Agent name '{name}' already exists")
+        raise HTTPException(
+            status_code=400, detail=f"Agent name '{name}' already exists"
+        )
 
 
 async def _get_agent_or_404(agent_id: str) -> Agent:

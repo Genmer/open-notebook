@@ -34,7 +34,10 @@ def _compute_steps(**overrides):
     fields: dict[str, Any] = {
         "cmd_status": "running",
         "cmd_error": None,
-        "args": {"embed": True, "transformations": ["transformation:a", "transformation:b"]},
+        "args": {
+            "embed": True,
+            "transformations": ["transformation:a", "transformation:b"],
+        },
         "full_text": "content",
         "embedding": _embedding(),
         "n_transformations": 2,
@@ -71,18 +74,27 @@ class TestComputeProcessingStepsEmbedding:
         assert _compute_steps(args=None)["embedding"].status == "unknown"
 
     def test_args_without_embed_key_is_unknown(self):
-        assert _compute_steps(args={"transformations": []})["embedding"].status == "unknown"
+        assert (
+            _compute_steps(args={"transformations": []})["embedding"].status
+            == "unknown"
+        )
 
     def test_embed_false_is_skipped(self):
-        steps = _compute_steps(args={"embed": False, "transformations": ["transformation:a"]})
+        steps = _compute_steps(
+            args={"embed": False, "transformations": ["transformation:a"]}
+        )
         assert steps["embedding"].status == "skipped"
 
     def test_completed_is_done(self):
-        steps = _compute_steps(embedding=_embedding(status="completed", embedded_chunks=4, total_chunks=4))
+        steps = _compute_steps(
+            embedding=_embedding(status="completed", embedded_chunks=4, total_chunks=4)
+        )
         assert steps["embedding"].status == "done"
 
     def test_running_is_in_progress_with_chunk_progress(self):
-        steps = _compute_steps(embedding=_embedding(status="running", embedded_chunks=3, total_chunks=5))
+        steps = _compute_steps(
+            embedding=_embedding(status="running", embedded_chunks=3, total_chunks=5)
+        )
         assert steps["embedding"].status == "in_progress"
         assert steps["embedding"].current == 3
         assert steps["embedding"].total == 5
@@ -97,7 +109,9 @@ class TestComputeProcessingStepsEmbedding:
     def test_partial_counts_as_failed(self):
         steps = _compute_steps(
             cmd_status="completed",
-            embedding=_embedding(status="partial", embedded_chunks=2, error="half broke"),
+            embedding=_embedding(
+                status="partial", embedded_chunks=2, error="half broke"
+            ),
         )
         assert steps["embedding"].status == "failed"
         assert steps["embedding"].error == "half broke"
@@ -107,7 +121,9 @@ class TestComputeProcessingStepsEmbedding:
         is stale (an embed failure never fails the main command) — show pending,
         never a retryable failure whose embed would race the pipeline."""
         failed = _compute_steps(embedding=_embedding(status="failed", error="old boom"))
-        partial = _compute_steps(embedding=_embedding(status="partial", embedded_chunks=1))
+        partial = _compute_steps(
+            embedding=_embedding(status="partial", embedded_chunks=1)
+        )
         assert failed["embedding"].status == "pending"
         assert failed["embedding"].error is None
         assert partial["embedding"].status == "pending"
@@ -117,7 +133,9 @@ class TestComputeProcessingStepsEmbedding:
         assert steps["embedding"].status == "pending"
 
     def test_not_embedded_on_terminal_command_is_unknown(self):
-        steps = _compute_steps(embedding=_embedding(status="not_embedded"), cmd_status="completed")
+        steps = _compute_steps(
+            embedding=_embedding(status="not_embedded"), cmd_status="completed"
+        )
         assert steps["embedding"].status == "unknown"
 
 
@@ -129,7 +147,9 @@ class TestComputeProcessingStepsTransformation:
     def test_retry_without_transformations_is_skipped(self):
         """Retry resubmits with transformations=[] — the step must show skipped,
         not hang in_progress forever."""
-        steps = _compute_steps(args={"embed": True, "transformations": []}, n_transformations=0)
+        steps = _compute_steps(
+            args={"embed": True, "transformations": []}, n_transformations=0
+        )
         assert steps["transformation"].status == "skipped"
 
     def test_zero_titles_is_skipped(self):
@@ -169,7 +189,10 @@ class TestComputeProcessingStepsFullPipeline:
     def test_running_without_full_text_yields_pending_pipeline(self):
         """Freshly submitted source: extraction running, everything else waits."""
         steps = _compute_steps(full_text=None)
-        assert [steps[k].status for k in ("extraction", "embedding", "transformation", "completion")] == [
+        assert [
+            steps[k].status
+            for k in ("extraction", "embedding", "transformation", "completion")
+        ] == [
             "in_progress",
             "pending",
             "pending",
@@ -184,7 +207,10 @@ class TestComputeProcessingStepsFullPipeline:
             embedding=_embedding(status="completed", embedded_chunks=2, total_chunks=2),
             m_insights=2,
         )
-        assert [steps[k].status for k in ("extraction", "embedding", "transformation", "completion")] == [
+        assert [
+            steps[k].status
+            for k in ("extraction", "embedding", "transformation", "completion")
+        ] == [
             "done",
             "done",
             "done",
@@ -195,7 +221,10 @@ class TestComputeProcessingStepsFullPipeline:
         """A failed transformation keeps the residual x/N so users see how far it
         got (m=1/N=3 → 1/3); embedding failure stays numberless (full re-embed)."""
         steps = _compute_steps(
-            cmd_status="failed", cmd_error="insight blew up", n_transformations=3, m_insights=1
+            cmd_status="failed",
+            cmd_error="insight blew up",
+            n_transformations=3,
+            m_insights=1,
         )
         assert steps["transformation"].status == "failed"
         assert steps["transformation"].error == "insight blew up"
@@ -205,7 +234,9 @@ class TestComputeProcessingStepsFullPipeline:
     def test_failed_embedding_reports_no_progress_numbers(self):
         steps = _compute_steps(
             cmd_status="completed",
-            embedding=_embedding(status="failed", embedded_chunks=7, total_chunks=10, error="boom"),
+            embedding=_embedding(
+                status="failed", embedded_chunks=7, total_chunks=10, error="boom"
+            ),
         )
         assert steps["embedding"].status == "failed"
         assert steps["embedding"].current is None
@@ -228,7 +259,9 @@ class TestDeriveProcessingSteps:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_duplicate_transformation_ids_collapse_to_distinct_titles(self, mock_repo_query):
+    async def test_duplicate_transformation_ids_collapse_to_distinct_titles(
+        self, mock_repo_query
+    ):
         """Two IDs resolving to the same title must not inflate the denominator."""
         source = _source_mock()
 
@@ -240,7 +273,9 @@ class TestDeriveProcessingSteps:
             raise AssertionError(f"Unexpected query: {query}")
 
         mock_repo_query.side_effect = fake_repo_query
-        steps = await _derive_processing_steps(source, self._row(["transformation:a", "transformation:b"]), _embedding())
+        steps = await _derive_processing_steps(
+            source, self._row(["transformation:a", "transformation:b"]), _embedding()
+        )
 
         by_key = {step.key: step for step in steps}
         assert by_key["transformation"].status == "in_progress"
@@ -264,7 +299,9 @@ class TestDeriveProcessingSteps:
             raise AssertionError(f"Unexpected query: {query}")
 
         mock_repo_query.side_effect = fake_repo_query
-        steps = await _derive_processing_steps(source, self._row(["transformation:a", "transformation:b"]), _embedding())
+        steps = await _derive_processing_steps(
+            source, self._row(["transformation:a", "transformation:b"]), _embedding()
+        )
 
         assert seen_params["titles"] == ["Summary", "Key Points"]
         by_key = {step.key: step for step in steps}
@@ -274,7 +311,9 @@ class TestDeriveProcessingSteps:
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-    async def test_dual_transformation_source_counts_both_insight_types(self, mock_repo_query):
+    async def test_dual_transformation_source_counts_both_insight_types(
+        self, mock_repo_query
+    ):
         """Regression (Critical): without the outer GROUP ALL the count query
         yields one row per group ([1, 1, …]) and count_rows[0] collapsed m to 1,
         leaving finished dual-transformation sources stuck unknown/pending."""
@@ -294,7 +333,9 @@ class TestDeriveProcessingSteps:
         row["status"] = "completed"
 
         steps = await _derive_processing_steps(
-            source, row, _embedding(status="completed", embedded_chunks=4, total_chunks=4)
+            source,
+            row,
+            _embedding(status="completed", embedded_chunks=4, total_chunks=4),
         )
 
         by_key = {step.key: step for step in steps}
@@ -369,18 +410,30 @@ class TestProcessingInfoFromRow:
             "status": "completed",
             "args": {"embed": True},
             "error_message": None,
-            "result": {"execution_metadata": {"started_at": "t0", "completed_at": "t1"}},
+            "result": {
+                "execution_metadata": {"started_at": "t0", "completed_at": "t1"}
+            },
         }
         info = _processing_info_from_row(row)
-        assert set(info.keys()) == {"status", "started_at", "completed_at", "error", "result"}
+        assert set(info.keys()) == {
+            "status",
+            "started_at",
+            "completed_at",
+            "error",
+            "result",
+        }
         assert info["status"] == "completed"
         assert info["started_at"] == "t0"
         assert info["completed_at"] == "t1"
         assert info["error"] is None
-        assert info["result"] == {"execution_metadata": {"started_at": "t0", "completed_at": "t1"}}
+        assert info["result"] == {
+            "execution_metadata": {"started_at": "t0", "completed_at": "t1"}
+        }
 
     def test_non_dict_result_yields_empty_metadata(self):
-        info = _processing_info_from_row({"status": "new", "error_message": "x", "result": None})
+        info = _processing_info_from_row(
+            {"status": "new", "error_message": "x", "result": None}
+        )
         assert info["started_at"] is None
         assert info["completed_at"] is None
         assert info["error"] == "x"
@@ -412,13 +465,18 @@ class TestStatusEndpointSteps:
     @pytest.mark.asyncio
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
-    async def test_running_source_returns_steps(self, mock_get, mock_repo_query, client):
+    async def test_running_source_returns_steps(
+        self, mock_get, mock_repo_query, client
+    ):
         source = _source_mock()
         mock_get.return_value = source
         command_row = {
             "id": "command:1",
             "status": "running",
-            "args": {"embed": True, "transformations": ["transformation:a", "transformation:b"]},
+            "args": {
+                "embed": True,
+                "transformations": ["transformation:a", "transformation:b"],
+            },
             "error_message": None,
             "result": None,
         }

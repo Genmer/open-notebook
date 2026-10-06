@@ -377,9 +377,7 @@ async def _clear_section_state(command_id: str) -> None:
     try:
         await repo_query("DELETE $target", {"target": _section_state_rid(command_id)})
     except Exception as e:
-        logger.warning(
-            f"Failed to delete section_analysis_state:{command_id}: {e}"
-        )
+        logger.warning(f"Failed to delete section_analysis_state:{command_id}: {e}")
 
 
 @command(
@@ -393,7 +391,9 @@ async def _clear_section_state(command_id: str) -> None:
         "stop_on": [ValueError, NotFoundError],
     },
 )
-async def analyze_section_command(input_data: AnalyzeSectionInput) -> AnalyzeSectionOutput:
+async def analyze_section_command(
+    input_data: AnalyzeSectionInput,
+) -> AnalyzeSectionOutput:
     """
     Analyze one document section with the transformation model (the PDF
     outline "AI analysis" button). Model output streams token-by-token into

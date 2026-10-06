@@ -18,7 +18,10 @@ async def test_list_tasks_shapes_rows_and_resolves_targets(repo_query):
             {
                 "id": "command:a",
                 "name": "run_transformation",
-                "args": {"source_id": "source:s1", "transformation_id": "transformation:t1"},
+                "args": {
+                    "source_id": "source:s1",
+                    "transformation_id": "transformation:t1",
+                },
                 "status": "completed",
                 "error_message": None,
                 "created": "2026-09-26T10:00:00Z",
@@ -195,9 +198,7 @@ async def test_list_tasks_count_query_reuses_filters(repo_query):
         [],
     ]
 
-    await list_tasks(
-        name="embed_source", status="new,running", limit=50, offset=100
-    )
+    await list_tasks(name="embed_source", status="new,running", limit=50, offset=100)
 
     count_query = repo_query.await_args_list[1].args[0]
     count_params = repo_query.await_args_list[1].args[1]
@@ -212,9 +213,14 @@ async def test_list_tasks_count_query_reuses_filters(repo_query):
 @patch("api.task_service.repo_query", new_callable=AsyncMock)
 @pytest.mark.parametrize(
     "count_result",
-    [pytest.param(RuntimeError("count down"), id="error"), pytest.param([], id="empty")],
+    [
+        pytest.param(RuntimeError("count down"), id="error"),
+        pytest.param([], id="empty"),
+    ],
 )
-async def test_list_tasks_total_falls_back_to_offset_plus_rows(repo_query, count_result):
+async def test_list_tasks_total_falls_back_to_offset_plus_rows(
+    repo_query, count_result
+):
     """Without a usable count, total must include the skipped offset, not just this page."""
     rows: list[dict[str, Any]] = [
         {
@@ -381,7 +387,9 @@ async def test_cancel_command_job_conflict_when_finish_races_the_update(repo_que
 @pytest.mark.asyncio
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 @pytest.mark.parametrize("status", ["completed", "failed", "canceled"])
-async def test_cancel_command_job_conflicts_for_each_terminal_status(repo_query, status):
+async def test_cancel_command_job_conflicts_for_each_terminal_status(
+    repo_query, status
+):
     from api.command_service import CommandService
     from open_notebook.exceptions import ConflictError
 
@@ -405,9 +413,7 @@ async def test_cancel_command_job_propagates_db_errors(repo_query):
 
 
 @pytest.mark.asyncio
-@patch(
-    "api.command_service.CommandService.submit_command_job", new_callable=AsyncMock
-)
+@patch("api.command_service.CommandService.submit_command_job", new_callable=AsyncMock)
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 async def test_retry_command_job_replays_original_args(repo_query, submit):
     from surrealdb import RecordID
@@ -534,9 +540,7 @@ def test_retry_command_endpoint_400_for_malformed_job_id(client):
 
 
 @pytest.mark.asyncio
-@patch(
-    "api.command_service.CommandService.submit_command_job", new_callable=AsyncMock
-)
+@patch("api.command_service.CommandService.submit_command_job", new_callable=AsyncMock)
 @patch("api.command_service._recovery_status", new_callable=AsyncMock)
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 async def test_retry_command_job_skips_when_recovered(repo_query, recovery, submit):
@@ -550,9 +554,7 @@ async def test_retry_command_job_skips_when_recovered(repo_query, recovery, subm
         "detail": "source now completed, 48/48 chunks",
     }
 
-    result = await CommandService.retry_command_job(
-        "command:old1", check_recovery=True
-    )
+    result = await CommandService.retry_command_job("command:old1", check_recovery=True)
 
     assert result == {
         "job_id": None,
@@ -573,9 +575,7 @@ async def test_retry_command_job_skips_when_recovered(repo_query, recovery, subm
         ),
     ],
 )
-@patch(
-    "api.command_service.CommandService.submit_command_job", new_callable=AsyncMock
-)
+@patch("api.command_service.CommandService.submit_command_job", new_callable=AsyncMock)
 @patch("api.command_service._recovery_status", new_callable=AsyncMock)
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 async def test_retry_command_job_replays_unless_recovered(
@@ -590,9 +590,7 @@ async def test_retry_command_job_replays_unless_recovered(
     recovery.return_value = recovery_result
     submit.return_value = "command:new1"
 
-    result = await CommandService.retry_command_job(
-        "command:old1", check_recovery=True
-    )
+    result = await CommandService.retry_command_job("command:old1", check_recovery=True)
 
     assert result["status"] == "submitted"
     assert result["job_id"] == "command:new1"
@@ -602,9 +600,7 @@ async def test_retry_command_job_replays_unless_recovered(
 
 
 @pytest.mark.asyncio
-@patch(
-    "api.command_service.CommandService.submit_command_job", new_callable=AsyncMock
-)
+@patch("api.command_service.CommandService.submit_command_job", new_callable=AsyncMock)
 @patch("api.command_service._recovery_status", new_callable=AsyncMock)
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 async def test_retry_command_job_without_check_recovery_skips_lookup(
@@ -626,9 +622,7 @@ async def test_retry_command_job_without_check_recovery_skips_lookup(
 
 
 @pytest.mark.asyncio
-@patch(
-    "api.command_service.CommandService.submit_command_job", new_callable=AsyncMock
-)
+@patch("api.command_service.CommandService.submit_command_job", new_callable=AsyncMock)
 @patch("api.explain_service.repo_query", new_callable=AsyncMock)
 @patch("api.command_service.repo_query", new_callable=AsyncMock)
 async def test_retry_command_job_precheck_uses_real_recovery_status(
@@ -644,9 +638,7 @@ async def test_retry_command_job_precheck_uses_real_recovery_status(
         {"embedding_status": "completed", "embedded_chunks": 48, "total_chunks": 48}
     ]
 
-    result = await CommandService.retry_command_job(
-        "command:old1", check_recovery=True
-    )
+    result = await CommandService.retry_command_job("command:old1", check_recovery=True)
 
     assert result["status"] == "skipped_recovered"
     assert result["job_id"] is None
@@ -817,9 +809,7 @@ async def test_get_live_progress_service_returns_complete_telemetry(repo_query):
     episode_row = {
         "id": "podcast_episode:e1",
         "transcript": {
-            "transcript": [
-                {"speaker": "Host", "text": "Welcome to AI Future podcast!"}
-            ]
+            "transcript": [{"speaker": "Host", "text": "Welcome to AI Future podcast!"}]
         },
         "outline": {},
         "audio_file": None,
@@ -889,10 +879,30 @@ def test_get_live_progress_endpoint_200(client):
         "stage_index": 1,
         "total_stages": 4,
         "stages": [
-            {"id": "prep", "title": "提取分析", "desc": "检索笔记", "status": "completed"},
-            {"id": "prompt", "title": "模型推理", "desc": "生成工件", "status": "active"},
-            {"id": "validate", "title": "格式校验", "desc": "格式检验", "status": "pending"},
-            {"id": "save", "title": "沉淀笔记", "desc": "写入笔记", "status": "pending"},
+            {
+                "id": "prep",
+                "title": "提取分析",
+                "desc": "检索笔记",
+                "status": "completed",
+            },
+            {
+                "id": "prompt",
+                "title": "模型推理",
+                "desc": "生成工件",
+                "status": "active",
+            },
+            {
+                "id": "validate",
+                "title": "格式校验",
+                "desc": "格式检验",
+                "status": "pending",
+            },
+            {
+                "id": "save",
+                "title": "沉淀笔记",
+                "desc": "写入笔记",
+                "status": "pending",
+            },
         ],
         "percent": 45,
         "elapsed_seconds": 12.4,
@@ -996,7 +1006,6 @@ def test_task_entry_and_progress_model_backward_compatibility():
     assert dumped["progress"]["token_count"] == 2100
 
 
-
 # ---------------------------------------------------------------------------
 # Section analysis (analyze_source_section) live progress
 # ---------------------------------------------------------------------------
@@ -1056,6 +1065,7 @@ async def test_section_analysis_live_progress_streams_tail(repo_query):
             }
         ],
     )
+
     async def _route(sql, params=None):
         return await recorder(sql, params)
 
@@ -1086,6 +1096,7 @@ async def test_section_analysis_live_progress_completed_skips_state(repo_query):
     from api.task_service import get_live_progress
 
     recorder = SectionLiveRecorder(_section_command_row(status="completed"))
+
     async def _route(sql, params=None):
         return await recorder(sql, params)
 

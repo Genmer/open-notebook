@@ -148,7 +148,9 @@ class TestNoteList:
         notebook.get_notes = AsyncMock(return_value=[self._mock_note()])
         mock_notebook_cls.get = AsyncMock(return_value=notebook)
 
-        response = client.get("/api/notes?notebook_id=notebook:abc&include_content=true")
+        response = client.get(
+            "/api/notes?notebook_id=notebook:abc&include_content=true"
+        )
 
         assert response.status_code == 200
         notebook.get_notes.assert_awaited_once_with(include_content=True)

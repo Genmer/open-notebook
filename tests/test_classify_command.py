@@ -48,13 +48,19 @@ class QueryRecorder:
     """Routes SQL text to canned results and records every write."""
 
     def __init__(self, source_rows=None, embedding_rows=None, view_rows=None):
-        self.source_rows = source_rows if source_rows is not None else [
-            _source_row(f"source:s{i}", title=f"Doc {i}") for i in range(1, 7)
-        ]
-        self.embedding_rows = embedding_rows if embedding_rows is not None else _embedding_rows()
-        self.view_rows = view_rows if view_rows is not None else [
-            {"id": VIEW_ID, "view_type": "ai_content"}
-        ]
+        self.source_rows = (
+            source_rows
+            if source_rows is not None
+            else [_source_row(f"source:s{i}", title=f"Doc {i}") for i in range(1, 7)]
+        )
+        self.embedding_rows = (
+            embedding_rows if embedding_rows is not None else _embedding_rows()
+        )
+        self.view_rows = (
+            view_rows
+            if view_rows is not None
+            else [{"id": VIEW_ID, "view_type": "ai_content"}]
+        )
         self.transactions = []
         self.progress_updates = []
         self.final_updates = []
@@ -96,7 +102,9 @@ class TestContentPipeline:
     async def test_valid_plan_persists_groups_in_one_transaction(self):
         recorder = QueryRecorder()
         plan = _plan(
-            ClusterAssignment(name="Direction", cluster_ids=["0", "1", "2"], extra_source_ids=[])
+            ClusterAssignment(
+                name="Direction", cluster_ids=["0", "1", "2"], extra_source_ids=[]
+            )
         )
         llm = AsyncMock(return_value=plan)
 
@@ -136,7 +144,9 @@ class TestContentPipeline:
         llm = AsyncMock(
             return_value=_plan(
                 ClusterAssignment(
-                    name="Everything", cluster_ids=[], extra_source_ids=[f"source:s{i}" for i in range(1, 7)]
+                    name="Everything",
+                    cluster_ids=[],
+                    extra_source_ids=[f"source:s{i}" for i in range(1, 7)],
                 )
             )
         )
@@ -164,7 +174,9 @@ class TestContentPipeline:
         llm = AsyncMock(
             return_value=_plan(
                 ClusterAssignment(
-                    name="All", cluster_ids=["0", "1", "2"], extra_source_ids=["source:s7"]
+                    name="All",
+                    cluster_ids=["0", "1", "2"],
+                    extra_source_ids=["source:s7"],
                 )
             )
         )
@@ -181,7 +193,11 @@ class TestLlmFailurePaths:
     @pytest.mark.asyncio
     async def test_parse_failure_retries_once_with_feedback_then_succeeds(self):
         recorder = QueryRecorder()
-        plan = _plan(ClusterAssignment(name="G", cluster_ids=["0", "1", "2"], extra_source_ids=[]))
+        plan = _plan(
+            ClusterAssignment(
+                name="G", cluster_ids=["0", "1", "2"], extra_source_ids=[]
+            )
+        )
         llm = AsyncMock(side_effect=[OutputParserException("bad json"), plan])
 
         output = await _run_command(recorder, llm)
@@ -222,7 +238,9 @@ class TestLlmFailurePaths:
     @pytest.mark.asyncio
     async def test_terminal_failure_progress_even_after_partial_work(self):
         recorder = QueryRecorder()
-        llm = AsyncMock(side_effect=[OutputParserException("x"), OutputParserException("y")])
+        llm = AsyncMock(
+            side_effect=[OutputParserException("x"), OutputParserException("y")]
+        )
 
         with pytest.raises(ValueError):
             await _run_command(recorder, llm)
@@ -238,7 +256,11 @@ class TestOverwriteRerun:
     async def test_second_run_replaces_groups(self):
         recorder = QueryRecorder()
         llm = AsyncMock(
-            return_value=_plan(ClusterAssignment(name="G", cluster_ids=["0", "1", "2"], extra_source_ids=[]))
+            return_value=_plan(
+                ClusterAssignment(
+                    name="G", cluster_ids=["0", "1", "2"], extra_source_ids=[]
+                )
+            )
         )
 
         await _run_command(recorder, llm)
@@ -257,7 +279,9 @@ class TestOverwriteRerun:
 
 class TestTitlePipeline:
     @pytest.mark.asyncio
-    async def test_batches_share_group_names_and_untitled_count_unclassified(self, monkeypatch):
+    async def test_batches_share_group_names_and_untitled_count_unclassified(
+        self, monkeypatch
+    ):
         import commands.classification_commands as mod
 
         monkeypatch.setattr(mod, "_TITLE_BATCH_SIZE", 2)
@@ -275,11 +299,21 @@ class TestTitlePipeline:
         async def llm_side_effect(template, data, view_id):
             if len(data["items"]) and data["items"][0]["source_id"] == "source:s1":
                 assert data["existing_groups"] == []
-                return _plan(ClusterAssignment(name="Papers", cluster_ids=[], extra_source_ids=["source:s1", "source:s2"]))
+                return _plan(
+                    ClusterAssignment(
+                        name="Papers",
+                        cluster_ids=[],
+                        extra_source_ids=["source:s1", "source:s2"],
+                    )
+                )
             assert data["existing_groups"] == ["Papers"]
             return _plan(
-                ClusterAssignment(name="Papers", cluster_ids=[], extra_source_ids=["source:s3"]),
-                ClusterAssignment(name="Reports", cluster_ids=[], extra_source_ids=["source:s4"]),
+                ClusterAssignment(
+                    name="Papers", cluster_ids=[], extra_source_ids=["source:s3"]
+                ),
+                ClusterAssignment(
+                    name="Reports", cluster_ids=[], extra_source_ids=["source:s4"]
+                ),
             )
 
         llm = AsyncMock(side_effect=llm_side_effect)
@@ -299,7 +333,9 @@ class TestTitlePipeline:
         assert output.unclassified == 1
 
         sql, params = recorder.transactions[0]
-        creates = re.findall(r"CREATE (source_group:\S+) CONTENT \{ name: \$(\w+),", sql)
+        creates = re.findall(
+            r"CREATE (source_group:\S+) CONTENT \{ name: \$(\w+),", sql
+        )
         id_to_name = {gid: params[param] for gid, param in creates}
         assert set(id_to_name.values()) == {"Papers", "Reports"}
         counts = {

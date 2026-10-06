@@ -62,7 +62,9 @@ async def test_collect_insight_jobs_swallows_query_errors(repo_query):
 
 @pytest.mark.asyncio
 @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
-async def test_collect_insight_jobs_skips_title_lookup_without_transformations(repo_query):
+async def test_collect_insight_jobs_skips_title_lookup_without_transformations(
+    repo_query,
+):
     repo_query.return_value = []
 
     jobs = await _collect_insight_jobs("source:s1")

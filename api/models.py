@@ -317,7 +317,9 @@ class TextAnchorPayload(BaseModel):
 
 class SourceAnnotationCreate(BaseModel):
     source_id: str = Field(..., description="Source the annotation belongs to")
-    color: str = Field(..., description="Semantic color token (gold/fern/plum/slate/clay)")
+    color: str = Field(
+        ..., description="Semantic color token (gold/fern/plum/slate/clay)"
+    )
     line_style: str = Field("wavy", description="wavy | straight")
     body: Optional[str] = Field(None, description="Annotation text (optional)")
     display_position: Optional[str] = Field(
@@ -527,7 +529,9 @@ class CopyToGroupResponse(BaseModel):
 
 
 class ClassifyViewResponse(BaseModel):
-    command_id: str = Field(..., description="Job id to poll via GET /api/commands/jobs/{id}")
+    command_id: str = Field(
+        ..., description="Job id to poll via GET /api/commands/jobs/{id}"
+    )
 
 
 # Settings API models
@@ -747,11 +751,13 @@ class SourceSectionAnalysisRequest(BaseModel):
         ..., max_length=300, description="Title of the section to analyze"
     )
     section_text: str = Field(..., description="Extracted text of the section")
-    page_start: Optional[int] = Field(None, description="1-based first page of the section")
-    page_end: Optional[int] = Field(None, description="1-based last page of the section")
-    locale: str = Field(
-        "en-US", description="UI locale for the answer language"
+    page_start: Optional[int] = Field(
+        None, description="1-based first page of the section"
     )
+    page_end: Optional[int] = Field(
+        None, description="1-based last page of the section"
+    )
+    locale: str = Field("en-US", description="UI locale for the answer language")
 
 
 class SourceSectionAnalysisResponse(BaseModel):
@@ -1439,13 +1445,17 @@ class StorageExportEstimate(BaseModel):
 
 class StorageSummaryResponse(BaseModel):
     database: Dict[str, Any] = Field(
-        ..., description="Per-table estimates keyed by table name plus estimated_bytes total"
+        ...,
+        description="Per-table estimates keyed by table name plus estimated_bytes total",
     )
     disk: Dict[str, Any] = Field(
-        ..., description="Real on-disk usage: root path, total_bytes, per-directory sections"
+        ...,
+        description="Real on-disk usage: root path, total_bytes, per-directory sections",
     )
     export_estimate: StorageExportEstimate
-    totals: Dict[str, int] = Field(..., description="database_bytes and disk_bytes roll-ups")
+    totals: Dict[str, int] = Field(
+        ..., description="database_bytes and disk_bytes roll-ups"
+    )
 
 
 class ContextTreeSource(BaseModel):
@@ -1496,13 +1506,14 @@ class WebSearchResponse(BaseModel):
     results: List[WebSearchItem]
 
 
-
 # Agents API models (PDR-004)
 class AgentCreate(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     name: str = Field(..., max_length=100, description="Unique agent name")
-    system_prompt: str = Field(..., description="Persona injected into the chat system prompt")
+    system_prompt: str = Field(
+        ..., description="Persona injected into the chat system prompt"
+    )
     description: Optional[str] = Field(None, max_length=500)
     model: Optional[str] = Field(None, description="Model record id, e.g. 'model:abc'")
     temperature: Optional[float] = Field(None, ge=0, le=2)
@@ -1552,7 +1563,9 @@ class PolishPromptRequest(BaseModel):
         None, max_length=100, description="Optional intended agent name for context"
     )
     description: Optional[str] = Field(
-        None, max_length=500, description="Optional intended agent description for context"
+        None,
+        max_length=500,
+        description="Optional intended agent description for context",
     )
 
 

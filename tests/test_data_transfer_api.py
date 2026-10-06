@@ -36,7 +36,12 @@ def _state_row(
             "id": f"data_transfer_state:{kind}",
             "kind": kind,
             "command_id": command_id,
-            "progress": {"stage": stage, "percent": percent, "message": "msg", "error": error},
+            "progress": {
+                "stage": stage,
+                "percent": percent,
+                "message": "msg",
+                "error": error,
+            },
             "result": result,
         }
     ]
@@ -45,14 +50,14 @@ def _state_row(
 class TestStartExport:
     @pytest.mark.asyncio
     async def test_start_export_returns_command_id(self, client):
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc.CommandService,
-            "submit_command_job",
-            new=AsyncMock(return_value="command:abc"),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(
+                svc.CommandService,
+                "submit_command_job",
+                new=AsyncMock(return_value="command:abc"),
+            ),
         ):
             response = client.post("/api/data-transfer/export")
 
@@ -77,21 +82,31 @@ class TestStartExport:
     @pytest.mark.parametrize(
         ("scope", "include_models", "expected_args"),
         [
-            ("models", False, {"include_files": False, "include_models": False, "scope": "models"}),
-            ("full", True, {"include_files": True, "include_models": True, "scope": "full"}),
-            ("full", False, {"include_files": True, "include_models": False, "scope": "full"}),
+            (
+                "models",
+                False,
+                {"include_files": False, "include_models": False, "scope": "models"},
+            ),
+            (
+                "full",
+                True,
+                {"include_files": True, "include_models": True, "scope": "full"},
+            ),
+            (
+                "full",
+                False,
+                {"include_files": True, "include_models": False, "scope": "full"},
+            ),
         ],
     )
     async def test_start_export_submits_scope_args(
         self, scope, include_models, expected_args
     ):
         submit = AsyncMock(return_value="command:e1")
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc.CommandService, "submit_command_job", new=submit
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(svc.CommandService, "submit_command_job", new=submit),
         ):
             await svc.start_export(scope, include_models)
 
@@ -100,16 +115,18 @@ class TestStartExport:
     @pytest.mark.asyncio
     async def test_start_export_writes_failed_state_on_submit_error(self, client):
         states = []
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc,
-            "set_transfer_state",
-            new=AsyncMock(side_effect=lambda *a, **k: states.append((a, k))),
-        ), patch.object(
-            svc.CommandService,
-            "submit_command_job",
-            new=AsyncMock(side_effect=RuntimeError("boom")),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(
+                svc,
+                "set_transfer_state",
+                new=AsyncMock(side_effect=lambda *a, **k: states.append((a, k))),
+            ),
+            patch.object(
+                svc.CommandService,
+                "submit_command_job",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
+            ),
         ):
             with pytest.raises(RuntimeError):
                 await svc.start_export()
@@ -135,12 +152,13 @@ class TestExportStatus:
             command_id="command:abc",
             result=None,
         )
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": "running"}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": "running"}),
+            ),
         ):
             response = client.get("/api/data-transfer/export/status")
 
@@ -154,12 +172,13 @@ class TestExportStatus:
     @pytest.mark.asyncio
     async def test_status_queued_when_command_is_new(self, client):
         state = _state_row("export", stage="queued", percent=0)
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": "new"}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": "new"}),
+            ),
         ):
             response = client.get("/api/data-transfer/export/status")
 
@@ -170,12 +189,13 @@ class TestExportStatus:
         # get_command_status returns surreal_commands' str-Enum; str() on it
         # is "CommandStatus.COMPLETED", not the wire value.
         state = _state_row("import", stage="done", result={"imported": {}})
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": CommandStatus.COMPLETED}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": CommandStatus.COMPLETED}),
+            ),
         ):
             response = client.get("/api/data-transfer/import/status")
 
@@ -185,12 +205,13 @@ class TestExportStatus:
     @pytest.mark.asyncio
     async def test_status_maps_canceled_command_to_failed(self, client):
         state = _state_row("export", stage="done")
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": CommandStatus.CANCELED}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": CommandStatus.CANCELED}),
+            ),
         ):
             response = client.get("/api/data-transfer/export/status")
 
@@ -201,12 +222,13 @@ class TestExportStatus:
         # A vanished command record yields status="unknown"; the state record's
         # stage must drive the response instead of leaking it.
         state = _state_row("export", stage="done", command_id="command:gone")
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": "unknown"}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": "unknown"}),
+            ),
         ):
             response = client.get("/api/data-transfer/export/status")
 
@@ -225,12 +247,13 @@ class TestExportDownload:
                 "package_filename": package.name,
             },
         )
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": "completed"}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": "completed"}),
+            ),
         ):
             response = client.get("/api/data-transfer/export/download")
 
@@ -241,9 +264,7 @@ class TestExportDownload:
 
     @pytest.mark.asyncio
     async def test_download_404_without_package(self, client):
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ):
+        with patch.object(svc, "repo_query", new=AsyncMock(return_value=[])):
             response = client.get("/api/data-transfer/export/download")
 
         assert response.status_code == 404
@@ -254,21 +275,24 @@ class TestImport:
     async def test_upload_import_returns_scan(self, client):
         from api.models import ImportScanResponse
 
-        with patch.object(
-            svc,
-            "save_import_upload",
-            new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
-        ), patch.object(
-            svc,
-            "scan_import_package",
-            new=AsyncMock(
-                return_value=ImportScanResponse(
-                    scan_id="scan-1",
-                    package_type="full",
-                    format_version=2,
-                    counts={},
-                    conflicts=[],
-                )
+        with (
+            patch.object(
+                svc,
+                "save_import_upload",
+                new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
+            ),
+            patch.object(
+                svc,
+                "scan_import_package",
+                new=AsyncMock(
+                    return_value=ImportScanResponse(
+                        scan_id="scan-1",
+                        package_type="full",
+                        format_version=2,
+                        counts={},
+                        conflicts=[],
+                    )
+                ),
             ),
         ):
             response = client.post(
@@ -283,17 +307,20 @@ class TestImport:
 
     @pytest.mark.asyncio
     async def test_upload_import_rejects_concurrent_job(self, client):
-        with patch.object(
-            svc,
-            "save_import_upload",
-            new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
-        ), patch.object(
-            svc,
-            "scan_import_package",
-            new=AsyncMock(
-                side_effect=svc.InvalidInputError(
-                    "A data import job is already queued or running"
-                )
+        with (
+            patch.object(
+                svc,
+                "save_import_upload",
+                new=AsyncMock(return_value="/tmp/data/imports/pending_scan.zip"),
+            ),
+            patch.object(
+                svc,
+                "scan_import_package",
+                new=AsyncMock(
+                    side_effect=svc.InvalidInputError(
+                        "A data import job is already queued or running"
+                    )
+                ),
             ),
         ):
             response = client.post(
@@ -315,12 +342,13 @@ class TestImport:
                 "warnings": ["w"],
             },
         )
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc.CommandService,
-            "get_command_status",
-            new=AsyncMock(return_value={"status": "completed"}),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(
+                svc.CommandService,
+                "get_command_status",
+                new=AsyncMock(return_value={"status": "completed"}),
+            ),
         ):
             response = client.get("/api/data-transfer/import/status")
 
@@ -366,14 +394,13 @@ class TestDeleteExportPackage:
         package = exports / "pkg.zip"
         package.write_bytes(b"zip")
         state = _state_row(
-            "export", result={"package_path": str(package), "package_filename": "pkg.zip"}
+            "export",
+            result={"package_path": str(package), "package_filename": "pkg.zip"},
         )
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc, "EXPORTS_FOLDER", new=str(exports)
-        ), patch.object(
-            svc, "repo_upsert", new=AsyncMock()
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(svc, "EXPORTS_FOLDER", new=str(exports)),
+            patch.object(svc, "repo_upsert", new=AsyncMock()),
         ):
             deleted = await svc.delete_export_package()
 
@@ -388,12 +415,10 @@ class TestDeleteExportPackage:
             "export",
             result={"package_path": str(outside), "package_filename": "outside.zip"},
         )
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=state)
-        ), patch.object(
-            svc, "EXPORTS_FOLDER", new=str(tmp_path / "exports")
-        ), patch.object(
-            svc, "repo_upsert", new=AsyncMock()
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=state)),
+            patch.object(svc, "EXPORTS_FOLDER", new=str(tmp_path / "exports")),
+            patch.object(svc, "repo_upsert", new=AsyncMock()),
         ):
             deleted = await svc.delete_export_package()
 

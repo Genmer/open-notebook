@@ -86,7 +86,9 @@ class TestCleanSourceText:
         )
 
     def test_repeated_long_lines_are_kept(self):
-        long_line = "这一段内容在文档中出现了三次，但足够长，属于正文引用而非页眉页脚水印。"
+        long_line = (
+            "这一段内容在文档中出现了三次，但足够长，属于正文引用而非页眉页脚水印。"
+        )
         text = "\n".join([long_line, "独立的一行。", long_line, "另一行。", long_line])
         assert clean_source_text(text).count(long_line) == 3
 
@@ -131,9 +133,7 @@ class TestEmbedSourceUsesCleanedText:
             patch("commands.embedding_commands.repo_query", new=AsyncMock()),
             patch("commands.embedding_commands.repo_insert", new=AsyncMock()),
             patch("commands.embedding_commands.chunk_text", new=chunk_text),
-            patch(
-                "commands.embedding_commands.iter_embedding_batches", new=_one_batch
-            ),
+            patch("commands.embedding_commands.iter_embedding_batches", new=_one_batch),
         ):
             output = await embed_source_command(EmbedSourceInput(source_id="source:1"))
 

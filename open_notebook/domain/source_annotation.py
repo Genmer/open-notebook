@@ -57,7 +57,9 @@ def _validate_text_anchor_dict(value: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(quote, str) or not quote.strip():
         raise InvalidInputError("text_anchor.quote must be a non-empty string")
     if len(quote) > QUOTE_MAX_CHARS:
-        raise InvalidInputError(f"text_anchor.quote exceeds {QUOTE_MAX_CHARS} characters")
+        raise InvalidInputError(
+            f"text_anchor.quote exceeds {QUOTE_MAX_CHARS} characters"
+        )
     return value
 
 
@@ -129,13 +131,9 @@ class SourceAnnotation(ObjectModel):
                     "display_position requires a body (nothing to position)"
                 )
         if self.body and len(self.body) > BODY_MAX_CHARS:
-            raise InvalidInputError(
-                f"body exceeds {BODY_MAX_CHARS} characters"
-            )
+            raise InvalidInputError(f"body exceeds {BODY_MAX_CHARS} characters")
         if self.quote and len(self.quote) > QUOTE_MAX_CHARS:
-            raise InvalidInputError(
-                f"quote exceeds {QUOTE_MAX_CHARS} characters"
-            )
+            raise InvalidInputError(f"quote exceeds {QUOTE_MAX_CHARS} characters")
         # Flat convenience fields stay consistent with the anchor payloads.
         if self.pdf_anchor:
             self.page = int(self.pdf_anchor["page"])

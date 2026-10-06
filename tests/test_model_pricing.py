@@ -31,8 +31,16 @@ PRICE_DB = {
     "dashscope/qwen-flash": {
         "litellm_provider": "dashscope",
         "tiered_pricing": [
-            {"input_cost_per_token": 5e-08, "output_cost_per_token": 4e-07, "range": [0, 256000]},
-            {"input_cost_per_token": 2.5e-07, "output_cost_per_token": 2e-06, "range": [256000, 1000000]},
+            {
+                "input_cost_per_token": 5e-08,
+                "output_cost_per_token": 4e-07,
+                "range": [0, 256000],
+            },
+            {
+                "input_cost_per_token": 2.5e-07,
+                "output_cost_per_token": 2e-06,
+                "range": [256000, 1000000],
+            },
         ],
     },
     "llama3:free": {"input_cost_per_token": 0.0, "output_cost_per_token": 0.0},
@@ -68,7 +76,9 @@ class TestEntryCosts:
         assert _entry_costs(PRICE_DB["input-only-model"]) == (1.0, 0.0)
 
     def test_tiered_pricing_uses_first_tier(self):
-        assert _entry_costs(PRICE_DB["dashscope/qwen-flash"]) == pytest.approx((0.05, 0.4))
+        assert _entry_costs(PRICE_DB["dashscope/qwen-flash"]) == pytest.approx(
+            (0.05, 0.4)
+        )
 
     def test_entry_without_prices_is_none(self):
         assert _entry_costs(PRICE_DB["no-prices"]) is None
@@ -184,8 +194,14 @@ class TestLiteLLMFallbackAnyProvider:
 
     def test_ties_resolve_alphabetically(self):
         db = {
-            "zeta/gpt-4o": {"input_cost_per_token": 1e-06, "output_cost_per_token": 2e-06},
-            "alpha/gpt-4o": {"input_cost_per_token": 3e-06, "output_cost_per_token": 4e-06},
+            "zeta/gpt-4o": {
+                "input_cost_per_token": 1e-06,
+                "output_cost_per_token": 2e-06,
+            },
+            "alpha/gpt-4o": {
+                "input_cost_per_token": 3e-06,
+                "output_cost_per_token": 4e-06,
+            },
         }
         matched = match_price_entry_any_provider(db, "gpt-4o")
         assert matched is not None
@@ -205,7 +221,9 @@ class TestFetchModelPricesFallbackChain:
 
     def test_official_fallback_for_generic_provider(self, local_db):
         # mimo filed under "openai": no LiteLLM entry, official table by id.
-        result = asyncio.run(model_pricing.fetch_model_prices("mimo-v2.6-pro", "openai"))
+        result = asyncio.run(
+            model_pricing.fetch_model_prices("mimo-v2.6-pro", "openai")
+        )
         assert result is not None
         assert result["price_source"] == "official"
         assert result["matched_key"] == "xiaomi_mimo:mimo-v2.6-pro"

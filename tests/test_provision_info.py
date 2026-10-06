@@ -18,7 +18,9 @@ from open_notebook.ai.provision import (
 from open_notebook.exceptions import ConfigurationError
 
 
-def _fake_esperanto_model(name: str = "test-model", provider: str = "openai") -> MagicMock:
+def _fake_esperanto_model(
+    name: str = "test-model", provider: str = "openai"
+) -> MagicMock:
     model = MagicMock(spec=LanguageModel)
     model.model_name = name
     model.provider = provider

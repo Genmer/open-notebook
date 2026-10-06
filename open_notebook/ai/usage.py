@@ -32,7 +32,9 @@ def _first_int(source: Any, keys: tuple) -> Optional[int]:
     return None
 
 
-def extract_token_usage(ai_message: Any) -> tuple[Optional[int], Optional[int], Optional[int]]:
+def extract_token_usage(
+    ai_message: Any,
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
     """Pull (input, output, total) tokens from an AI message, or (None, None, None)."""
     candidates = []
     usage_metadata = getattr(ai_message, "usage_metadata", None)
@@ -48,7 +50,11 @@ def extract_token_usage(ai_message: Any) -> tuple[Optional[int], Optional[int], 
         input_tokens = _first_int(candidate, _INPUT_TOKEN_KEYS)
         output_tokens = _first_int(candidate, _OUTPUT_TOKEN_KEYS)
         total_tokens = _first_int(candidate, _TOTAL_TOKEN_KEYS)
-        if input_tokens is not None or output_tokens is not None or total_tokens is not None:
+        if (
+            input_tokens is not None
+            or output_tokens is not None
+            or total_tokens is not None
+        ):
             return input_tokens, output_tokens, total_tokens
     return None, None, None
 
@@ -121,6 +127,7 @@ async def record_llm_usage(
 def record_llm_usage_sync(**kwargs) -> None:
     """Fire-and-forget variant for sync graph nodes: runs the async recorder on
     a daemon thread with its own event loop so the caller never blocks."""
+
     def _run() -> None:
         try:
             asyncio.run(record_llm_usage(**kwargs))

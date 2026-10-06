@@ -120,9 +120,7 @@ async def get_usage_summary(
     prev_from = from_ts - timedelta(days=days)
     vars = _vars(from_ts, call_type, prev_from)
     day_filter = _day_filter(call_type)
-    local_day = (
-        f'time::format({_local_day_expr(tz_offset)}, "%Y-%m-%d") AS day'
-    )
+    local_day = f'time::format({_local_day_expr(tz_offset)}, "%Y-%m-%d") AS day'
 
     totals_rows = await repo_query(
         f"SELECT count() AS calls, {_TOKEN_SUMS} FROM model_usage {day_filter} GROUP ALL;",
