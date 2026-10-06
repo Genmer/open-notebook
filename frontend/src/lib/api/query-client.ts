@@ -48,6 +48,7 @@ export const QUERY_KEYS = {
   tasks: (params?: Record<string, unknown>) => ['tasks', params ?? {}] as const,
   dataTransferExport: ['data-transfer', 'export'] as const,
   dataTransferImport: ['data-transfer', 'import'] as const,
+  dataTransferExportEstimate: ['data-transfer', 'export', 'estimate'] as const,
   agents: ['agents'] as const,
   projectEnvs: (view: string) => ['project-envs', view] as const,
   projectEnv: (id: string) => ['project-envs', 'detail', id] as const,

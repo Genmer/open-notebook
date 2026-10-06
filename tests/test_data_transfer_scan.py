@@ -455,7 +455,8 @@ class TestExportBody:
 
         assert response.status_code == 200
         assert response.json()["command_id"] == "command:e1"
-        start.assert_awaited_once_with("models", False)
+        # notebook_ids is the third positional arg (empty for non-topic scopes).
+        start.assert_awaited_once_with("models", False, [])
 
     @pytest.mark.asyncio
     async def test_export_without_body_defaults_full(self, client):
@@ -471,7 +472,7 @@ class TestExportBody:
             response = client.post("/api/data-transfer/export")
 
         assert response.status_code == 200
-        start.assert_awaited_once_with("full", False)
+        start.assert_awaited_once_with("full", False, [])
 
 
 class TestMaskSecret:

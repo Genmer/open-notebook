@@ -85,17 +85,32 @@ class TestStartExport:
             (
                 "models",
                 False,
-                {"include_files": False, "include_models": False, "scope": "models"},
+                {
+                    "include_files": False,
+                    "include_models": False,
+                    "scope": "models",
+                    "notebook_ids": [],
+                },
             ),
             (
                 "full",
                 True,
-                {"include_files": True, "include_models": True, "scope": "full"},
+                {
+                    "include_files": True,
+                    "include_models": True,
+                    "scope": "full",
+                    "notebook_ids": [],
+                },
             ),
             (
                 "full",
                 False,
-                {"include_files": True, "include_models": False, "scope": "full"},
+                {
+                    "include_files": True,
+                    "include_models": False,
+                    "scope": "full",
+                    "notebook_ids": [],
+                },
             ),
         ],
     )
@@ -132,6 +147,127 @@ class TestStartExport:
                 await svc.start_export()
 
         assert states[-1][0][1] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_start_export_passes_notebook_ids(self):
+        submit = AsyncMock(return_value="command:e2")
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(svc.CommandService, "submit_command_job", new=submit),
+        ):
+            await svc.start_export(
+                "notebooks", include_models=False, notebook_ids=["notebook:n1"]
+            )
+
+        assert submit.call_args.args[2] == {
+            "include_files": True,
+            "include_models": False,
+            "scope": "notebooks",
+            "notebook_ids": ["notebook:n1"],
+        }
+
+
+class TestExportEstimate:
+    """GET /api/data-transfer/export/estimate — preview without the worker."""
+
+    @staticmethod
+    def _query_router(sql, params=None):
+        """Canned answers for every query shape estimate_export emits."""
+        if "SELECT VALUE in FROM reference" in sql:
+            return ["source:s1"]  # SELECT VALUE yields bare values
+        if "SELECT VALUE in FROM artifact" in sql:
+            return ["note:n1"]
+        if "SELECT VALUE count()" in sql:
+            table = sql.split("FROM ")[1].split()[0]
+            return [{"count": {"notebook": 2, "source": 5, "note": 4}.get(table, 0)}]
+        if sql.startswith("SELECT asset FROM source"):
+            return [
+                {"asset": {"file_path": __file__}}  # real file: stat-able
+            ]
+        if "string::len(full_text)" in sql:
+            return [{"l": 100}] * 25  # mean 100 chars
+        if sql.startswith("SELECT * FROM source_embedding"):
+            return [{"id": "source_embedding:e1", "source": "source:s1",
+                     "embedding": [0.1] * 8}] * 3
+        raise AssertionError(f"unexpected estimate query: {sql[:160]!r}")
+
+    @pytest.mark.asyncio
+    async def test_estimate_full_scope_counts_and_samples(self, client):
+        with patch.object(
+            svc, "repo_query", new=AsyncMock(side_effect=self._query_router)
+        ):
+            response = client.get("/api/data-transfer/export/estimate")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scope"] == "full"
+        assert body["notebooks"] == 2
+        assert body["sources"] == 5
+        assert body["notes"] == 4
+        assert body["insights"] == 0
+        assert body["embeddings"] == 0
+        assert body["asset_files"] == 1
+        assert body["asset_bytes"] > 0
+        # text_chars = mean(100) * source_count(5); embedding rows absent → 0
+        assert body["text_chars"] == 500
+        assert (
+            body["estimated_package_bytes"]
+            == body["asset_bytes"] + int(500 * 0.45)
+        )
+
+    @pytest.mark.asyncio
+    async def test_estimate_notebooks_scope_applies_filters(self, client):
+        seen = []
+
+        async def routed(sql, params=None):
+            seen.append(sql)
+            return self._query_router(sql, params)
+
+        with (
+            patch.object(
+                svc,
+                "_resolve_notebook_scope_ids",
+                new=AsyncMock(return_value=["notebook:n1"]),
+            ),
+            patch.object(svc, "repo_query", new=AsyncMock(side_effect=routed)),
+        ):
+            response = client.get(
+                "/api/data-transfer/export/estimate",
+                params={"scope": "notebooks", "notebook_ids": ["notebook:n1"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scope"] == "notebooks"
+        assert body["notebook_ids"] == ["notebook:n1"]
+        # The membership edges must be consulted to scope counts/bytes.
+        assert any("FROM reference WHERE out IN" in s for s in seen)
+        assert any("FROM artifact WHERE out IN" in s for s in seen)
+        assert any("FROM notebook WHERE id IN" in s for s in seen)
+        assert any("FROM source WHERE id IN" in s for s in seen)
+
+    @pytest.mark.asyncio
+    async def test_estimate_notebooks_without_ids_is_rejected(self, client):
+        with patch.object(
+            svc,
+            "_resolve_notebook_scope_ids",
+            new=AsyncMock(return_value=[]),
+        ):
+            response = client.get(
+                "/api/data-transfer/export/estimate", params={"scope": "notebooks"}
+            )
+
+        assert response.status_code == 400
+        assert "at least one notebook" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_estimate_rejects_unknown_scope_pattern(self, client):
+        response = client.get(
+            "/api/data-transfer/export/estimate", params={"scope": "models"}
+        )
+
+        assert response.status_code == 422
 
 
 class TestExportStatus:

@@ -310,7 +310,9 @@ export interface ProjectEnv {
   problems_solutions: string | null
   my_role: string | null
   scale: string | null
-  draft_content: Record<string, unknown> | null
+  // Absent until the mock drafting phase writes it (the serializer omits
+  // unset fields), hence optional in addition to nullable.
+  draft_content?: Record<string, unknown> | null
   status: ProjectEnvStatus | string
   ai_assisted: ProjectEnvAiAssisted | null
   time_adjusted: ProjectEnvTimeAdjusted | null

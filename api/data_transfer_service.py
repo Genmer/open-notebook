@@ -22,8 +22,10 @@ from api.models import (
 )
 from commands.data_transfer_commands import (
     MODEL_CONFIG_TABLES,
+    _notebook_scope_filters,
     _open_member,
     _parse_member_row,
+    _resolve_notebook_scope_ids,
     _validate_package,
     fingerprint_payload,
     mask_secret,
@@ -93,7 +95,11 @@ async def _reject_concurrent(command_name: str) -> None:
         raise InvalidInputError(f"A data {verb} job is already queued or running")
 
 
-async def start_export(scope: str = "full", include_models: bool = False) -> str:
+async def start_export(
+    scope: str = "full",
+    include_models: bool = False,
+    notebook_ids: Optional[List[str]] = None,
+) -> str:
     await _reject_concurrent("export_data")
     # Reset the state record so the UI immediately leaves the previous run's
     # terminal state.
@@ -106,12 +112,182 @@ async def start_export(scope: str = "full", include_models: bool = False) -> str
                 "include_files": scope != "models",
                 "include_models": include_models,
                 "scope": scope,
+                "notebook_ids": notebook_ids or [],
             },
         )
     except Exception as e:
         await set_transfer_state("export", "failed", 100, error=str(e)[:500])
         raise
     return command_id
+
+
+# Zip deflate compression observed on ndjson payloads of mixed CJK text and
+# float-array vectors; the estimate is a "~" figure, not a promise.
+_TEXT_COMPRESSION_RATIO = 0.45
+# Sample sizes for the averaging queries: enough for a stable mean, small
+# enough to keep the estimate endpoint snappy (vectors are wide rows).
+_CHARS_SAMPLE_ROWS = 25
+_EMBEDDING_SAMPLE_ROWS = 3
+
+
+async def _scope_where(
+    scope: str, notebook_ids: Optional[List[str]]
+) -> Dict[str, tuple]:
+    """WHERE clause per table for the requested export scope (estimate path).
+
+    Mirrors the command's notebook-scope filters so the preview matches what
+    the package would actually contain.
+    """
+    if scope != "notebooks":
+        return {}
+    selected = await _resolve_notebook_scope_ids(notebook_ids or [])
+    if not selected:
+        raise InvalidInputError(
+            "scope='notebooks' requires at least one notebook id"
+        )
+    selected_rids = [ensure_record_id(v) for v in selected]
+    # The notebook→source membership edge is `reference` (in=source,
+    # out=notebook — see Notebook.get_sources); SELECT VALUE yields bare
+    # values, not {in: ...} row objects.
+    sources = [
+        str(r)
+        for r in await repo_query(
+            "SELECT VALUE in FROM reference WHERE out IN $notebooks",
+            {"notebooks": selected_rids},
+        )
+        or []
+        if r is not None
+    ]
+    notes = [
+        str(r)
+        for r in await repo_query(
+            "SELECT VALUE in FROM artifact WHERE out IN $notebooks",
+            {"notebooks": selected_rids},
+        )
+        or []
+        if r is not None
+    ]
+    return _notebook_scope_filters(selected, sources, notes)
+
+
+async def _count_where(
+    table: str, where: tuple = ("", None)
+) -> int:
+    clause, params = where
+    # GROUP ALL is what makes count() aggregate: without it SurrealDB emits
+    # one {count: 1} per row and the first row lies (see _count_table).
+    sql = f"SELECT VALUE count() FROM {table}"
+    if clause:
+        sql += f" WHERE {clause}"
+    sql += " GROUP ALL"
+    rows = await repo_query(sql, params)
+    if not rows:
+        return 0
+    first = rows[0]
+    return int(first.get("count") or 0) if isinstance(first, dict) else int(first)
+
+
+async def estimate_export(
+    scope: str = "full", notebook_ids: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Preview of what an export would contain, without touching the worker.
+
+    Exact where cheap (counts, asset file sizes), sampled where the full scan
+    would cost more than the answer is worth (text chars, embedding row
+    bytes); the package-size figure is marked as an estimate on the wire.
+    """
+    filters = await _scope_where(scope, notebook_ids)
+
+    source_count = await _count_where("source", filters.get("source", ("", None)))
+    note_count = await _count_where("note", filters.get("note", ("", None)))
+    notebook_count = await _count_where(
+        "notebook", filters.get("notebook", ("", None))
+    )
+    insight_count = await _count_where(
+        "source_insight", filters.get("source_insight", ("", None))
+    )
+    embedding_count = await _count_where(
+        "source_embedding", filters.get("source_embedding", ("", None))
+    )
+
+    # Asset files: pull the asset column only, then stat the files that exist.
+    asset_where, asset_params = filters.get("source", ("", None))
+    asset_sql = "SELECT asset FROM source"
+    if asset_where:
+        asset_sql += f" WHERE {asset_where}"
+    asset_rows = await repo_query(asset_sql, asset_params) or []
+
+    def _total_asset_bytes() -> tuple:
+        total = 0
+        found = 0
+        for row in asset_rows:
+            asset = row.get("asset")
+            path = (
+                asset.get("file_path", "").strip()
+                if isinstance(asset, dict)
+                else ""
+            )
+            if not path:
+                continue
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                continue
+            found += 1
+            total += size
+        return total, found
+
+    asset_bytes, asset_files = await asyncio.to_thread(_total_asset_bytes)
+
+    # Text volume: mean sampled length x count (a full scan of every
+    # full_text would dominate the endpoint's runtime for large libraries).
+    chars_where, chars_params = filters.get("source", ("", None))
+    chars_sql = (
+        "SELECT string::len(full_text) AS l FROM source "
+        "WHERE full_text != NONE"
+    )
+    if chars_where:
+        chars_sql += f" AND {chars_where}"
+    chars_sql += f" LIMIT {_CHARS_SAMPLE_ROWS}"
+    sample_rows = await repo_query(chars_sql, chars_params) or []
+    mean_chars = (
+        sum(int(r.get("l") or 0) for r in sample_rows) / len(sample_rows)
+        if sample_rows
+        else 0.0
+    )
+    text_chars = int(mean_chars * source_count)
+
+    # Embedding ndjson bytes: sample a few full rows, serialize them the way
+    # the export writer does, average. Vectors dominate the row size.
+    emb_where, emb_params = filters.get("source_embedding", ("", None))
+    emb_sql = "SELECT * FROM source_embedding"
+    if emb_where:
+        emb_sql += f" WHERE {emb_where}"
+    emb_sql += f" LIMIT {_EMBEDDING_SAMPLE_ROWS}"
+    emb_rows = await repo_query(emb_sql, emb_params) or []
+    mean_emb_bytes = (
+        sum(len(json.dumps(r, default=str)) for r in emb_rows) / len(emb_rows)
+        if emb_rows
+        else 0.0
+    )
+    embedding_bytes = int(mean_emb_bytes * embedding_count)
+
+    text_bytes_estimate = int((text_chars + embedding_bytes) * _TEXT_COMPRESSION_RATIO)
+    estimated_package_bytes = asset_bytes + text_bytes_estimate
+
+    return {
+        "scope": scope,
+        "notebook_ids": notebook_ids or [],
+        "notebooks": notebook_count,
+        "sources": source_count,
+        "notes": note_count,
+        "insights": insight_count,
+        "embeddings": embedding_count,
+        "asset_files": asset_files,
+        "asset_bytes": asset_bytes,
+        "text_chars": text_chars,
+        "estimated_package_bytes": estimated_package_bytes,
+    }
 
 
 async def save_import_upload(upload_file: UploadFile) -> str:

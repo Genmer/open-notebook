@@ -246,6 +246,7 @@ class TransferRecorder:
     async def __call__(self, sql: str, params: Optional[Dict[str, Any]] = None):
         self.queries.append((sql, params))
         if sql.startswith("UPSERT $target SET"):
+            assert params is not None
             data: Dict[str, Any] = {
                 "kind": params["kind"],
                 "progress": params["progress"],
@@ -262,9 +263,35 @@ class TransferRecorder:
         if sql.startswith(("CREATE", "RELATE")) or sql.startswith("UPDATE $id SET"):
             self.writes.append((sql, params))
             return []
+        if sql.startswith("SELECT id FROM notebook WHERE id IN"):
+            # resolve_notebook_scope existence check
+            wanted = {str(v) for v in (params or {}).get("ids", [])}
+            return [
+                {"id": r["id"]}
+                for r in self.tables.get("notebook", [])
+                if str(r["id"]) in wanted
+            ]
+        if sql.startswith("SELECT VALUE in FROM reference WHERE out IN"):
+            # Membership lookup for scope="notebooks" (in=source, out=notebook);
+            # SELECT VALUE strips the field, SurrealDB returns bare values.
+            wanted = {str(v) for v in (params or {}).get("notebooks", [])}
+            return [
+                str(r["in"])
+                for r in self.tables.get("reference", [])
+                if str(r.get("out")) in wanted
+            ]
+        if sql.startswith("SELECT VALUE in FROM artifact WHERE out IN"):
+            wanted = {str(v) for v in (params or {}).get("notebooks", [])}
+            return [
+                str(r["in"])
+                for r in self.tables.get("artifact", [])
+                if str(r.get("out")) in wanted
+            ]
         if "SELECT VALUE count()" in sql:
             table = sql.split("FROM ")[1].split()[0]
-            return [{"count": len(self.tables.get(table, []))}]
+            rows = self.tables.get(table, [])
+            rows = _apply_scope_where(sql, params, rows)
+            return [{"count": len(rows)}]
         if sql in ("SELECT * FROM credential", "SELECT * FROM model"):
             table = sql[len("SELECT * FROM ") :]
             return list(self.tables.get(table, []))
@@ -293,6 +320,7 @@ class TransferRecorder:
         if match:
             _, table, where = match.groups()
             rows = list(self.tables.get(table, []))
+            rows = _apply_scope_where(sql, params, rows)
             if where and "id NOT IN $defaults" in where and params:
                 defaults = {str(d) for d in params.get("defaults", [])}
                 rows = [r for r in rows if str(r["id"]) not in defaults]
@@ -312,6 +340,28 @@ class TransferRecorder:
 
 
 _DEFAULTS = SimpleNamespace(default_embedding_model="model:emb")
+
+
+def _apply_scope_where(
+    sql: str, params: Optional[Dict[str, Any]], rows: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Apply the notebook-scope IN filters the notebook-scope export injects.
+
+    Handles "<field> IN $<param>" clauses for the field names the command
+    actually emits (id, source, in, out); other SQL passes through untouched.
+    """
+    for field, param in (
+        ("id", "notebooks"),
+        ("id", "sources"),
+        ("id", "notes"),
+        ("source", "sources"),
+        ("in", "sources"),
+        ("out", "notebooks"),
+    ):
+        if f"{field} IN ${param}" in sql and params and params.get(param):
+            wanted = {str(v) for v in params[param]}
+            rows = [r for r in rows if str(r.get(field)) in wanted]
+    return rows
 
 
 @pytest.fixture
@@ -351,6 +401,9 @@ async def _run_export(recorder, exports, uploads, include_files=True, **input_kw
             EXPORTS_FOLDER=exports,
             UPLOADS_FOLDER=uploads,
         ),
+        # resolve_notebook_scope lives in the domain module and queries
+        # through ITS namespace's repo_query, not the commands one.
+        patch("open_notebook.domain.notebook.repo_query", recorder),
         patch.object(
             dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
         ),
@@ -605,9 +658,10 @@ class TestExport:
             "provider_configs",
             "model_usage",
             "chat_session",
-            "refers_to",
             "command",
         ]
+        # refers_to left this list on purpose: it is only the chat-session
+        # citation edge now exported with the package (see EDGE_TABLES).
         for sql, _ in recorder.queries:
             # State writes carry a command_id field, never the command table.
             if sql.startswith("UPSERT $target SET"):
@@ -702,6 +756,137 @@ class TestExport:
         assert output.files_skipped == 1
         assert output.skipped_files[0]["reason"] == "invalid_path"
         assert output.skipped_files[0]["source_id"] == SOURCE_ID
+
+
+class TestNotebookScopeExport:
+    """scope='notebooks' topic packages: row filtering, edge inclusion, errors."""
+
+    def test_edge_tables_include_refers_to(self):
+        # Regression pin: refers_to (chat-session citations) round-trips with
+        # the package for completeness, alongside the reference membership edge.
+        assert "refers_to" in dtc.EDGE_TABLES
+
+    @pytest.mark.asyncio
+    async def test_notebook_scope_requires_ids(self, tmp_path):
+        recorder = TransferRecorder()
+        with pytest.raises(dtc.InvalidInputError):
+            await _run_export(
+                recorder,
+                str(tmp_path / "exports"),
+                str(tmp_path),
+                scope="notebooks",
+                notebook_ids=[],
+            )
+
+    @pytest.mark.asyncio
+    async def test_notebook_scope_unknown_notebook_fails(self, tmp_path):
+        recorder = TransferRecorder()
+        with pytest.raises(Exception) as excinfo:
+            await _run_export(
+                recorder,
+                str(tmp_path / "exports"),
+                str(tmp_path),
+                scope="notebooks",
+                notebook_ids=["notebook:does-not-exist"],
+            )
+        assert "not found" in str(excinfo.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_notebook_scope_filters_rows_and_keeps_shared_tables(
+        self, tmp_path
+    ):
+        tables = _default_rows()
+        # A second notebook with its own source/note; the export below picks
+        # only n1, so every n2-owned row must be absent from the package.
+        tables["notebook"].append(
+            {"id": "notebook:n2", "name": "Other", "description": "", "archived": False}
+        )
+        tables["source"].append(
+            _source_row()
+            | {"id": "source:s2"}
+        )
+        tables["note"].append(
+            {
+                "id": "note:note2",
+                "title": "N2",
+                "note_type": "human",
+                "content": "note2",
+                "embedding": [0.1, 0.1, 0.1],
+            }
+        )
+        # Second notebook's membership lives on the reference edge (in=source,
+        # out=notebook); refers_to only carries a chat-session citation.
+        tables["reference"].append(
+            {"in": "source:s2", "out": "notebook:n2"}
+        )
+        tables["refers_to"] = [
+            {"in": "chat_session:c1", "out": NOTEBOOK_ID},
+            {"in": "chat_session:c2", "out": "notebook:n2"},
+        ]
+        # An annotation on the n2 source must stay out of the topic package.
+        tables["source_annotation"].append(
+            {"id": "source_annotation:sa2", "source": "source:s2", "color": "gold"}
+        )
+        tables["artifact"].append(
+            {"id": "artifact:a2", "in": "note:note2", "out": "notebook:n2"}
+        )
+        tables["source_embedding"].append(
+            {
+                "id": "source_embedding:e3",
+                "source": "source:s2",
+                "order": 0,
+                "content": "s2 chunk",
+                "embedding": [0.7, 0.8, 0.9],
+            }
+        )
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(
+            recorder,
+            str(tmp_path / "exports"),
+            str(tmp_path),
+            scope="notebooks",
+            notebook_ids=[NOTEBOOK_ID],
+        )
+
+        assert output.success is True
+        with zipfile.ZipFile(output.package_path) as zf:
+            names = zf.namelist()
+
+            def rows(table: str) -> list:
+                member = f"data/{table}.ndjson"
+                assert member in names
+                return [
+                    json.loads(line)
+                    for line in zf.read(member).decode().splitlines()
+                ]
+
+            notebooks = {r["id"] for r in rows("notebook")}
+            assert notebooks == {NOTEBOOK_ID}
+            sources = {r["id"] for r in rows("source")}
+            assert sources == {SOURCE_ID}
+            notes = {r["id"] for r in rows("note")}
+            assert notes == {NOTE_ID}
+            embeddings = {r["source"] for r in rows("source_embedding")}
+            assert embeddings == {SOURCE_ID}
+            membership = {(r["in"], r["out"]) for r in rows("reference")}
+            assert membership == {(SOURCE_ID, NOTEBOOK_ID)}
+            refers = {(r["in"], r["out"]) for r in rows("refers_to")}
+            assert refers == {("chat_session:c1", NOTEBOOK_ID)}
+            # Annotations follow their source into (or out of) the package.
+            annotations = {r["source"] for r in rows("source_annotation")}
+            assert annotations == {SOURCE_ID}
+            artifacts = {(r["in"], r["out"]) for r in rows("artifact")}
+            assert artifacts == {(NOTE_ID, NOTEBOOK_ID)}
+            members = {(r["in"], r["out"]) for r in rows("source_group_member")}
+            assert members == {(SOURCE_ID, GROUP_ID)}
+            # Shared structures stay whole for idempotent re-imports.
+            assert rows("transformation")
+            assert rows("source_view")
+            manifest = json.loads(zf.read("manifest.json"))
+            assert manifest["package_type"] == "full"
+            assert manifest["counts"]["source"] == 1
+            assert manifest["counts"]["notebook"] == 1
 
 
 class TestRoundTrip:
@@ -1180,6 +1365,7 @@ class TestConfigTables:
             if sql.startswith("UPSERT open_notebook:content_settings MERGE")
         ][0]
         assert cs_sql.endswith("MERGE $data;")
+        assert cs_params is not None
         assert cs_params["data"]["chunk_size"] == 800
         assert cs_params["data"]["usage_tracking_enabled"] is True
         assert "secret_field" not in cs_params["data"]

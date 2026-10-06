@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Download, Loader2, RotateCcw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -24,11 +24,14 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { TaskLiveInspector } from '@/components/tasks/TaskLiveInspector'
-import { dataTransferApi, type ExportScope } from '@/lib/api/dataTransfer'
+import { dataTransferApi, type DownloadProgress, type ExportScope } from '@/lib/api/dataTransfer'
+import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import {
   useDeleteExportPackage,
+  useExportEstimate,
   useExportStatus,
   useStartExport,
 } from '@/lib/hooks/use-data-transfer'
@@ -68,12 +71,22 @@ export function ExportCard() {
   const [includeModels, setIncludeModels] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
+  const [selectedNotebooks, setSelectedNotebooks] = useState<string[]>([])
+
+  const { data: notebooksData } = useNotebooks(false)
+  const notebooks = useMemo(() => notebooksData ?? [], [notebooksData])
+  // The estimate query runs only while the start dialog is open; scope and
+  // the notebook selection are part of its key, so toggling either refetches.
+  const estimateQuery = useExportEstimate(startOpen, scope, selectedNotebooks)
+  const estimate = estimateQuery.data
 
   const status = data?.status
   const progress = data?.progress
   const summary = data?.summary
   const isActive = status === 'queued' || status === 'running'
   const modelsIncluded = scope === 'models' || includeModels
+  const notebooksReady = scope === 'notebooks' && selectedNotebooks.length > 0
   const [showSkippedFiles, setShowSkippedFiles] = useState(false)
   const stageLabels = Object.fromEntries(
     EXPORT_STAGES.map((stage) => [stage.id, t(stage.labelKey)])
@@ -82,21 +95,34 @@ export function ExportCard() {
   const openStartDialog = () => {
     setScope('full')
     setIncludeModels(false)
+    setSelectedNotebooks([])
     setStartOpen(true)
   }
 
+  const toggleNotebook = (id: string, checked: boolean) => {
+    setSelectedNotebooks((prev) =>
+      checked ? [...prev, id] : prev.filter((entry) => entry !== id)
+    )
+  }
+
   const handleStart = () => {
+    if (scope === 'notebooks' && selectedNotebooks.length === 0) return
     setStartOpen(false)
     startExport.mutate({
       scope,
       include_models: scope === 'full' ? includeModels : false,
+      notebook_ids: scope === 'notebooks' ? selectedNotebooks : undefined,
     })
   }
 
   const handleDownload = async () => {
     setDownloading(true)
+    setDownloadProgress({ loaded: 0, total: 0 })
     try {
-      await dataTransferApi.downloadExport(summary?.package_filename)
+      await dataTransferApi.downloadExport(
+        (progressUpdate) => setDownloadProgress(progressUpdate),
+        summary?.package_filename,
+      )
     } catch {
       toast({
         title: t('common.error'),
@@ -105,8 +131,14 @@ export function ExportCard() {
       })
     } finally {
       setDownloading(false)
+      setDownloadProgress(null)
     }
   }
+
+  const downloadPercent =
+    downloadProgress && downloadProgress.total > 0
+      ? Math.min(100, Math.round((downloadProgress.loaded / downloadProgress.total) * 100))
+      : null
 
   return (
     <Card>
@@ -224,7 +256,9 @@ export function ExportCard() {
                   <Download className="mr-2 h-4 w-4" />
                 )}
                 {downloading
-                  ? t('dataManagement.export.downloading')
+                  ? downloadPercent !== null
+                    ? t('dataManagement.export.downloadingPercent', { percent: downloadPercent })
+                    : t('dataManagement.export.downloading')
                   : t('dataManagement.export.download')}
               </Button>
               <Button variant="outline" onClick={() => setDeleteOpen(true)}>
@@ -236,6 +270,25 @@ export function ExportCard() {
                 {t('dataManagement.export.start')}
               </Button>
             </div>
+            {downloading && downloadProgress && (
+              <div className="space-y-1">
+                <Progress
+                  value={downloadPercent ?? 100}
+                  className="h-1.5"
+                />
+                <p className="text-xs text-muted-foreground" data-testid="download-progress-label">
+                  {downloadPercent !== null
+                    ? t('dataManagement.export.downloadProgress', {
+                        loaded: formatBytes(downloadProgress.loaded),
+                        total: formatBytes(downloadProgress.total),
+                        percent: downloadPercent,
+                      })
+                    : t('dataManagement.export.downloadProgressIndeterminate', {
+                        loaded: formatBytes(downloadProgress.loaded),
+                      })}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -292,6 +345,17 @@ export function ExportCard() {
               </span>
             </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
+              <RadioGroupItem value="notebooks" className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium">
+                  {t('dataManagement.export.scope.notebooks')}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('dataManagement.export.scope.notebooksDesc')}
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
               <RadioGroupItem value="models" className="mt-0.5" />
               <span>
                 <span className="block text-sm font-medium">
@@ -303,6 +367,82 @@ export function ExportCard() {
               </span>
             </label>
           </RadioGroup>
+          {scope === 'notebooks' && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                {t('dataManagement.export.pickNotebooks')}
+              </p>
+              {notebooks.length === 0 && !notebooksData ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('dataManagement.export.loadingNotebooks')}
+                </p>
+              ) : notebooks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('dataManagement.export.noNotebooks')}
+                </p>
+              ) : (
+                <ScrollArea className="h-40 rounded-md border p-2">
+                  <div className="space-y-1">
+                    {notebooks.map((notebook) => {
+                      const notebookId = String(notebook.id)
+                      return (
+                        <label
+                          key={notebookId}
+                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50"
+                        >
+                          <Checkbox
+                            checked={selectedNotebooks.includes(notebookId)}
+                            onCheckedChange={(checked) =>
+                              toggleNotebook(notebookId, checked === true)
+                            }
+                          />
+                          <span className="truncate">{notebook.name || notebookId}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+          )}
+          {scope !== 'models' && (
+            <div
+              className="rounded-md bg-muted/50 p-3 text-sm"
+              data-testid="export-estimate"
+            >
+              {estimate ? (
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {t('dataManagement.export.estimate.size')}:{' '}
+                    <span className="font-semibold">
+                      ~{formatBytes(estimate.estimated_package_bytes)}
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('dataManagement.export.estimate.breakdown', {
+                      notebooks: estimate.notebooks,
+                      sources: estimate.sources,
+                      notes: estimate.notes,
+                      embeddings: estimate.embeddings,
+                    })}
+                  </p>
+                  {estimate.asset_files > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('dataManagement.export.estimate.files', {
+                        count: estimate.asset_files,
+                        size: formatBytes(estimate.asset_bytes),
+                      })}
+                    </p>
+                  )}
+                </div>
+              ) : estimateQuery.isFetching ? (
+                <p className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t('dataManagement.export.estimate.calculating')}
+                </p>
+              ) : null}
+            </div>
+          )}
           {scope === 'full' && (
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <Checkbox
@@ -327,7 +467,10 @@ export function ExportCard() {
             <AlertDialogCancel disabled={startExport.isPending}>
               {t('common.cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleStart} disabled={startExport.isPending}>
+            <AlertDialogAction
+              onClick={handleStart}
+              disabled={startExport.isPending || (scope === 'notebooks' && !notebooksReady)}
+            >
               {t('dataManagement.export.start')}
             </AlertDialogAction>
           </AlertDialogFooter>

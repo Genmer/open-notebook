@@ -1,15 +1,16 @@
 """Data export/import endpoints (/api/data-transfer/*)."""
 
 import os
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
 
 import api.data_transfer_service as data_transfer_service
 from api.models import (
     DataTransferStartResponse,
+    ExportEstimateResponse,
     ExportStartRequest,
     ExportStatusResponse,
     ImportExecuteRequest,
@@ -24,11 +25,15 @@ router = APIRouter()
 
 @router.post("/data-transfer/export", response_model=DataTransferStartResponse)
 async def start_export(request: Optional[ExportStartRequest] = None):
-    """Queue an export job; scope=models packages only the model configuration."""
+    """Queue an export job; scope=models packages only the model configuration.
+
+    scope=notebooks with notebook_ids exports a topic package restricted to
+    those notebooks (.onbook-style subset of the full export).
+    """
     payload = request or ExportStartRequest()
     try:
         command_id = await data_transfer_service.start_export(
-            payload.scope, payload.include_models
+            payload.scope, payload.include_models, payload.notebook_ids
         )
         return DataTransferStartResponse(
             command_id=command_id,
@@ -40,6 +45,24 @@ async def start_export(request: Optional[ExportStartRequest] = None):
         logger.error(f"Failed to start data export: {e}")
         logger.exception(e)
         raise HTTPException(status_code=500, detail=f"Failed to start export: {e}")
+
+
+@router.get("/data-transfer/export/estimate", response_model=ExportEstimateResponse)
+async def estimate_export(
+    scope: str = Query("full", pattern="^(full|notebooks)$"),
+    notebook_ids: Optional[List[str]] = Query(None),
+):
+    """Preview what an export would contain (counts, asset bytes, ~package size)."""
+    try:
+        return ExportEstimateResponse(
+            **await data_transfer_service.estimate_export(scope, notebook_ids)
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to estimate data export: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to estimate export: {e}")
 
 
 @router.get("/data-transfer/export/status", response_model=ExportStatusResponse)

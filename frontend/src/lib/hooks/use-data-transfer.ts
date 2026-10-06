@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import {
   dataTransferApi,
+  type ExportScope,
   type ExportStartInput,
   type ExportStatusResponse,
   type ImportExecuteInput,
@@ -15,10 +16,12 @@ import { formatApiError, getApiErrorMessage } from '@/lib/utils/error-handler'
 const ACTIVE_POLL_MS = 5000
 const IDLE_POLL_MS = 60000
 
-// queued/running → poll fast; terminal states stop polling; none → slow watch
+// queued/running → poll fast; terminal states keep a slow safety poll: the
+// invalidation refetch right after a start can dedup with an in-flight request
+// from the previous idle interval and inherit its stale terminal result, which
+// would otherwise stop polling forever on the OLD finished package.
 const pollInterval = (status?: string): number | false => {
   if (status === 'queued' || status === 'running') return ACTIVE_POLL_MS
-  if (status === 'completed' || status === 'failed') return false
   return IDLE_POLL_MS
 }
 
@@ -49,6 +52,21 @@ export function useImportStatus() {
       const data = query.state.data as ImportStatusResponse | undefined
       return pollInterval(data?.status)
     },
+  })
+}
+
+export function useExportEstimate(enabled: boolean, scope: ExportScope, notebookIds: string[]) {
+  return useQuery({
+    // Selection is part of the key so changing the dialog's scope/notebooks
+    // refetches the preview instead of serving a stale one.
+    queryKey: [...QUERY_KEYS.dataTransferExportEstimate, scope, [...notebookIds].sort()],
+    queryFn: () =>
+      dataTransferApi.estimateExport({
+        scope,
+        notebook_ids: scope === 'notebooks' ? notebookIds : [],
+      }),
+    enabled: enabled && scope !== 'models',
+    staleTime: 30_000,
   })
 }
 

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -7,11 +7,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const mockUseExportStatus = vi.fn()
 const mockStartExport = vi.fn()
 const mockDeletePackage = vi.fn()
+const mockUseExportEstimate = vi.fn()
 vi.mock('@/lib/hooks/use-data-transfer', () => ({
   useExportStatus: (...args: unknown[]) => mockUseExportStatus(...args),
   useStartExport: () => mockStartExport(),
   useDeleteExportPackage: () => mockDeletePackage(),
+  useExportEstimate: (...args: unknown[]) => mockUseExportEstimate(...args),
 }))
+
+vi.mock('@/lib/hooks/use-notebooks', () => ({
+  useNotebooks: () => mockUseNotebooks(),
+}))
+const mockUseNotebooks = vi.fn()
 
 // downloadExport touches the DOM/network; the rest of the module is types only.
 vi.mock('@/lib/api/dataTransfer', () => ({
@@ -38,6 +45,10 @@ function mockStatus(data?: ExportStatusResponse) {
   mockUseExportStatus.mockReturnValue({ data })
   mockStartExport.mockReturnValue({ mutate: mutateSpy, isPending: false })
   mockDeletePackage.mockReturnValue({ mutate: deleteSpy, isPending: false })
+  mockUseExportEstimate.mockReturnValue({ data: undefined, isFetching: false })
+  mockUseNotebooks.mockReturnValue({
+    data: [{ id: 'notebook:n1', name: 'Research' }],
+  })
 }
 
 function indicatorStyle(): string | undefined {
@@ -213,6 +224,7 @@ describe('ExportCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.download' }))
     expect(dataTransferApi.downloadExport).toHaveBeenCalledWith(
+      expect.any(Function),
       'open_notebook_export_20260923_120000.zip'
     )
 
@@ -270,5 +282,110 @@ describe('ExportCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.start' }))
     expect(screen.getByText('dataManagement.export.confirmTitle')).toBeInTheDocument()
+  })
+
+  it('shows the package estimate inside the start dialog once loaded', () => {
+    mockStatus({ status: 'none' })
+    mockUseExportEstimate.mockReturnValue({
+      data: {
+        scope: 'full',
+        notebook_ids: [],
+        notebooks: 2,
+        sources: 5,
+        notes: 4,
+        insights: 0,
+        embeddings: 100,
+        asset_files: 2,
+        asset_bytes: 1536,
+        text_chars: 500,
+        estimated_package_bytes: 4096,
+      },
+      isFetching: false,
+    })
+    render(<ExportCard />)
+
+    openStartDialog()
+    const estimateBox = document.querySelector('[data-testid="export-estimate"]')
+    expect(estimateBox).not.toBeNull()
+    // The size line interleaves the label with the "~4 KB" span, so assert on
+    // the container text rather than a single matching text node.
+    expect(estimateBox?.textContent).toContain('dataManagement.export.estimate.size')
+    expect(estimateBox?.textContent).toContain('dataManagement.export.estimate.breakdown')
+    expect(estimateBox?.textContent).toContain('dataManagement.export.estimate.files')
+  })
+
+  it('shows the calculating placeholder while the estimate query is in flight', () => {
+    mockStatus({ status: 'none' })
+    mockUseExportEstimate.mockReturnValue({ data: undefined, isFetching: true })
+    render(<ExportCard />)
+
+    openStartDialog()
+    expect(screen.getByText('dataManagement.export.estimate.calculating')).toBeInTheDocument()
+  })
+
+  it('requires a notebook pick before confirming a notebooks-scope export', () => {
+    mockStatus({ status: 'none' })
+    render(<ExportCard />)
+
+    openStartDialog()
+    fireEvent.click(radio('notebooks'))
+    expect(screen.getByText('dataManagement.export.pickNotebooks')).toBeInTheDocument()
+    expect(screen.getByText('Research')).toBeInTheDocument()
+
+    // Notebook checkboxes in the picker are distinct from the models checkbox:
+    // the first one toggles the selection.
+    const confirm = screen
+      .getAllByRole('button', { name: 'dataManagement.export.start' })
+      .pop()!
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+
+    const pick = screen
+      .getAllByRole('checkbox')
+      .find((node) => node.closest('label')?.textContent?.includes('Research'))!
+    fireEvent.click(pick)
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(confirm)
+    expect(mutateSpy).toHaveBeenCalledWith({
+      scope: 'notebooks',
+      include_models: false,
+      notebook_ids: ['notebook:n1'],
+    })
+  })
+
+  it('feeds download progress through to the percent label and progress bar', async () => {
+    mockStatus({
+      status: 'completed',
+      progress: { stage: 'done', percent: 100, message: 'Export complete' },
+      summary: {
+        package_filename: 'x.zip',
+        package_size_bytes: 10,
+        counts: {},
+        files_skipped: 0,
+      },
+    })
+    const downloadMock = vi.mocked(dataTransferApi.downloadExport)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    downloadMock.mockImplementationOnce(
+      async (onProgress?: (p: { loaded: number; total: number }) => void) => {
+        onProgress?.({ loaded: 5242880, total: 10485760 })
+        await gate
+      }
+    )
+    render(<ExportCard />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'dataManagement.export.download' }))
+    // Both progress updates above ran synchronously before the first await.
+    expect(screen.getByText('dataManagement.export.downloadingPercent')).toBeInTheDocument()
+    const label = screen.getByTestId('download-progress-label')
+    expect(label.textContent).toContain('dataManagement.export.downloadProgress')
+
+    release()
+    await act(async () => {
+      await gate
+    })
+    // The transient progress UI clears once the download promise settles.
+    expect(screen.queryByTestId('download-progress-label')).not.toBeInTheDocument()
   })
 })

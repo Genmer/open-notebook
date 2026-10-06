@@ -55,6 +55,7 @@ from open_notebook.database.repository import (
     repo_query,
 )
 from open_notebook.domain.source_grouping import DEFAULT_VIEW_IDS, ensure_default_views
+from open_notebook.exceptions import InvalidInputError
 from open_notebook.utils.encryption import (
     decrypt_value,
     encrypt_value,
@@ -100,7 +101,12 @@ DATA_TABLES = (
     "note",
     "source_annotation",
 )
-EDGE_TABLES = ("reference", "artifact", "source_group_member")
+# reference (in=source, out=notebook) is the notebook→source membership edge
+# (see Notebook.get_sources); artifact = note→notebook (and source_insight→
+# notebook via reference as well); source_group_member = source→group. refers_to
+# is only the chat-session citation edge — exported for completeness, not needed
+# for source ownership.
+EDGE_TABLES = ("reference", "artifact", "source_group_member", "refers_to")
 EMBEDDING_TABLE = "source_embedding"
 # Single-record tables living at fixed ids (open_notebook:<table>), not at
 # <table>:<key>; export reads them with LIMIT 1 and import MERGEs unconditionally.
@@ -302,7 +308,12 @@ _MEMBER_PATTERNS = (
 class ExportDataInput(CommandInput):
     include_files: bool = True
     include_models: bool = False
-    scope: Literal["full", "models"] = "full"
+    scope: Literal["full", "models", "notebooks"] = "full"
+    # Only honored for scope="notebooks": the selected notebook ids make up
+    # the .onbook-style topic package (sources/notes/insights/embeddings of
+    # those notebooks only; shared structures export whole for idempotent
+    # re-imports).
+    notebook_ids: List[str] = []
 
 
 class ExportDataOutput(CommandOutput):
@@ -524,14 +535,61 @@ def record_fingerprint(
     ).hexdigest()
 
 
-async def _count_table(table: str) -> int:
-    rows = await repo_query(f"SELECT VALUE count() FROM {table} GROUP ALL")
+async def _count_table(
+    table: str, where: str = "", params: Optional[Dict[str, Any]] = None
+) -> int:
+    where_sql = f" WHERE {where}" if where else ""
+    rows = await repo_query(
+        f"SELECT VALUE count() FROM {table}{where_sql} GROUP ALL", params
+    )
     if not rows:
         return 0
     first = rows[0]
     if isinstance(first, dict):
         return int(first.get("count") or 0)
     return int(first)
+
+
+async def _resolve_notebook_scope_ids(notebook_ids: List[str]) -> List[str]:
+    """Validate scope="notebooks" ids and normalize to full record ids.
+
+    Reuses the domain resolver (malformed id -> InvalidInputError, unknown
+    notebook -> NotFoundError) so a typo fails the export loudly instead of
+    producing a silently empty package.
+    """
+    from open_notebook.domain.notebook import resolve_notebook_scope
+
+    return await resolve_notebook_scope(list(notebook_ids))
+
+
+def _notebook_scope_filters(
+    notebooks: List[str], sources: List[str], notes: List[str]
+) -> Dict[str, Tuple[str, Dict[str, Any]]]:
+    """Per-table WHERE clauses restricting an export to the selected notebooks.
+
+    Shared, idempotently-reimported structures (transformation, source_view,
+    source_group, config/model tables) stay unfiltered on purpose: a topic
+    package must still carry them so a restore into an empty database works,
+    and importing into a populated one skips them by id.
+    """
+    notebook_rids = [ensure_record_id(v) for v in notebooks]
+    source_rids = [ensure_record_id(v) for v in sources]
+    note_rids = [ensure_record_id(v) for v in notes]
+    filters: Dict[str, Tuple[str, Dict[str, Any]]] = {
+        "notebook": ("id IN $notebooks", {"notebooks": notebook_rids}),
+        "source": ("id IN $sources", {"sources": source_rids}),
+        "note": ("id IN $notes", {"notes": note_rids}),
+        "source_insight": ("source IN $sources", {"sources": source_rids}),
+        EMBEDDING_TABLE: ("source IN $sources", {"sources": source_rids}),
+        # personal reading marks follow their source into the topic package
+        "source_annotation": ("source IN $sources", {"sources": source_rids}),
+        # membership edges: keep only the pairs owned by the selection
+        "refers_to": ("out IN $notebooks", {"notebooks": notebook_rids}),
+        "artifact": ("out IN $notebooks", {"notebooks": notebook_rids}),
+        "reference": ("out IN $notebooks", {"notebooks": notebook_rids}),
+        "source_group_member": ("in IN $sources", {"sources": source_rids}),
+    }
+    return filters
 
 
 async def _fetch_record_row(table: str) -> Optional[Dict[str, Any]]:
@@ -587,11 +645,16 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
     start = time.time()
     cmd_id = get_command_id(input_data)
     models_scope = input_data.scope == "models"
+    notebooks_scope = input_data.scope == "notebooks"
     include_models = models_scope or input_data.include_models
     include_files = input_data.include_files and not models_scope
     stages = EXPORT_STAGES_MODELS if models_scope else EXPORT_STAGES
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    prefix = "open_notebook_models" if models_scope else "open_notebook_export"
+    prefix = (
+        "open_notebook_models"
+        if models_scope
+        else "open_notebook_topic" if notebooks_scope else "open_notebook_export"
+    )
     filename = f"{prefix}_{ts}.zip"
     tmp_path = os.path.join(EXPORTS_FOLDER, f".export_{ts}.zip.tmp")
     final_path = os.path.join(EXPORTS_FOLDER, filename)
@@ -603,6 +666,41 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
     skipped_files: List[Dict[str, str]] = []
     lengths: List[int] = []
     decrypted_keys: Dict[str, str] = {}  # credential id -> plaintext api_key
+
+    # Notebook-scope selection: which records belong to the chosen topic
+    # packages. Resolved up front so counting and exporting share one filter
+    # set (and a bad id fails before any package bytes are written).
+    scope_filters: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+    if notebooks_scope:
+        selected_notebooks = await _resolve_notebook_scope_ids(input_data.notebook_ids)
+        if not selected_notebooks:
+            raise InvalidInputError(
+                "scope='notebooks' requires at least one notebook id"
+            )
+        selected_sources = [
+            # The notebook→source membership edge is `reference` (in=source,
+            # out=notebook — see Notebook.get_sources); refers_to is only the
+            # chat-session citation edge. SELECT VALUE yields bare values.
+            str(r)
+            for r in await repo_query(
+                "SELECT VALUE in FROM reference WHERE out IN $notebooks",
+                {"notebooks": [ensure_record_id(v) for v in selected_notebooks]},
+            )
+            or []
+            if r is not None
+        ]
+        selected_notes = [
+            str(r)
+            for r in await repo_query(
+                "SELECT VALUE in FROM artifact WHERE out IN $notebooks",
+                {"notebooks": [ensure_record_id(v) for v in selected_notebooks]},
+            )
+            or []
+            if r is not None
+        ]
+        scope_filters = _notebook_scope_filters(
+            selected_notebooks, selected_sources, selected_notes
+        )
 
     # Per-stage last detail kept in the state record so the UI can render
     # result stats on finished stage rows, surviving page refreshes.
@@ -651,7 +749,8 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             if table in SINGLETON_TABLES:
                 counts[table] = 1 if await _fetch_record_row(table) else 0
             else:
-                counts[table] = await _count_table(table)
+                nb_where, nb_params = scope_filters.get(table, ("", None))
+                counts[table] = await _count_table(table, nb_where, nb_params)
             await report(
                 "collecting",
                 _stage_percent(stages, "collecting", i + 1, len(counted_tables)),
@@ -689,7 +788,8 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             await report("exporting_tables", stages["exporting_tables"][0])
             for i, table in enumerate(export_tables):
                 if table == "source":
-                    columns, where, params = SOURCE_EXPORT_COLUMNS, "", None
+                    columns = SOURCE_EXPORT_COLUMNS
+                    where, params = scope_filters.get("source", ("", None))
                 elif table == "source_view":
                     columns = "*"
                     where = "id NOT IN $defaults"
@@ -697,7 +797,8 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                         "defaults": [ensure_record_id(v) for v in DEFAULT_VIEW_IDS]
                     }
                 else:
-                    columns, where, params = "*", "", None
+                    columns = "*"
+                    where, params = scope_filters.get(table, ("", None))
                 columns = "id, in, out" if table in EDGE_TABLES else columns
                 written = 0
                 with zf.open(f"data/{table}.ndjson", "w") as member:
@@ -812,9 +913,15 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                 )
                 total_chunks = counts.get(EMBEDDING_TABLE, 0)
                 written = 0
+                emb_where, emb_params = scope_filters.get(
+                    EMBEDDING_TABLE, ("", None)
+                )
                 with zf.open(f"data/{EMBEDDING_TABLE}.ndjson", "w") as member:
                     async for row in _iter_paged(
-                        EMBEDDING_EXPORT_COLUMNS, EMBEDDING_TABLE
+                        EMBEDDING_EXPORT_COLUMNS,
+                        EMBEDDING_TABLE,
+                        emb_where,
+                        emb_params,
                     ):
                         vec = row.get("embedding")
                         if isinstance(vec, list):

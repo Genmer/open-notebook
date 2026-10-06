@@ -1314,8 +1314,30 @@ class PackageDeleteResponse(BaseModel):
 
 class ExportStartRequest(BaseModel):
     # models: only credential/model/default_models (API keys in plain text!)
-    scope: Literal["full", "models"] = "full"
+    # notebooks: topic package restricted to the given notebook ids
+    scope: Literal["full", "models", "notebooks"] = "full"
     include_models: bool = False
+    notebook_ids: List[str] = []
+
+
+class ExportEstimateResponse(BaseModel):
+    """Pre-export preview: exact counts/asset sizes, sampled text volume.
+
+    estimated_package_bytes is a deflated-zip approximation shown with a "~"
+    by the UI, not a promise.
+    """
+
+    scope: str
+    notebook_ids: List[str] = []
+    notebooks: int
+    sources: int
+    notes: int
+    insights: int
+    embeddings: int
+    asset_files: int
+    asset_bytes: int
+    text_chars: int
+    estimated_package_bytes: int
 
 
 class ImportScanConflictItem(BaseModel):
