@@ -79,7 +79,8 @@ describe('EmbedMissingPanel', () => {
     const button = await screen.findByRole('button', {
       name: 'sources.embedMissing.button',
     })
-    expect(button).toBeEnabled()
+    // The status query resolves a tick after mount; wait for pending > 0.
+    await waitFor(() => expect(button).toBeEnabled())
     expect(screen.getByText('5')).toBeInTheDocument()
 
     fireEvent.click(button)
@@ -100,9 +101,11 @@ describe('EmbedMissingPanel', () => {
     })
     renderPanel()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.button' })
-    )
+    const trigger = await screen.findByRole('button', {
+      name: 'sources.embedMissing.button',
+    })
+    await waitFor(() => expect(trigger).toBeEnabled())
+    fireEvent.click(trigger)
     fireEvent.click(
       await screen.findByRole('button', {
         name: 'sources.embedMissing.confirmCta',
@@ -126,12 +129,12 @@ describe('EmbedMissingPanel', () => {
     getStatusMock.mockResolvedValue(status())
     renderPanel()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.button' })
-    )
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'common.cancel' })
-    )
+    const trigger = await screen.findByRole('button', {
+      name: 'sources.embedMissing.button',
+    })
+    await waitFor(() => expect(trigger).toBeEnabled())
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('button', { name: 'common.cancel' }))
 
     expect(rebuildMock).not.toHaveBeenCalled()
     await waitFor(() =>
@@ -176,9 +179,11 @@ describe('EmbedMissingPanel', () => {
     })
     renderPanel()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.button' })
-    )
+    const trigger = await screen.findByRole('button', {
+      name: 'sources.embedMissing.button',
+    })
+    await waitFor(() => expect(trigger).toBeEnabled())
+    fireEvent.click(trigger)
     fireEvent.click(
       await screen.findByRole('button', {
         name: 'sources.embedMissing.confirmCta',
@@ -201,9 +206,11 @@ describe('EmbedMissingPanel', () => {
     rebuildMock.mockRejectedValue(new Error('boom'))
     renderPanel()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.button' })
-    )
+    const trigger = await screen.findByRole('button', {
+      name: 'sources.embedMissing.button',
+    })
+    await waitFor(() => expect(trigger).toBeEnabled())
+    fireEvent.click(trigger)
     fireEvent.click(
       await screen.findByRole('button', {
         name: 'sources.embedMissing.confirmCta',

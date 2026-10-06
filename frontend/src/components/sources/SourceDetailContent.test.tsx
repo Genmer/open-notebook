@@ -65,12 +65,38 @@ vi.mock('@/components/ui/select', () => ({
   ),
 }))
 
-vi.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  TabsList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  TabsTrigger: ({ children }: React.PropsWithChildren) => <button>{children}</button>,
-  TabsContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-}))
+// Minimal Radix-like tabs: role="tab", activation on mouseDown, and only
+// the active TabsContent renders (fork's title tests depend on all three).
+vi.mock('@/components/ui/tabs', async () => {
+  const React = await import('react')
+  const TabsCtx = React.createContext<{ value: string; setValue: (v: string) => void }>({
+    value: '',
+    setValue: () => {},
+  })
+  const Tabs = ({
+    children,
+    defaultValue,
+  }: React.PropsWithChildren<{ defaultValue?: string }>) => {
+    const [value, setValue] = React.useState(defaultValue ?? '')
+    const ctx = React.useMemo(() => ({ value, setValue }), [value])
+    return <TabsCtx.Provider value={ctx}>{children}</TabsCtx.Provider>
+  }
+  const TabsList = ({ children }: React.PropsWithChildren) => <div>{children}</div>
+  const TabsTrigger = ({ children, value }: React.PropsWithChildren<{ value: string }>) => {
+    const { value: active, setValue } = React.useContext(TabsCtx)
+    return (
+      <button role="tab" aria-selected={active === value} onMouseDown={() => setValue(value)}>
+        {children}
+      </button>
+    )
+  }
+  const TabsContent = ({ children, value }: React.PropsWithChildren<{ value: string }>) => {
+    const { value: active } = React.useContext(TabsCtx)
+    if (active !== value) return null
+    return <div role="tabpanel">{children}</div>
+  }
+  return { Tabs, TabsList, TabsTrigger, TabsContent }
+})
 
 vi.mock('sonner', () => ({
   toast: {
@@ -282,7 +308,10 @@ describe('SourceDetailContent transformation titles', () => {
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /common\.insights/ }))
 
     // t() returns the key, so this text only appears via displayTransformationTitle.
-    expect(await screen.findByText('sources.transformationTitleDenseSummary')).toBeVisible()
+    // The mocked select keeps its options mounted, so the same label can also
+    // appear there — assert at least one insight-list occurrence.
+    const matches = await screen.findAllByText('sources.transformationTitleDenseSummary')
+    expect(matches.length).toBeGreaterThan(0)
   })
 
   it('offers localized preset titles and verbatim custom titles in the transformation select', async () => {
