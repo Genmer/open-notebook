@@ -78,7 +78,6 @@ export const bnIN = {
     no: "না",
     saving: "সংরক্ষণ করা হচ্ছে...",
     description: "বিবরণ",
-    saveToNote: "নোটে সংরক্ষণ করুন",
     copyToClipboard: "ক্লিপবোর্ডে কপি করুন",
     close: "বন্ধ",
     insights: "অন্তর্দৃষ্টি",
@@ -223,6 +222,7 @@ export const bnIN = {
     language: "ভাষা টগল",
     theme: "থিম",
     ask: "জিজ্ঞাসা",
+    agents: "এজেন্ট",
   },
   notebooks: {
     title: "নোটবুকগুলি",
@@ -270,6 +270,25 @@ export const bnIN = {
     recentlyViewedNotebook: "নোটবুক",
     recentlyViewedSource: "উৎস",
     lastViewed: "{{time}} দেখা হয়েছে",
+    saveNote: {
+      typeLabel: "সংরক্ষণের ধরন",
+      modeSource: "সোর্স হিসেবে সংরক্ষণ",
+      modeNote: "নোট হিসেবে সংরক্ষণ",
+      title: "নোটবুকে সংরক্ষণ",
+      description: "এই বিষয়বস্তুর একটি নাম দিন এবং এটি সোর্স হিসেবে না নোট হিসেবে সংরক্ষণ হবে তা বেছে নিন।",
+      nameLabel: "নাম",
+      namePlaceholder: "একটি নাম লিখুন",
+      submit: "সংরক্ষণ"
+    },
+    saveAsSource: {
+      title: "সোর্স হিসেবে সংরক্ষণ",
+      action: "সোর্স হিসেবে সংরক্ষণ",
+      description: "এই নোটের বিষয়বস্তু থেকে বর্তমান নোটবুকে একটি টেক্সট সোর্স তৈরি করে।",
+      nameLabel: "সোর্সের নাম",
+      namePlaceholder: "সোর্সের নাম লিখুন",
+      noEmbedHint: "এমবেডিং ছাড়া যোগ হবে এবং ডিফল্টভাবে নোটবুকের চ্যাট প্রসঙ্গে অন্তর্ভুক্ত থাকবে (চ্যাট প্রসঙ্গ নির্বাচকে পরিবর্তন করা যায়); ভেক্টর অনুসন্ধান দরকার হলে পরে সোর্স তালিকা থেকে এমবেডিং চালান।",
+      submit: "নোটবুকে যোগ করুন",
+    },
   },
   sources: {
     newSource: "নতুন উৎস",
@@ -302,7 +321,6 @@ export const bnIN = {
     loadingMore: "আরো লোড হচ্ছে...",
     noSourcesYet: "এখনও কোন উৎস নেই",
     allSourcesDescShort: "এখানে আপনার সব উৎস দেখুন।",
-    cannotSaveNoteNoNotebook: "নোট সংরক্ষণ করতে পারা যায়নি: নোটবুক ID উপলব্ধ নয়",
     createFirstSource: "আপনার জ্ঞানভান্ডার তৈরি শুরু করতে আপনার প্রথম উৎস যোগ করুন।",
     deleteSourceConfirm: "আপনি কি নিশ্চিত এই উৎসটি মুছে ফেলতে চান?",
     deleteConfirm: "আপনি কি নিশ্চিত এটি মুছে ফেলতে চান?",
@@ -467,14 +485,21 @@ export const bnIN = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "কারিগরি বা বৈজ্ঞানিক পেপার বিশ্লেষণ করে",
+    transformationDescKeyInsights: "গুরুত্বপূর্ণ অন্তর্দৃষ্টি ও কার্যকর পয়েন্ট বের করে",
+    transformationDescDenseSummary: "বিষয়বস্তুর একটি সমৃদ্ধ, গভীর সারসংক্ষেপ তৈরি করে",
+    transformationDescReflectionQuestions: "আরও অন্বেষণে সাহায্য করার জন্য ডকুমেন্ট থেকে ধ্যানগত প্রশ্ন তৈরি করে",
+    transformationDescTableOfContents: "ডকুমেন্টের বিভিন্ন বিষয় বর্ণনা করে",
+    transformationDescSimpleSummary: "বিষয়বস্তুর একটি ছোট সারসংক্ষেপ তৈরি করে",
     embedMissing: {
+      columnCta: "{{count}} টি সোর্স এমবেড করা হয়নি — এখনই এমবেড করুন",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const bnIN = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "এমবেড করা হয়নি",
+      failed: "এমবেডিং ব্যর্থ হয়েছে",
+    },
+    overview: {
+      title: "নলেজ বেস ওভারভিউ",
+      totalBadge: "লাইব্রেরিতে {{count}} টি",
+      linkedLabel: "এই নোটবুকের সাথে লিঙ্ক করা",
+      pendingLabel: "অপেক্ষমাণ সোর্স",
+      count: "{{count}} টি",
+      importAll: "লাইব্রেরি থেকে {{count}} টি আমদানি করুন",
+      allLinked: "লাইব্রেরির সব সোর্স এই নোটবুকের সাথে লিঙ্ক করা আছে",
+      viewAll: "লাইব্রেরি দেখুন",
+    },
+    pdfViewer: {
+      restore: "পুনরুদ্ধার",
+      open: "মূল ফাইল দেখুন",
+      title: "মূল ফাইলের প্রিভিউ",
+      outline: "সূচিপত্র",
+      noOutline: "এই নথিতে কোনো সূচিপত্র নেই",
+      parsingToc: "সূচিপত্র বিশ্লেষণ চলছে…",
+      page: "{{total}} পৃষ্ঠার মধ্যে {{page}} নম্বর পৃষ্ঠা",
+      loading: "নথি লোড হচ্ছে…",
+      loadFailed: "নথি লোড করা ব্যর্থ হয়েছে",
+      zoomIn: "বড় করুন",
+      zoomOut: "ছোট করুন",
+      prevPage: "পূর্ববর্তী পৃষ্ঠা",
+      nextPage: "পরবর্তী পৃষ্ঠা",
+      close: "বন্ধ করুন",
+      notPdf: "এই ফাইলটি PDF নয় এবং প্রিভিউ করা যাবে না",
+      enterFullscreen: "ফুলস্ক্রিনে পড়ুন",
+      exitFullscreen: "ফুলস্ক্রিন থেকে বেরিয়ে যান",
+    },
+    fileView: {
+      analyzeSection: "AI দিয়ে এই অংশ বিশ্লেষণ করুন",
+      analyzing: "বিশ্লেষণ চলছে…",
+      analysisTitle: "\"{{title}}\"-এর AI বিশ্লেষণ",
+      analysisTruncated: "বিশ্লেষণের আগে অংশের লেখা ছাঁটা হয়েছিল",
+      analysisFailed: "AI বিশ্লেষণ ব্যর্থ হয়েছে, আবার চেষ্টা করুন",
+      saveAnalysis: "নোট হিসেবে সংরক্ষণ করুন",
+    },
+    copy: "কপি",
+    copied: "কপি হয়েছে",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const bnIN = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "এই পৃষ্ঠায় কোনো টেক্সট স্তর নেই (স্ক্যান করা পৃষ্ঠা)। টেক্সট হাইলাইট করা যাবে না; বক্স নির্বাচনের মাধ্যমে টীকা যোগ করা ভবিষ্যতের একটি আপডেটে আসবে।",
+      orphanedHint: "সোর্স ফাইলটি পরিবর্তিত হয়েছে; পুনরায় অ্যাঙ্কর করা ভবিষ্যতের একটি আপডেটে উপলব্ধ হবে।",
+      colors: {
+        gold: "মূল পয়েন্ট",
+        fern: "আয়ত্ত",
+        plum: "প্রশ্ন",
+        slate: "রেফারেন্স",
+        clay: "ভুলপ্রবণ",
+      },
+      toolbar: {
+        colorAria: "{{name}} হিসেবে চিহ্নিত করুন",
+        line: "রেখার ধরন",
+        wavy: "ঢেউ খেলানো আন্ডারলাইন",
+        straight: "সরল আন্ডারলাইন",
+        comment: "নোট",
+        copy: "কপি করুন",
+        copied: "কপি হয়েছে",
+      },
+      hover: {
+        edit: "নোট সম্পাদনা করুন",
+        delete: "টীকা মুছুন",
+        deleted: "টীকা মুছে ফেলা হয়েছে",
+        undo: "পূর্বাবস্থায় ফেরান",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "পৃষ্ঠা {{page}}",
+      },
+      toast: {
+        createFailed: "টীকা তৈরি করা যায়নি",
+        updateFailed: "টীকা আপডেট করা যায়নি",
+        deleteFailed: "টীকা মুছে ফেলা যায়নি",
+        restoreFailed: "টীকা পুনরুদ্ধার করা যায়নি",
+        crossPage: "নির্বাচনটি একাধিক পৃষ্ঠা জুড়ে আছে। একবারে এক পৃষ্ঠার টীকা যোগ করুন।",
+        tooLong: "নির্বাচনটি অনেক দীর্ঘ। ছোট ছোট অংশে ভাগ করে টীকা যোগ করুন।",
+      },
+      deleteConfirm: {
+        count: "মুছে ফেললে {{count}}টি টীকাও মুছে যাবে।",
+      },
+    },
   },
   chat: {
     sessions: "সেশনগুলি",
@@ -647,6 +754,34 @@ export const bnIN = {
     contextPickerCounts: "অন্তর্দৃষ্টি {{insights}} · সম্পূর্ণ {{full}} · নোট {{notes}}",
     enterFullscreen: "পূর্ণস্ক্রিন চালু করুন",
     exitFullscreen: "পূর্ণস্ক্রিন বন্ধ করুন",
+    participantConfig: "কথোপকথনের অংশগ্রহণকারী",
+    participantDesc: "একটি এজেন্ট পারসোনা বা একটি মডেল বেছে নিন; দুটি পরস্পরবর্জী — একটি বাছলে অন্যটি মুছে যায়।",
+    participantPlaceholder: "অংশগ্রহণকারী নির্বাচন করুন",
+    groupDefault: "ডিফল্ট অ্যাসিস্ট্যান্ট",
+    groupAgents: "এজেন্ট",
+    groupModels: "মডেল",
+    participantAgentHint: "প্রয়োগের পর পরবর্তী উত্তরগুলো এই এজেন্টের পারসোনা ও স্যাম্পলিং ব্যবহার করবে।",
+    participantModelHint: "প্রয়োগের পর পরবর্তী উত্তরগুলো এই মডেলে স্থির থাকবে।",
+    agentMissing: "এজেন্ট মুছে ফেলা হয়েছে — ডিফল্ট অ্যাসিস্ট্যান্ট ব্যবহৃত হচ্ছে",
+    answeredBy: "{{name}} উত্তর দিয়েছে",
+    parallelSend: "সমান্তরাল প্রশ্ন",
+    parallelPickTitle: "সমান্তরাল অংশগ্রহণকারী বেছে নিন",
+    parallelPickCount: "{{count}}/{{max}} নির্বাচিত",
+    parallelPickHint: "একাধিক নির্বাচন করে একসাথে জিজ্ঞাসা করুন",
+    parallelMaxReached: "৫টির সীমায় পৌঁছেছে",
+    parallelConfirm: "সমান্তরালে জিজ্ঞাসা করুন",
+    parallelProgress: "চলছে: {{done}}/{{total}} সম্পন্ন",
+    parallelWaiting: "উত্তরের অপেক্ষায়…",
+    parallelFailed: "সমান্তরাল প্রশ্ন ব্যর্থ",
+    streamFailed: "উত্তর তৈরি করা যায়নি",
+    streamBusy: "এই সেশনে ইতিমধ্যে একটি উত্তর তৈরি হচ্ছে; অনুগ্রহ করে অপেক্ষা করুন",
+    synthesisPickLabel: "সংশ্লেষ করে একীভূত করুন:",
+    synthesisDefaultPicker: "সিস্টেম ডিফল্ট মডেল",
+    synthesisRun: "সংশ্লেষ করুন",
+    synthesisResultTitle: "সংশ্লেষিত উত্তর",
+    synthesisFailed: "সংশ্লেষণ ব্যর্থ",
+    parallelEmptyHint: "প্রথমে একটি প্রশ্ন লিখুন, তারপর সমান্তরাল উত্তর শুরু করুন",
+    parallelTriggerCount: "সমান্তরাল উত্তর · {{count}}",
   },
   searchPage: {
     askAndSearch: "জিজ্ঞাসা ও অনুসন্ধান",
@@ -1267,6 +1402,7 @@ export const bnIN = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "প্রশ্ন-উত্তর",
+    typeSourceSectionAnalysis: "অংশভিত্তিক AI বিশ্লেষণ",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1297,6 +1433,356 @@ export const bnIN = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "লাইভ টাস্ক ইন্সপেক্টর",
+
+
+
+
+
+
+        completed: "সম্পন্ন",
+
+
+
+
+
+
+        failed: "সম্পাদন ব্যর্থ",
+
+
+
+
+
+
+        canceled: "বাতিল হয়েছে",
+
+
+
+
+
+
+        running: "তৈরি হচ্ছে…",
+
+
+
+
+
+
+        elapsed: "অতিবাহিত",
+
+
+
+
+
+
+        stageFallback: "চলছে",
+
+
+
+
+
+
+        processing: "প্রক্রিয়াধীন",
+
+
+
+
+
+
+        taskId: "টাস্ক আইডি",
+
+
+
+
+
+
+        openTaskCenter: "টাস্ক ম্যানেজমেন্ট খুলুন",
+
+
+
+
+
+
+        stageFlow: "পর্যায় প্রবাহ",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "প্রসঙ্গ ইনপুট",
+
+
+
+
+
+
+        modelOutput: "মডেল আউটপুট",
+
+
+
+
+
+
+        tokenRate: "টোকেন হার",
+
+
+
+
+
+
+        processedChunks: "প্রক্রিয়াকৃত খণ্ড",
+
+
+
+
+
+
+        chunksDesc: "ভেক্টর খণ্ড",
+
+
+
+
+
+
+        execStatus: "স্ট্যাটাস",
+
+
+
+
+
+
+        workerNode: "ব্যাকগ্রাউন্ড ওয়ার্কার",
+
+
+
+
+
+
+        timeStats: "অতিবাহিত সময়",
+
+
+
+
+
+
+        stopwatchDesc: "লাইভ স্টপওয়াচ",
+
+
+
+
+
+
+        terminalTitle: "লাইভ টার্মিনাল ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "স্ক্রল থামান",
+
+
+
+
+
+
+        autoScroll: "স্বয়ংক্রিয় স্ক্রল",
+
+
+
+
+
+
+        copyLogs: "লগ কপি করুন",
+
+
+
+
+
+
+        clearOutput: "আউটপুট মুছুন",
+
+
+
+
+
+
+        logsCopied: "টার্মিনাল লগ ক্লিপবোর্ডে কপি হয়েছে",
+
+
+
+
+
+
+        logsCleared: "টার্মিনাল আউটপুট মুছে ফেলা হয়েছে",
+
+
+
+
+
+
+        errorDetails: "ত্রুটির বিবরণ",
+
+
+
+
+
+
+        cancelTask: "টাস্ক বাতিল করুন",
+
+
+
+
+
+
+        closeDrawer: "প্যানেল বন্ধ করুন",
+
+
+
+
+
+
+        footerReady: "লাইভ লগ স্ট্রিম শ্রোতা প্রস্তুত",
+
+
+
+
+
+
+        doneCollapse: "সম্পন্ন ও সংকুচিত করুন",
+
+
+
+
+
+
+        fallbackStream1: "টোকেন প্রবাহ প্রসঙ্গ গ্রাফের মধ্য দিয়ে যাচ্ছে…",
+
+
+
+
+
+
+        fallbackStream2: "মূল ধারণাগত দাবি ও উদ্ধৃতি নোঙর সংশ্লেষিত হচ্ছে…",
+
+
+
+
+
+
+        fallbackStream3: "JSON স্কিমা চুক্তি ও Markdown শিরোনাম যাচাই হচ্ছে…",
+
+
+
+
+
+
+        fallbackStream4: "অ্যাসিঙ্ক্রোনাস ওয়ার্কার আউটপুট ডেটা স্টোরে লেখা হচ্ছে…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "সারিতে",
+
+
+
+
+
+
+          queueDesc: "ওয়ার্কার শিডিউলিং ও রিসোর্স বণ্টন",
+
+
+
+
+
+
+          prepare: "প্রস্তুতি",
+
+
+
+
+
+
+          prepareDesc: "প্রসঙ্গ ও নির্ভরতা লোড হচ্ছে",
+
+
+
+
+
+
+          execute: "সম্পাদন",
+
+
+
+
+
+
+          executeDesc: "ব্যাকগ্রাউন্ড প্রসেস গণনা করছে",
+
+
+
+
+
+
+          finalize: "চূড়ান্তকরণ",
+
+
+
+
+
+
+          finalizeDesc: "স্টেট ও ফলাফল সংরক্ষিত হচ্ছে",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1307,6 +1793,8 @@ export const bnIN = {
       cancel: "টাস্ক বাতিল করুন",
       cancelSuccess: "টাস্ক বাতিল করা হয়েছে",
       cancelFailed: "টাস্ক বাতিল করা যায়নি। আবার চেষ্টা করুন।",
+      viewLiveProgress: "লাইভ অগ্রগতি দেখুন",
+      viewDetails: "বিস্তারিত দেখুন",
       filter: {
         all: "All",
         active: "In progress",
@@ -1592,5 +2080,155 @@ export const bnIN = {
     readOnlyView: "শুধুপড়ার ভিউ",
     enterFullscreen: "পূর্ণস্ক্রিন চালু করুন",
     exitFullscreen: "পূর্ণস্ক্রিন বন্ধ করুন",
+    editNote: "নোট সম্পাদনা",
+    sourcesPanelTitle: "সোর্স",
+    notesPanelTitle: "নোট",
+    openSourcesPanel: "সোর্স সাইডবার খুলুন",
+    openNotesPanel: "নোট সাইডবার খুলুন",
+    closePanel: "সাইডবার বন্ধ করুন",
+    panelEmptySources: "এই নোটবুকে কোনো সোর্স নেই",
+    panelEmptyNotes: "এই নোটবুকে কোনো নোট নেই",
+  },
+  geminiSources: {
+    newFolder: "নতুন ফোল্ডার",
+    addExisting: "বিদ্যমান যোগ করুন",
+    tabHierarchical: "রিসোর্স ({{count}})",
+    tabWebResearch: "ওয়েব রিসার্চ",
+    selectAllForChat: "চ্যাটের জন্য সব নির্বাচন",
+    deselectAll: "সব নির্বাচন বাতিল",
+    searchPlaceholder: "রিসোর্স খুঁজুন...",
+    loadingTree: "রিসোর্স লোড হচ্ছে...",
+    empty: "এখনও কোনো রিসোর্স নেই — উপরে থেকে যোগ করুন বা ওয়েব রিসার্চে খুঁজুন",
+    ungrouped: "অগোষ্ঠীভুক্ত",
+    folderBadgeMixed: "এই নোটবুকে {{local}}টি · লাইব্রেরিতে মোট {{total}}টি ({{missing}}টি যোগ হয়নি)",
+    folderBadgeLocal: "এই নোটবুকে {{count}}টি",
+    folderEmptyInNotebook: "এই ফোল্ডারে এই নোটবুকে এখনও কোনো রিসোর্স নেই",
+    folderTotalCount: "ফোল্ডারে মোট সোর্স: {{count}}",
+    addNewResource: "নতুন রিসোর্স যোগ করুন",
+    webResearchTitle: "ওয়েব রিসার্চ",
+    fastMode: "দ্রুত",
+    deepMode: "গভীর",
+    fastModeDesc: "সেকেন্ডে উত্তর: কীওয়ার্ড বের করে, সমান্তরাল খোঁজে, টেক্সট পরিষ্কার করে — পেজগুলো সোর্স হিসেবে সংরক্ষণ করুন।",
+    deepModeDesc: "ডিপ এজেন্ট: স্বায়ত্ত পরিকল্পনা, মাল্টি-হপ অনুসন্ধান ও ক্রস-ভ্যালিডেশন — স্ট্রাকচার্ড রিপোর্ট সোর্স হিসেবে আনে।",
+    fastPlaceholder: "কীওয়ার্ড বা বিষয় লিখুন...",
+    deepPlaceholder: "গভীর গবেষণার বিষয় লিখুন...",
+    foundSources: "পাওয়া মানসম্পন্ন সোর্স ({{count}})",
+    importing: "ইমপোর্ট হচ্ছে...",
+    bulkAdd: "সব নোটবুকে যোগ করুন",
+    researchFastDone: "রিসার্চ সম্পন্ন — মানসম্পন্ন সোর্স পাওয়া গেছে",
+    researchDeepDone: "গভীর গবেষণা সম্পন্ন — স্ট্রাকচার্ড সোর্স প্রস্তুত",
+    researchFailed: "ওয়েব সার্চ ব্যর্থ, পরে আবার চেষ্টা করুন",
+    selectAtLeastOne: "যোগ করতে অন্তত একটি পেজ নির্বাচন করুন",
+    savedPages: "{{count}}টি পেজ সোর্স হিসেবে যোগ হয়েছে",
+    addPagesFailed: "পেজগুলো সোর্স হিসেবে যোগ করা যায়নি",
+    mockTitleInsights: "{{topic}}: কোর আর্কিটেকচার ও ইন্ডাস্ট্রি প্র্যাকটিস",
+    mockSnippetInsights: "{{topic}}-এর গভীর জরিপ: কোর মেকানিজম, মূল মেট্রিক ও প্রোডাকশন ডিপ্লয়মেন্ট অভিজ্ঞতা।",
+    mockTitleSpec: "{{topic}} অফিসিয়াল হোয়াইটপেপার ও সেরা অনুশীলন",
+    mockSnippetSpec: "{{topic}}-এর ডিজাইন সিদ্ধান্ত, ডেটা মডেল ও সাধারণ পারফরম্যান্স ফাঁদের পদ্ধতিগত পর্যালোচনা।",
+    mockTitleBenchmark: "তুলনা: {{topic}} বনাম জনপ্রিয় ওপেন-সোর্স বিকল্প",
+    mockSnippetBenchmark: "বাস্তব থ্রুপুট ও দীর্ঘ কনকারেন্সি লোডের সিদ্ধান্ত: মূল পার্থক্য ও দৃশ্য অনুযায়ী সুপারিশ।",
+    noViewError: "কোনো ভিউ পাওয়া যায়নি",
+    folderCreated: "ফোল্ডার তৈরি হয়েছে",
+    folderCreateFailed: "ফোল্ডার তৈরি করা যায়নি",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "{{count}}টি নোট",
+    newNote: "নতুন নোট",
+    toolbox: "টুলবক্স",
+    openTasks: "টাস্ক খুলুন",
+    notesStream: "নোট কার্ড ({{count}})",
+    saveHint: "চ্যাট থেকে এক ক্লিকে সংরক্ষণ",
+    loadingNotes: "নোট লোড হচ্ছে...",
+    emptyNotes: "এখনও কোনো নোট নেই",
+    emptyNotesHint: "চ্যাট থেকে নোট সংরক্ষণ করুন বা মূল টেক্সট নির্বাচন করে এখানে যোগ করুন।",
+    noContent: "কোনো বিষয়বস্তু নেই",
+    generateFailed: "আর্টিফ্যাক্ট তৈরি করা যায়নি",
+    generateDone: "{{tool}} তৈরি হয়ে নোট হিসেবে সংরক্ষিত",
+    jobProgressTitle: "{{tool}} · অগ্রগতি",
+    jobProgressHint: "কাজটি ব্যাকগ্রাউন্ডে চলছে — অবস্থা দেখুন বা টাস্ক সেন্টার খুলুন",
+    instructionLabel: "নির্দেশনা ও ফোকাস (ঐচ্ছিক)",
+    instructionPlaceholder: "AI-এর জন্য কাস্টম নির্দেশনা বা ফোকাস...",
+    contextHint: "নির্বাচিত {{count}}টি সোর্স ও সংশ্লিষ্ট নোট থেকে তৈরি করে ফলাফল নোট হিসেবে সংরক্ষণ করে।",
+    runInBackground: "ব্যাকগ্রাউন্ডে চালিয়ে যান",
+    submitting: "জমা দেওয়া হচ্ছে...",
+    generateAndSave: "তৈরি করে নোট হিসেবে সংরক্ষণ",
+    tagPodcast: "পডকাস্ট",
+    tagArtifact: "আর্টিফ্যাক্ট",
+    tools: {
+      audioOverview: {
+        desc: "দুই উপস্থাপকের গভীর বিশ্লেষণ পডকাস্ট (আসল কথা সংশ্লেষ)",
+      },
+      studyGuide: {
+        desc: "মূল ধারণা, কুইজ প্রশ্নোত্তর ও পদ্ধতিগত রিভিশন রূপরেখা",
+        instruction: "মূল পরিভাষা বিশ্লেষণ, অত্যাবশ্যকীয় পয়েন্টের সারসংক্ষেপ ও আত্মমূল্যায়নের বহুনির্বাচনী ও সংক্ষিপ্ত প্রশ্নসহ পদ্ধতিগত অধ্যয়ন নির্দেশিকা তৈরি করুন।",
+      },
+      briefingDoc: {
+        desc: "মূল যুক্তি, কৌশলগত প্রভাব ও সিদ্ধান্তসহ এক্সিকিউটিভ ব্রিফিং",
+        instruction: "প্রসঙ্গ সারসংক্ষেপ, মূল সহায়ক তথ্য, ঝুঁকি মূল্যায়ন ও পরবর্তী পদক্ষেপ সুপারিশসহ পেশাদার এক্সিকিউটিভ ব্রিফিং তৈরি করুন।",
+      },
+      faq: {
+        desc: "আপনার সোর্স থেকে সবচেয়ে গুরুত্বপূর্ণ প্রশ্নোত্তর ও বিস্তারিত উত্তর",
+        instruction: "সব উপকরণ পর্যালোচনা করে পাঠকদের সবচেয়ে সাধারণ মূল প্রশ্নগুলো বিস্তারিত উত্তরসহ সংকলন করুন।",
+      },
+      flashcards: {
+        desc: "মূল জ্ঞানকে প্রশ্ন/উত্তর ফ্ল্যাশকার্ড জোড়া হিসেবে",
+        instruction: "মূল ধারণা ও সিদ্ধান্তকে সহজে মুখস্থযোগ্য প্রশ্ন-উত্তর কার্ডে রূপ দিন।",
+      },
+    },
+  },
+  agents: {
+    title: "এজেন্ট",
+    desc: "পূর্বনির্ধারিত চ্যাট পারসোনা: সিস্টেম প্রম্পট এবং ঐচ্ছিক মডেল ও স্যাম্পলিং ওভাররাইড, নোটবুক চ্যাটে নির্বাচনযোগ্য।",
+    create: "নতুন এজেন্ট",
+    edit: "এজেন্ট সম্পাদনা",
+    delete: "মুছুন",
+    empty: "এখনও কোনো এজেন্ট নেই — উপরের ডান দিক থেকে প্রথমটি তৈরি করুন",
+    disabled: "নিষ্ক্রিয়",
+    inUse: "{{count}}টি সেশনে ব্যবহৃত",
+    createSuccess: "এজেন্ট তৈরি হয়েছে",
+    updateSuccess: "এজেন্ট হালনাগাদ হয়েছে",
+    deleteSuccess: "এজেন্ট মুছে ফেলা হয়েছে",
+    deleteConfirmTitle: "এজেন্ট মুছুন",
+    deleteConfirmDesc: "\"{{name}}\" মুছবেন? এর সাথে যুক্ত {{count}}টি সেশন ডিফল্ট অ্যাসিস্ট্যান্টে ফিরে যাবে; ইতিহাস থাকবে।",
+    loadFailed: "এজেন্ট লোড করা যায়নি",
+    editorDesc: "পারসোনা, ডিফল্ট মডেল ও স্যাম্পলিং প্যারামিটার নির্ধারণ করুন।",
+    nameLabel: "নাম",
+    namePlaceholder: "যেমন: রিসার্চ অ্যাসিস্ট্যান্ট",
+    descriptionLabel: "বিবরণ",
+    descriptionPlaceholder: "এই পারসোনার কাজ নিয়ে এক লাইন (ঐচ্ছিক)",
+    promptLabel: "সিস্টেম প্রম্পট",
+    promptPlaceholder: "পারসোনার পরিচয়, সুর ও উত্তর দেওয়ার ধরন বর্ণনা করুন...",
+    promptHint: "চ্যাটের সিস্টেম প্রম্পটের শুরুতে যুক্ত হয়; উদ্ধৃতি নিয়ম বহাল থাকে।",
+    modelLabel: "বাউন্ড মডেল",
+    modelPlaceholder: "চ্যাটের ডিফল্ট অনুসরণ করুন",
+    modelHint: "চ্যাটে নির্বাচিত বা সিস্টেম ডিফল্ট মডেল ব্যবহার করতে খালি রাখুন।",
+    temperatureField: "টেম্পারেচার",
+    maxTokensField: "সর্বোচ্চ টোকেন",
+    enabledLabel: "সক্রিয়",
+    enabledHint: "নিষ্ক্রিয় এজেন্ট চ্যাট নির্বাচক থেকে অদৃশ্য হয়; যুক্ত সেশন ডিফল্ট অ্যাসিস্ট্যান্টে ফেরে।",
+    validationRequired: "নাম ও সিস্টেম প্রম্পট আবশ্যক",
+    validationTemperature: "টেম্পারেচার ০ থেকে ২-এর মধ্যে হতে হবে",
+    validationMaxTokens: "সর্বোচ্চ টোকেন ধনাত্মক পূর্ণসংখ্যা হতে হবে",
+    temperatureLabel: "টেম্প {{value}}",
+    temperatureHelp: "টেম্পারেচার নিয়ন্ত্রণ করে উত্তর কতটা এলোমেলো হবে, স্কেল ০–২। কম মানে আউটপুট আরও স্থিতিশীল ও নির্ভুল হয় — প্রশ্নোত্তর বা গবেষণা সারাংশের মতো তথ্যনির্ভর কাজে ভালো। বেশি মানে আউটপুট আরও বৈচিত্র্যময় ও সৃজনশীল হয় — সৃজনশীল লেখা ও ব্রেইনস্টর্মিংয়ের জন্য উপযুক্ত। চ্যাটের ডিফল্ট অনুসরণ করতে খালি রাখুন।",
+    maxTokensLabel: "সীমা {{value}} টোকেন",
+    templateLabel: "একটি টেমপ্লেট দিয়ে শুরু করুন",
+    templatePickerDesc: "শিল্প অনুযায়ী একটি প্রিসেট এজেন্ট বেছে নিন। নির্বাচন করলে নাম, প্রম্পট ও স্যাম্পলিং ডিফল্টগুলি স্বয়ংক্রিয়ভাবে পূরণ হবে — পরে সবকিছুই সম্পাদনাযোগ্য থাকবে।",
+    templateBlankName: "শূন্য থেকে শুরু করুন",
+    templateBlankDesc: "টেমপ্লেট এড়িয়ে যান এবং নাম ও সিস্টেম প্রম্পট নিজে পূরণ করুন।",
+    templateUse: "এই টেমপ্লেট ব্যবহার করুন",
+    templateCat: {
+      software: "সফটওয়্যার",
+      ruankao: "রুয়ানকাও প্রস্তুতি",
+      llm: "এলএলএম",
+      business: "ব্যবসা",
+      education: "শিক্ষা",
+      creative: "সৃজনশীল",
+      general: "সাধারণ",
+    },
+    polishPrompt: "প্রম্পট পরিমার্জন",
+    polishing: "পরিমার্জন চলছে…",
+    polishFailed: "প্রম্পট পরিমার্জন ব্যর্থ হয়েছে",
   },
 } satisfies TranslationShape;

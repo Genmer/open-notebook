@@ -29,7 +29,7 @@ import { RenameSourceDialog } from '@/components/sources/RenameSourceDialog'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { ContextMode } from '../[id]/page'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -43,7 +43,7 @@ interface SourcesColumnProps {
   onRefresh?: () => void
   contextSelections?: Record<string, ContextMode>
   onContextModeChange?: (sourceId: string, mode: ContextMode) => void
-  onBulkContextModeChange?: (action: SourceBulkAction) => void
+  onBulkContextModeChange?: BulkContextHandler
   // 分组导航：由左侧 FoldersColumn（或移动端保留的面包屑）驱动
   grouping?: NotebookSourceFilters
   onGroupingChange?: (filters: NotebookSourceFilters) => void

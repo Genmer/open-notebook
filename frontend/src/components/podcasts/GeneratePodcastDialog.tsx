@@ -83,7 +83,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   const notesQueries = useQueries({
     queries: notebooks.map((notebook) => ({
       queryKey: QUERY_KEYS.notes(notebook.id),
-      queryFn: () => notesApi.list({ notebook_id: notebook.id }),
+      queryFn: () => notesApi.list({ notebook_id: notebook.id, include_content: true }),
       enabled:
         open &&
         (expandedNotebooks.includes(notebook.id) || hasSelections(selections[notebook.id])),
@@ -579,7 +579,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
               )}
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
               <Button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
@@ -592,7 +592,6 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
-                className="w-full"
               >
                 {t('common.cancel')}
               </Button>

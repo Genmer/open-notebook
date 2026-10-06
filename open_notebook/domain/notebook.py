@@ -783,6 +783,14 @@ class Source(ObjectModel):
                 "Continuing with source deletion."
             )
 
+        # Annotations are irreplaceable user assets (PDR-003): snapshot them to
+        # the exports folder before the source row — and with it the cleanup
+        # EVENT — removes them. Inside delete() so cascade/notebook-exclusive
+        # delete paths are covered too; skips silently when there are none.
+        from open_notebook.domain.source_annotation import backup_source_annotations
+
+        await backup_source_annotations(self)
+
         # Call parent delete to remove database record
         return await super().delete()
 
@@ -856,9 +864,10 @@ class Note(ObjectModel):
 
 class ChatSession(ObjectModel):
     table_name: ClassVar[str] = "chat_session"
-    nullable_fields: ClassVar[set[str]] = {"model_override"}
+    nullable_fields: ClassVar[set[str]] = {"model_override", "agent"}
     title: Optional[str] = None
     model_override: Optional[str] = None
+    agent: Optional[str] = None
 
     async def relate_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:

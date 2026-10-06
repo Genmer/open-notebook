@@ -223,3 +223,142 @@ describe('EmbedMissingPanel', () => {
     })
   })
 })
+
+// Compact variant: in-column single-row form used by the Gemini sources column
+// footer; badge strip is collapsed behind a toggle.
+describe('EmbedMissingPanel compact', () => {
+  function renderCompact() {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <EmbedMissingPanel variant="compact" />
+      </QueryClientProvider>
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    queryClient.clear()
+    vi.spyOn(queryClient, 'invalidateQueries')
+  })
+
+  it('stays disabled and single-row when nothing is pending', async () => {
+    getStatusMock.mockResolvedValue(
+      status({ pending: 0, not_embedded: 0, failed: 0 })
+    )
+    renderCompact()
+
+    const button = await screen.findByRole('button', {
+      name: 'sources.embedMissing.columnCta',
+    })
+    expect(button).toBeDisabled()
+    // Collapsed: no progress strip, no toggle
+    expect(
+      screen.queryByText('sources.embedMissing.progressTitle')
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the badge strip collapsed until the toggle is used, then shows all five badges', async () => {
+    getStatusMock.mockResolvedValue(status({ queued: 2, running: 1, completed: 3 }))
+    renderCompact()
+
+    // Busy status makes the strip available but collapsed: single row only
+    const toggle = await screen.findByRole('button', {
+      name: 'sources.embedMissing.progressTitle',
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByText('sources.embedMissing.progressTitle')
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByText('sources.embedMissing.progressTitle')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    for (const [count, label] of [
+      ['4', 'sources.embedMissing.badge.notEmbedded'],
+      ['2', 'sources.embedMissing.badge.queued'],
+      ['1', 'sources.embedMissing.badge.running'],
+      ['3', 'sources.embedMissing.badge.completed'],
+      ['1', 'sources.embedMissing.badge.failed'],
+    ] as const) {
+      expect(
+        screen.getByText(
+          (content, element) => element?.textContent === `${count} ${label}`
+        )
+      ).toBeInTheDocument()
+    }
+  })
+
+  it('opens the confirm dialog from the compact CTA', async () => {
+    getStatusMock.mockResolvedValue(status())
+    renderCompact()
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
+    )
+    expect(
+      await screen.findByText('sources.embedMissing.confirmTitle')
+    ).toBeInTheDocument()
+  })
+
+  it('invalidates the context tree once a submitted rebuild converges', async () => {
+    getStatusMock
+      .mockResolvedValueOnce(status())
+      .mockResolvedValue(
+        status({ pending: 0, not_embedded: 0, completed: 10, total_sources: 10 })
+      )
+    rebuildMock.mockResolvedValue({
+      command_id: 'command:1',
+      message: '',
+      estimated_items: 5,
+    })
+    renderCompact()
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
+    )
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'sources.embedMissing.confirmCta',
+      })
+    )
+
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalled())
+    // Converged with nothing un-embedded: the Gemini column's embed dots need
+    // the context tree refreshed (exactly once).
+    await waitFor(() =>
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ['contextTree'],
+      })
+    )
+    const contextTreeCalls = (
+      queryClient.invalidateQueries as ReturnType<typeof vi.fn>
+    ).mock.calls.filter(
+      (call) => JSON.stringify(call[0]) === JSON.stringify({ queryKey: ['contextTree'] })
+    )
+    expect(contextTreeCalls).toHaveLength(1)
+  })
+
+  it('invalidates the context tree when polling watches pending work drain to zero', async () => {
+    // Start busy with un-embedded sources, then converge without any submit
+    getStatusMock
+      .mockResolvedValueOnce(status({ queued: 1, running: 0, not_embedded: 4, pending: 5 }))
+      .mockResolvedValue(
+        status({ queued: 0, running: 0, not_embedded: 0, pending: 0, completed: 10 })
+      )
+    renderCompact()
+
+    await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
+    // Simulate an external refetch (e.g. another mutation invalidating status)
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.embeddingStatus })
+
+    await waitFor(() =>
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ['contextTree'],
+      })
+    )
+  })
+})
+

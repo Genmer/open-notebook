@@ -218,7 +218,10 @@ async def refresh_embedding_params(settings: Any = None) -> EmbeddingParams:
         if settings is None:
             from open_notebook.domain.content_settings import ContentSettings
 
-            settings = await ContentSettings.get_instance()
+            # force_reload: the worker's ContentSettings singleton otherwise
+            # keeps first-load values forever, never seeing settings saved to
+            # the DB by the API process (e.g. a lowered embedding_batch_size).
+            settings = await ContentSettings.get_instance(force_reload=True)
         resolved = resolve_params(settings)
         validate_params(resolved)
     except Exception as e:

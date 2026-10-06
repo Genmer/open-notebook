@@ -22,6 +22,10 @@ interface ConfirmDialogProps {
   confirmVariant?: 'default' | 'destructive'
   onConfirm: () => void
   isLoading?: boolean
+  /** Extra content between the description and the footer, e.g. the
+   * annotation-cascade warning line on the sources page (F9). Optional —
+   * every other usage renders exactly as before. */
+  children?: React.ReactNode
 }
 
 export function ConfirmDialog({
@@ -33,6 +37,7 @@ export function ConfirmDialog({
   confirmVariant = 'default',
   onConfirm,
   isLoading = false,
+  children,
 }: ConfirmDialogProps) {
   const { t } = useTranslation()
   const finalConfirmText = confirmText || t('common.confirm')
@@ -44,6 +49,7 @@ export function ConfirmDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>{t('common.cancel')}</AlertDialogCancel>
           <AlertDialogAction

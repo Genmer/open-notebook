@@ -25,9 +25,16 @@ def transformation_call():
             "open_notebook.graphs.transformation.DefaultPrompts",
             return_value=SimpleNamespace(transformation_instructions=None),
         ),
+        # This fork provisions via provision_langchain_model_with_info and
+        # records token usage; mock both so the test only exercises the
+        # output-validation logic.
         patch(
             "open_notebook.graphs.transformation.provision_langchain_model_with_info",
             new=AsyncMock(return_value=prov),
+        ),
+        patch(
+            "open_notebook.graphs.transformation.record_llm_usage",
+            new=AsyncMock(),
         ),
         patch.object(Source, "add_insight", new_callable=AsyncMock) as save,
     ):

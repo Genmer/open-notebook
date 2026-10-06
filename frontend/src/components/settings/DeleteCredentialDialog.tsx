@@ -63,7 +63,8 @@ export function DeleteCredentialDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      {/* 基类 sm:max-w-[calc(100%-2rem)] 是 fork 有意改动，此处逐弹窗补窄 */}
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('apiKeys.deleteConfig')}</DialogTitle>
           <DialogDescription>

@@ -30,18 +30,22 @@ CONFIG = {"api_key": "test-key", "base_url": "https://example.com/v1"}
 WAV_BYTES = b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x00" * 8
 
 
-def _make_tts() -> XiaomiChatTextToSpeechModel:
+def _make_tts() -> tuple[XiaomiChatTextToSpeechModel, MagicMock, AsyncMock]:
+    """Build a TTS model with mocked HTTP clients: (model, client, async_client)."""
     model = XiaomiChatTextToSpeechModel(model_name="mimo-v2.5-tts", config=CONFIG)
-    model.client = MagicMock()
-    model.async_client = AsyncMock()
-    return model
+    client, async_client = MagicMock(), AsyncMock()
+    model.client = client
+    model.async_client = async_client
+    return model, client, async_client
 
 
-def _make_stt() -> XiaomiChatSpeechToTextModel:
+def _make_stt() -> tuple[XiaomiChatSpeechToTextModel, MagicMock, AsyncMock]:
+    """Build an STT model with mocked HTTP clients: (model, client, async_client)."""
     model = XiaomiChatSpeechToTextModel(model_name="mimo-v2.5-asr", config=CONFIG)
-    model.client = MagicMock()
-    model.async_client = AsyncMock()
-    return model
+    client, async_client = MagicMock(), AsyncMock()
+    model.client = client
+    model.async_client = async_client
+    return model, client, async_client
 
 
 def _tts_http_response() -> httpx.Response:
@@ -54,13 +58,13 @@ def _tts_http_response() -> httpx.Response:
 
 class TestTTS:
     def test_request_shape_and_response(self, tmp_path):
-        model = _make_tts()
-        model.client.post.return_value = _tts_http_response()
+        model, client, _ = _make_tts()
+        client.post.return_value = _tts_http_response()
         output_file = tmp_path / "out.wav"
 
         response = model.generate_speech("你好世界", voice="alloy", output_file=output_file)
 
-        call = model.client.post.call_args
+        call = client.post.call_args
         assert call.args[0] == "https://example.com/v1/chat/completions"
         payload = call.kwargs["json"]
         assert payload["model"] == "mimo-v2.5-tts"
@@ -72,19 +76,19 @@ class TestTTS:
 
     @pytest.mark.asyncio
     async def test_async_request_shape_and_response(self):
-        model = _make_tts()
-        model.async_client.post.return_value = _tts_http_response()
+        model, _, async_client = _make_tts()
+        async_client.post.return_value = _tts_http_response()
 
         response = await model.agenerate_speech("你好世界")
 
-        payload = model.async_client.post.call_args.kwargs["json"]
+        payload = async_client.post.call_args.kwargs["json"]
         assert payload["messages"] == [{"role": "assistant", "content": "你好世界"}]
         assert response.audio_data == WAV_BYTES
         assert isinstance(response, AudioResponse)
 
     def test_http_error_raises_runtime_error_with_server_message(self):
-        model = _make_tts()
-        model.client.post.return_value = httpx.Response(
+        model, client, _ = _make_tts()
+        client.post.return_value = httpx.Response(
             400,
             json={
                 "error": {
@@ -97,8 +101,8 @@ class TestTTS:
             model.generate_speech("hi")
 
     def test_missing_audio_field_raises_runtime_error(self):
-        model = _make_tts()
-        model.client.post.return_value = httpx.Response(
+        model, client, _ = _make_tts()
+        client.post.return_value = httpx.Response(
             200, json={"choices": [{"message": {"content": "no audio here"}}]}
         )
 
@@ -116,16 +120,16 @@ class TestTTS:
 
 class TestSTT:
     def test_request_shape_and_response(self, tmp_path):
-        model = _make_stt()
+        model, client, _ = _make_stt()
         audio_file = tmp_path / "clip.mp3"
         audio_file.write_bytes(b"ID3-fake-mp3-bytes")
-        model.client.post.return_value = httpx.Response(
+        client.post.return_value = httpx.Response(
             200, json={"choices": [{"message": {"content": "你好世界"}}]}
         )
 
         response = model.transcribe(str(audio_file))
 
-        call = model.client.post.call_args
+        call = client.post.call_args
         assert call.args[0] == "https://example.com/v1/chat/completions"
         payload = call.kwargs["json"]
         assert payload["model"] == "mimo-v2.5-asr"
@@ -140,7 +144,7 @@ class TestSTT:
         assert isinstance(response, TranscriptionResponse)
 
     def test_format_defaults_to_wav_for_unknown_suffix(self, tmp_path):
-        model = _make_stt()
+        model, _, _ = _make_stt()
         audio_file = tmp_path / "clip.foo"
         audio_file.write_bytes(b"x")
 
@@ -149,16 +153,16 @@ class TestSTT:
         assert audio_format == "wav"
 
     def test_binaryio_input_keeps_name_suffix_and_no_text_part(self):
-        model = _make_stt()
+        model, client, _ = _make_stt()
         buf = io.BytesIO(b"ID3-fake-mp3-bytes")
         buf.name = "test_speech.mp3"
-        model.client.post.return_value = httpx.Response(
+        client.post.return_value = httpx.Response(
             200, json={"choices": [{"message": {"content": "spoken"}}]}
         )
 
         response = model.transcribe(audio_file=buf)
 
-        payload = model.client.post.call_args.kwargs["json"]
+        payload = client.post.call_args.kwargs["json"]
         (message,) = payload["messages"]
         (part,) = message["content"]
         assert part == {
@@ -171,10 +175,10 @@ class TestSTT:
         assert response.text == "spoken"
 
     def test_http_error_raises_runtime_error_with_server_message(self, tmp_path):
-        model = _make_stt()
+        model, client, _ = _make_stt()
         audio_file = tmp_path / "clip.mp3"
         audio_file.write_bytes(b"x")
-        model.client.post.return_value = httpx.Response(
+        client.post.return_value = httpx.Response(
             401, json={"error": {"message": "invalid api key"}}
         )
 
@@ -183,16 +187,16 @@ class TestSTT:
 
     @pytest.mark.asyncio
     async def test_async_transcribe(self, tmp_path):
-        model = _make_stt()
+        model, _, async_client = _make_stt()
         audio_file = tmp_path / "clip.webm"
         audio_file.write_bytes(b"webm-bytes")
-        model.async_client.post.return_value = httpx.Response(
+        async_client.post.return_value = httpx.Response(
             200, json={"choices": [{"message": {"content": "transcribed"}}]}
         )
 
         response = await model.atranscribe(audio_file)
 
-        part = model.async_client.post.call_args.kwargs["json"]["messages"][0]["content"][0]
+        part = async_client.post.call_args.kwargs["json"]["messages"][0]["content"][0]
         assert part["input_audio"]["format"] == "webm"
         assert response.text == "transcribed"
 
@@ -276,19 +280,20 @@ class TestFactoryRouting:
 class TestConsumerIntegration:
     """Consumer call patterns (podcast_creator, connection_tester) at mock level."""
 
-    def _make_tts_kwargs(self) -> XiaomiChatTextToSpeechModel:
+    def _make_tts_kwargs(self) -> tuple[XiaomiChatTextToSpeechModel, AsyncMock]:
         model = XiaomiChatTextToSpeechModel(
             model_name="mimo-v2.5-tts",
             api_key="x",
             base_url="https://example.com/v1",
         )
-        model.async_client = AsyncMock()
-        return model
+        async_client = AsyncMock()
+        model.async_client = async_client
+        return model, async_client
 
     @pytest.mark.asyncio
     async def test_podcast_creator_style_call_writes_output_file(self, tmp_path):
-        model = self._make_tts_kwargs()
-        model.async_client.post.return_value = _tts_http_response()
+        model, async_client = self._make_tts_kwargs()
+        async_client.post.return_value = _tts_http_response()
         output_file = tmp_path / "c.wav"
 
         response = await model.agenerate_speech(
@@ -303,8 +308,8 @@ class TestConsumerIntegration:
     @pytest.mark.asyncio
     async def test_connection_tester_voice_flow_succeeds(self):
         # Mirrors connection_tester.py: first key of available_voices as voice.
-        model = self._make_tts_kwargs()
-        model.async_client.post.return_value = _tts_http_response()
+        model, async_client = self._make_tts_kwargs()
+        async_client.post.return_value = _tts_http_response()
 
         voice = next(iter(model.available_voices.keys()))
         audio = await model.agenerate_speech(
@@ -312,17 +317,17 @@ class TestConsumerIntegration:
         )
 
         assert audio.audio_data == WAV_BYTES
-        payload = model.async_client.post.call_args.kwargs["json"]
+        payload = async_client.post.call_args.kwargs["json"]
         assert payload["messages"] == [
             {"role": "assistant", "content": "Hello from Open Notebook"}
         ]
 
     @pytest.mark.asyncio
     async def test_connection_tester_atranscribe_with_binaryio_and_language(self):
-        model = _make_stt()
+        model, _, async_client = _make_stt()
         buf = io.BytesIO(b"test-speech-clip-bytes")
         buf.name = "test_speech.mp3"
-        model.async_client.post.return_value = httpx.Response(
+        async_client.post.return_value = httpx.Response(
             200, json={"choices": [{"message": {"content": "hello"}}]}
         )
 
@@ -330,7 +335,7 @@ class TestConsumerIntegration:
 
         assert isinstance(response, TranscriptionResponse)
         assert response.text == "hello"
-        part = model.async_client.post.call_args.kwargs["json"]["messages"][0][
+        part = async_client.post.call_args.kwargs["json"]["messages"][0][
             "content"
         ][0]
         assert part["input_audio"]["format"] == "mp3"

@@ -111,3 +111,45 @@ class TestNoteUpdate:
         assert response.status_code == 200
         data = response.json()
         assert data["command_id"] is None
+
+
+class TestNoteList:
+    """GET /notes notebook-filtered list content handling.
+
+    The domain list query omits note.content for payload size; the API must
+    pass include_content through so list-driven read-only views (Studio /
+    notes column) can render previews and dialogs without per-note fetches.
+    """
+
+    def _mock_note(self):
+        note = AsyncMock()
+        note.id = "note:abc123"
+        note.title = "Test Note"
+        note.content = "Full body"
+        note.note_type = "ai"
+        note.created = "2026-01-01T00:00:00Z"
+        note.updated = "2026-01-01T00:00:00Z"
+        return note
+
+    @patch("open_notebook.domain.notebook.Notebook")
+    def test_list_omits_content_by_default(self, mock_notebook_cls, client):
+        notebook = AsyncMock()
+        notebook.get_notes = AsyncMock(return_value=[self._mock_note()])
+        mock_notebook_cls.get = AsyncMock(return_value=notebook)
+
+        response = client.get("/api/notes?notebook_id=notebook:abc")
+
+        assert response.status_code == 200
+        notebook.get_notes.assert_awaited_once_with(include_content=False)
+
+    @patch("open_notebook.domain.notebook.Notebook")
+    def test_list_includes_content_when_requested(self, mock_notebook_cls, client):
+        notebook = AsyncMock()
+        notebook.get_notes = AsyncMock(return_value=[self._mock_note()])
+        mock_notebook_cls.get = AsyncMock(return_value=notebook)
+
+        response = client.get("/api/notes?notebook_id=notebook:abc&include_content=true")
+
+        assert response.status_code == 200
+        notebook.get_notes.assert_awaited_once_with(include_content=True)
+        assert response.json()[0]["content"] == "Full body"

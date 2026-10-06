@@ -78,7 +78,6 @@ export const caES = {
     no: "No",
     saving: "S'està desant...",
     description: "Descripció",
-    saveToNote: "Desa a una nota",
     copyToClipboard: "Copia al porta-retalls",
     close: "Tanca",
     insights: "Anàlisis",
@@ -223,6 +222,7 @@ export const caES = {
     language: "Canvia l'idioma",
     theme: "Tema",
     ask: "Pregunta",
+    agents: "Agents",
   },
   notebooks: {
     title: "Quaderns",
@@ -270,6 +270,25 @@ export const caES = {
     recentlyViewedNotebook: "Quadern",
     recentlyViewedSource: "Font",
     lastViewed: "Vist {{time}}",
+    saveNote: {
+      typeLabel: "Desa com a",
+      modeSource: "Desa com a font",
+      modeNote: "Desa com a nota",
+      title: "Desa al quadern",
+      description: "Posa un nom a aquest contingut i tria si desar-lo com a font o com a nota.",
+      nameLabel: "Nom",
+      namePlaceholder: "Introdueix un nom",
+      submit: "Desa"
+    },
+    saveAsSource: {
+      title: "Desa com a font",
+      action: "Desa com a font",
+      description: "Crea una font de text amb el contingut d'aquesta nota en aquest quadern.",
+      nameLabel: "Nom de la font",
+      namePlaceholder: "Introdueix un nom per a la font",
+      noEmbedHint: "S'afegeix sense embeddings i s'inclou per defecte al context del xat del quadern (ajustable al selector de context del xat); si necessites cerca vectorial, executa l'embedding més tard des de la llista de fonts.",
+      submit: "Afegeix al quadern",
+    },
   },
   sources: {
     newSource: "Font nova",
@@ -302,7 +321,6 @@ export const caES = {
     loadingMore: "S'està carregant més...",
     noSourcesYet: "Encara no hi ha fonts",
     allSourcesDescShort: "Consulta aquí totes les teves fonts.",
-    cannotSaveNoteNoNotebook: "No es pot desar la nota: l'ID del quadern no està disponible",
     createFirstSource: "Afegeix la primera font per començar a construir la teva base de coneixement.",
     deleteSourceConfirm: "Segur que vols suprimir aquesta font?",
     deleteConfirm: "Segur que vols suprimir aquest element?",
@@ -467,14 +485,21 @@ export const caES = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "Analitza un article tècnic o científic",
+    transformationDescKeyInsights: "Extreu idees importants i punts accionables",
+    transformationDescDenseSummary: "Crea un resum ric i profund del contingut",
+    transformationDescReflectionQuestions: "Genera preguntes de reflexió del document per explorar-lo més",
+    transformationDescTableOfContents: "Descriu els diferents temes del document",
+    transformationDescSimpleSummary: "Genera un resum breu del contingut",
     embedMissing: {
+      columnCta: "{{count}} fonts sense incrustar — incrusta-les ara",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const caES = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "Sense incrustar",
+      failed: "La incrustació ha fallat",
+    },
+    overview: {
+      title: "Resum de la base de coneixement",
+      totalBadge: "{{count}} a la biblioteca",
+      linkedLabel: "Vinculades a aquest quadern",
+      pendingLabel: "Fonts pendents",
+      count: "{{count}}",
+      importAll: "Importa {{count}} de la biblioteca",
+      allLinked: "Totes les fonts de la biblioteca estan vinculades a aquest quadern",
+      viewAll: "Mostra la biblioteca",
+    },
+    pdfViewer: {
+      restore: "Restaura",
+      open: "Mostra el fitxer original",
+      title: "Previsualització del fitxer original",
+      outline: "Índex",
+      noOutline: "Aquest document no té índex",
+      parsingToc: "Analitzant l'índex…",
+      page: "Pàgina {{page}} de {{total}}",
+      loading: "S'està carregant el document…",
+      loadFailed: "No s'ha pogut carregar el document",
+      zoomIn: "Amplia",
+      zoomOut: "Redueix",
+      prevPage: "Pàgina anterior",
+      nextPage: "Pàgina següent",
+      close: "Tanca",
+      notPdf: "Aquest fitxer no és un PDF i no es pot previsualitzar",
+      enterFullscreen: "Llegeix a pantalla completa",
+      exitFullscreen: "Surt de la pantalla completa",
+    },
+    fileView: {
+      analyzeSection: "Analitza la secció amb IA",
+      analyzing: "S'està analitzant…",
+      analysisTitle: "Anàlisi d'IA de \"{{title}}\"",
+      analysisTruncated: "El text de la secció s'ha truncat abans de l'anàlisi",
+      analysisFailed: "L'anàlisi d'IA ha fallat, torna-ho a provar",
+      saveAnalysis: "Desa com a nota",
+    },
+    copy: "Copia",
+    copied: "Copiat",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const caES = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "Aquesta pàgina no té capa de text (pàgina escanejada). El subratllat de text no està disponible; les anotacions per selecció de quadre arribaran en una actualització futura.",
+      orphanedHint: "El fitxer d'origen ha canviat; el reancoratge estarà disponible en una actualització futura.",
+      colors: {
+        gold: "Punt clau",
+        fern: "Dominat",
+        plum: "Dubte",
+        slate: "Referència",
+        clay: "Propens a error",
+      },
+      toolbar: {
+        colorAria: "Marca com a {{name}}",
+        line: "Estil de línia",
+        wavy: "Subratllat ondulat",
+        straight: "Subratllat recte",
+        comment: "Nota",
+        copy: "Copia",
+        copied: "Copiat",
+      },
+      hover: {
+        edit: "Edita la nota",
+        delete: "Elimina l'anotació",
+        deleted: "Anotació eliminada",
+        undo: "Desfés",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "Pàgina {{page}}",
+      },
+      toast: {
+        createFailed: "No s'ha pogut crear l'anotació",
+        updateFailed: "No s'ha pogut actualitzar l'anotació",
+        deleteFailed: "No s'ha pogut eliminar l'anotació",
+        restoreFailed: "No s'ha pogut restaurar l'anotació",
+        crossPage: "La selecció abasta diverses pàgines. Anota una pàgina a la vegada.",
+        tooLong: "La selecció és massa llarga. Divideix-la en parts més petites.",
+      },
+      deleteConfirm: {
+        count: "En eliminar també se suprimiran {{count}} anotació(ns).",
+      },
+    },
   },
   chat: {
     sessions: "Sessions",
@@ -647,6 +754,34 @@ export const caES = {
     contextPickerCounts: "Extractes {{insights}} · Complet {{full}} · Notes {{notes}}",
     enterFullscreen: "Activa la pantalla completa",
     exitFullscreen: "Surt de la pantalla completa",
+    participantConfig: "Participant de la conversa",
+    participantDesc: "Tria una persona agent o un model; s'exclouen mútuament: triar-ne un neteja l'altre.",
+    participantPlaceholder: "Selecciona el participant",
+    groupDefault: "Assistent per defecte",
+    groupAgents: "Agents",
+    groupModels: "Models",
+    participantAgentHint: "En aplicar-ho, les respostes següents usen la persona i els paràmetres d'aquest agent.",
+    participantModelHint: "En aplicar-ho, les respostes següents queden fixades en aquest model.",
+    agentMissing: "Agent suprimit — s'usa l'assistent per defecte",
+    answeredBy: "Respost per {{name}}",
+    parallelSend: "Pregunta en paral·lel",
+    parallelPickTitle: "Tria els participants en paral·lel",
+    parallelPickCount: "{{count}}/{{max}} triats",
+    parallelPickHint: "Marca'n diversos i pregunta alhora",
+    parallelMaxReached: "S'ha arribat al límit de 5",
+    parallelConfirm: "Pregunta en paral·lel",
+    parallelProgress: "En curs: {{done}}/{{total}} fets",
+    parallelWaiting: "Esperant la resposta…",
+    parallelFailed: "Ha fallat la pregunta en paral·lel",
+    streamFailed: "Error en generar la resposta",
+    streamBusy: "Aquesta sessió ja està generant una resposta; espereu un moment",
+    synthesisPickLabel: "Sintetitza i fusiona:",
+    synthesisDefaultPicker: "Model per defecte del sistema",
+    synthesisRun: "Sintetitza",
+    synthesisResultTitle: "Resposta sintetitzada",
+    synthesisFailed: "Ha fallat la síntesi",
+    parallelEmptyHint: "Escriviu primer una pregunta i després inicieu les respostes paral·leles",
+    parallelTriggerCount: "Paral·lel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Pregunta i cerca",
@@ -1266,6 +1401,7 @@ export const caES = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Preguntes i respostes",
+    typeSourceSectionAnalysis: "Anàlisi d'IA de secció",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const caES = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Inspector de tasques en directe",
+
+
+
+
+
+
+        completed: "Completat",
+
+
+
+
+
+
+        failed: "Error d'execució",
+
+
+
+
+
+
+        canceled: "Cancel·lat",
+
+
+
+
+
+
+        running: "Generant…",
+
+
+
+
+
+
+        elapsed: "Transcorregut",
+
+
+
+
+
+
+        stageFallback: "Executant",
+
+
+
+
+
+
+        processing: "Processant",
+
+
+
+
+
+
+        taskId: "ID de tasca",
+
+
+
+
+
+
+        openTaskCenter: "Obre la gestió de tasques",
+
+
+
+
+
+
+        stageFlow: "Flux d'etapes",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Entrada de context",
+
+
+
+
+
+
+        modelOutput: "Sortida del model",
+
+
+
+
+
+
+        tokenRate: "Velocitat de tokens",
+
+
+
+
+
+
+        processedChunks: "Fragments processats",
+
+
+
+
+
+
+        chunksDesc: "Fragments vectorials",
+
+
+
+
+
+
+        execStatus: "Estat",
+
+
+
+
+
+
+        workerNode: "Worker en segon pla",
+
+
+
+
+
+
+        timeStats: "Temps transcorregut",
+
+
+
+
+
+
+        stopwatchDesc: "Cronòmetre en directe",
+
+
+
+
+
+
+        terminalTitle: "terminal en directe ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Atura el desplaçament",
+
+
+
+
+
+
+        autoScroll: "Desplaçament automàtic",
+
+
+
+
+
+
+        copyLogs: "Copia els registres",
+
+
+
+
+
+
+        clearOutput: "Esborra la sortida",
+
+
+
+
+
+
+        logsCopied: "Registres del terminal copiats al porta-retalls",
+
+
+
+
+
+
+        logsCleared: "Sortida del terminal esborrada",
+
+
+
+
+
+
+        errorDetails: "Detalls de l'error",
+
+
+
+
+
+
+        cancelTask: "Cancel·la la tasca",
+
+
+
+
+
+
+        closeDrawer: "Tanca el panell",
+
+
+
+
+
+
+        footerReady: "Escolta bidireccional del flux de registres a punt",
+
+
+
+
+
+
+        doneCollapse: "Fet i replega",
+
+
+
+
+
+
+        fallbackStream1: "Flux de tokens travessant el graf de context…",
+
+
+
+
+
+
+        fallbackStream2: "Sintetitzant afirmacions conceptuals clau i àncores de cita…",
+
+
+
+
+
+
+        fallbackStream3: "Validant el contracte d'esquema JSON i capçaleres Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Escrivint la sortida asíncrona del worker al magatzem de dades…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "En cua",
+
+
+
+
+
+
+          queueDesc: "Planificació del worker i assignació de recursos",
+
+
+
+
+
+
+          prepare: "Preparació",
+
+
+
+
+
+
+          prepareDesc: "Carregant context i dependències",
+
+
+
+
+
+
+          execute: "Execució",
+
+
+
+
+
+
+          executeDesc: "Procés en segon pla calculant",
+
+
+
+
+
+
+          finalize: "Finalització",
+
+
+
+
+
+
+          finalizeDesc: "Persistint estat i resultats",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const caES = {
       cancel: "Cancel·la la tasca",
       cancelSuccess: "Tasca cancel·lada",
       cancelFailed: "No s'ha pogut cancel·lar la tasca. Torna-ho a provar.",
+      viewLiveProgress: "Mostra el progrés en directe",
+      viewDetails: "Detalls",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const caES = {
     readOnlyView: "Vista de només lectura",
     enterFullscreen: "Activa la pantalla completa",
     exitFullscreen: "Surt de la pantalla completa",
+    editNote: "Edita la nota",
+    sourcesPanelTitle: "Fonts",
+    notesPanelTitle: "Notes",
+    openSourcesPanel: "Obre el panell de fonts",
+    openNotesPanel: "Obre el panell de notes",
+    closePanel: "Tanca el panell",
+    panelEmptySources: "No hi ha fonts en aquesta llibreta",
+    panelEmptyNotes: "No hi ha notes en aquesta llibreta",
+  },
+  geminiSources: {
+    newFolder: "Nova carpeta",
+    addExisting: "Afegeix existents",
+    tabHierarchical: "Recursos ({{count}})",
+    tabWebResearch: "Recerca web",
+    selectAllForChat: "Selecciona-ho tot per al xat",
+    deselectAll: "Desselecciona-ho tot",
+    searchPlaceholder: "Cerca recursos...",
+    loadingTree: "Carregant recursos...",
+    empty: "Encara no hi ha recursos: afegeix-los a dalt o explora amb la recerca web",
+    ungrouped: "Sense classificar",
+    folderBadgeMixed: "{{local}} en aquest quadern · {{total}} a la biblioteca ({{missing}} sense afegir)",
+    folderBadgeLocal: "{{count}} en aquest quadern",
+    folderEmptyInNotebook: "Aquesta carpeta encara no té recursos en aquest quadern",
+    folderTotalCount: "Fonts totals a la carpeta: {{count}}",
+    addNewResource: "Afegeix un recurs nou",
+    webResearchTitle: "Recerca web",
+    fastMode: "Ràpid",
+    deepMode: "Profund",
+    fastModeDesc: "Resposta en segons: extreu paraules clau, cerca en paral·lel i neteja el text — marca pàgines per desar-les com a fonts.",
+    deepModeDesc: "Agent profund: planifica de forma autònoma, recupera en múltiples salts i valida creuant — importa un informe estructurat com a fonts.",
+    fastPlaceholder: "Introdueix una paraula clau o tema...",
+    deepPlaceholder: "Introdueix un tema de recerca profunda...",
+    foundSources: "Fonts de qualitat trobades ({{count}})",
+    importing: "S'està important...",
+    bulkAdd: "Afegeix-ho tot al quadern",
+    researchFastDone: "Recerca completada — fonts de qualitat obtingudes",
+    researchDeepDone: "Recerca profunda completada — fonts estructurades a punt",
+    researchFailed: "La cerca web ha fallat, torna-ho a provar més tard",
+    selectAtLeastOne: "Selecciona almenys una pàgina per afegir",
+    savedPages: "S'han afegit {{count}} pàgines com a fonts",
+    addPagesFailed: "No s'han pogut afegir les pàgines com a fonts",
+    mockTitleInsights: "{{topic}}: arquitectura central i pràctiques del sector",
+    mockSnippetInsights: "Anàlisi en profunditat de {{topic}}: mecanismes centrals, mètriques clau i experiència de desplegament en producció.",
+    mockTitleSpec: "{{topic}}: llibre blanc oficial i bones pràctiques",
+    mockSnippetSpec: "Revisió sistemàtica de les decisions de disseny, models de dades i trampes de rendiment habituals de {{topic}}.",
+    mockTitleBenchmark: "Comparativa: {{topic}} davant d'alternatives de codi obert",
+    mockSnippetBenchmark: "Conclusions amb rendiment real i càrrega concurrent sostinguda: diferències clau i recomanacions per escenari.",
+    noViewError: "Cap vista disponible",
+    folderCreated: "Carpeta creada",
+    folderCreateFailed: "No s'ha pogut crear la carpeta",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "{{count}} notes",
+    newNote: "Nova nota",
+    toolbox: "Caixa d'eines",
+    openTasks: "Obre les tasques",
+    notesStream: "Targetes de notes ({{count}})",
+    saveHint: "Captura del xat en un clic",
+    loadingNotes: "Carregant notes...",
+    emptyNotes: "Encara no hi ha notes",
+    emptyNotesHint: "Desa una nota del xat o selecciona text clau per capturar-lo aquí.",
+    noContent: "Sense contingut",
+    generateFailed: "No s'ha pogut generar l'artefacte",
+    generateDone: "{{tool}} s'ha generat i desat com a nota",
+    jobProgressTitle: "{{tool}} · progrés",
+    jobProgressHint: "La tasca s'executa en segon pla — segueix-ne l'estat o obre el centre de tasques",
+    instructionLabel: "Instrucció i enfocament (opcional)",
+    instructionPlaceholder: "Instrucció personalitzada o enfocament per a la IA...",
+    contextHint: "Genera a partir de les {{count}} fonts seleccionades i notes relacionades, i desa el resultat com a nota.",
+    runInBackground: "Continua en segon pla",
+    submitting: "S'està enviant...",
+    generateAndSave: "Genera i desa com a nota",
+    tagPodcast: "Podcast",
+    tagArtifact: "Artefacte",
+    tools: {
+      audioOverview: {
+        desc: "Podcast d'anàlisi amb dos presentadors (síntesi de veu real)",
+      },
+      studyGuide: {
+        desc: "Conceptes clau, preguntes de test i esquema de repàs sistemàtic",
+        instruction: "Prepara una guia d'estudi sistemàtica amb anàlisi de termes clau, resum dels punts essencials i preguntes d'elecció múltiple i obertes d'autoavaluació.",
+      },
+      briefingDoc: {
+        desc: "Informe executiu amb arguments clau, implicacions estratègiques i conclusions",
+        instruction: "Redacta un informe executiu professional amb resum del context, fets clau de suport, avaluació de riscos i pròxims passos recomanats.",
+      },
+      faq: {
+        desc: "Les preguntes freqüents més importants amb respostes detallades de les teves fonts",
+        instruction: "Revisa tots els materials i recopila les preguntes essencials més freqüents amb respostes exhaustives.",
+      },
+      flashcards: {
+        desc: "Coneixement clau en parells pregunta/resposta tipus flashcards",
+        instruction: "Destil·la conceptes i conclusions clau en flashcards memoritzables.",
+      },
+    },
+  },
+  agents: {
+    title: "Agents",
+    desc: "Persones de xat predefinides: prompt de sistema més model i paràmetres de mostreig opcionals, seleccionables als xats del quadern.",
+    create: "Nou agent",
+    edit: "Edita l'agent",
+    delete: "Suprimeix",
+    empty: "Encara no hi ha agents: crea el primer a dalt a la dreta",
+    disabled: "Desactivat",
+    inUse: "{{count}} sessions en ús",
+    createSuccess: "Agent creat",
+    updateSuccess: "Agent actualitzat",
+    deleteSuccess: "Agent suprimit",
+    deleteConfirmTitle: "Suprimeix l'agent",
+    deleteConfirmDesc: "Suprimir «{{name}}»? Les seves {{count}} sessions vinculades tornaran a l'assistent per defecte; l'historial es conserva.",
+    loadFailed: "No s'ha pogut carregar l'agent",
+    editorDesc: "Defineix la persona, el model per defecte i els paràmetres de mostreig.",
+    nameLabel: "Nom",
+    namePlaceholder: "p. ex. assistent de recerca",
+    descriptionLabel: "Descripció",
+    descriptionPlaceholder: "Una línia sobre què fa aquesta persona (opcional)",
+    promptLabel: "Prompt de sistema",
+    promptPlaceholder: "Descriu la identitat, el to i l'estil de resposta de la persona...",
+    promptHint: "S'injecta a l'inici del prompt de sistema del xat; les regles de citació segueixen vigents.",
+    modelLabel: "Model enllaçat",
+    modelPlaceholder: "Segueix el valor per defecte del xat",
+    modelHint: "Deixa-ho buit per usar el model triat al xat o el predeterminat del sistema.",
+    temperatureField: "Temperatura",
+    maxTokensField: "Tokens màx.",
+    enabledLabel: "Activat",
+    enabledHint: "Els agents desactivats desapareixen del selector; les sessions vinculades tornen a l'assistent per defecte.",
+    validationRequired: "El nom i el prompt de sistema són obligatoris",
+    validationTemperature: "La temperatura ha d'estar entre 0 i 2",
+    validationMaxTokens: "Els tokens màx. han de ser un enter positiu",
+    temperatureLabel: "temp {{value}}",
+    temperatureHelp: "La temperatura controla el grau d'atzar de les respostes, en una escala de 0 a 2. Els valors baixos fan la sortida més estable i precisa — bons per a tasques factuals com preguntes i respostes o resums de recerca. Els valors alts la fan més variada i creativa — millors per a l'escriptura creativa i la pluja d'idees. Deixa-ho en blanc per seguir el valor per defecte del xat.",
+    maxTokensLabel: "límit {{value}} tokens",
+    templateLabel: "Comença amb una plantilla",
+    templatePickerDesc: "Tria un agent predefinit per sector. En seleccionar-ne un, s'omplen el nom, el prompt i els paràmetres de mostreig — després tot es pot editar.",
+    templateBlankName: "Començar des de zero",
+    templateBlankDesc: "Omet les plantilles i omple tu mateix el nom i el prompt del sistema.",
+    templateUse: "Utilitza aquesta plantilla",
+    templateCat: {
+      software: "Programari",
+      ruankao: "Preparació de l'examen Ruankao",
+      llm: "LLM",
+      business: "Negocis",
+      education: "Educació",
+      creative: "Creatiu",
+      general: "General",
+    },
+    polishPrompt: "Poleix el prompt",
+    polishing: "Polint…",
+    polishFailed: "No s'ha pogut polir el prompt",
   },
 } satisfies TranslationShape;

@@ -18,6 +18,13 @@
    duplicate aliases into the dark block.
    ========================================================================== */
 
+@theme {
+  /* 超宽屏断点（2560px+，如 3440 带鱼屏）。注意：Tailwind v4 会把 @theme 新增
+     断点的规则排到标准断点（2xl 等）之前，层叠必输，因此使用处必须加
+     important 后缀（3xl:grid-cols-6!）才能在 2560px+ 生效。 */
+  --breakpoint-3xl: 2560px;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -253,6 +260,35 @@
   --ctx-insights-tint: var(--gold-tint);
   --ctx-off-ink: var(--ink-soft);
   --ctx-off-bg: var(--surface-raised);
+
+  /* personal annotation inks — user handwriting, not system voice.
+     Theme-following aliases for the parsed-text view; the PDF overlay uses
+     the fixed *-ink pair below because the canvas stays white in dark mode. */
+  --anno-gold: var(--gold);
+  --anno-fern: var(--fern);
+  --anno-plum: var(--plum);
+  --anno-slate: var(--slate);
+  --anno-clay: var(--clay);
+  /* 18-22% washes — the second sanctioned wash family after --excerpt-wash */
+  --anno-gold-wash: color-mix(in srgb, var(--anno-gold) 20%, transparent);
+  --anno-fern-wash: color-mix(in srgb, var(--anno-fern) 20%, transparent);
+  --anno-plum-wash: color-mix(in srgb, var(--anno-plum) 20%, transparent);
+  --anno-slate-wash: color-mix(in srgb, var(--anno-slate) 20%, transparent);
+  --anno-clay-wash: color-mix(in srgb, var(--anno-clay) 18%, transparent);
+
+  /* PDF annotation overlay — fixed light inks (canvas stays white paper in
+     dark mode; dark hues measure 2.3-2.8:1 on white, all five light inks
+     3.8-7.4:1). Deliberately NOT overridden in .dark. */
+  --anno-gold-ink: #a97b12;
+  --anno-fern-ink: #2e6b4f;
+  --anno-plum-ink: #5d4991;
+  --anno-slate-ink: #4e6b84;
+  --anno-clay-ink: #b0451f;
+  --anno-gold-paper: rgba(169, 123, 18, 0.22);
+  --anno-fern-paper: rgba(46, 107, 79, 0.22);
+  --anno-plum-paper: rgba(93, 73, 145, 0.22);
+  --anno-slate-paper: rgba(78, 107, 132, 0.22);
+  --anno-clay-paper: rgba(176, 69, 31, 0.22);
 
   /* motion — quick and quiet */
   --motion-fast: 0.12s;
@@ -598,4 +634,197 @@
   .w-md-editor-preview :where(.wmde-markdown ol) {
     list-style-type: decimal;
   }
+}
+
+/* ============================================================================
+   Gemini notebook workspace grid
+   Plain CSS on purpose: this grid's arbitrary-value responsive grid-cols
+   utilities resolved inconsistently in the embedded webview (the 2xl rule
+   matched freshly created elements but not the hydrated grid). Static
+   class + media queries sidestep that entirely. Keep widths in sync with
+   GeminiNotebookView's three-column layout.
+   ========================================================================== */
+.notebook-workspace-grid {
+  grid-template-columns: 360px minmax(0, 1fr) 360px;
+}
+
+.notebook-workspace-grid--studio-collapsed {
+  grid-template-columns: 360px minmax(0, 1fr) 48px;
+}
+
+@media (min-width: 80rem) {
+  .notebook-workspace-grid {
+    grid-template-columns: 380px minmax(0, 1fr) 420px;
+  }
+
+  .notebook-workspace-grid--studio-collapsed {
+    grid-template-columns: 380px minmax(0, 1fr) 48px;
+  }
+}
+
+@media (min-width: 96rem) {
+  .notebook-workspace-grid {
+    grid-template-columns: 420px minmax(0, 1fr) 460px;
+  }
+
+  .notebook-workspace-grid--studio-collapsed {
+    grid-template-columns: 420px minmax(0, 1fr) 48px;
+  }
+}
+
+/* Studio 列 ScrollArea 的 table 包裹层修复（套用在该 ScrollArea 根元素上）。
+   Radix ScrollArea 的 Viewport 内固定渲染一个行内样式的包裹 div
+  （style="min-width:100%;display:table"，@radix-ui/react-scroll-area@1.2.9；
+   该 div 无 class，只能按 [data-radix-scroll-area-viewport] 直接子元素定位）。
+   CSS table 自动布局以内容固有宽度为表宽下限：Studio 工具按钮网格里工具描述
+   的 max-content 会把它撑宽（实测 573px > 列宽 460px），连带下方笔记卡片一起
+   超出视口，右上角悬停按钮（编辑/存为来源/删除）被裁到屏幕外。
+   display:block 移除 table 布局（引擎无关）；min-width:100% 仍由 Radix 行内
+   样式保留，纵向滚动测量不变。必须 !important：普通作者声明打不过行内样式。
+   本仓库 17 处 ScrollArea 全为纵向滚动，无人依赖 table 的横向撑开特性，故仅
+   用该类定向作用于 Studio 列；若日后在此 ScrollArea 内放横向滚动内容，需自带
+   overflow-x-auto。依赖 Radix 内部 DOM 结构，升级后若修复失效先查这里。 */
+.notebook-studio-scroll [data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}
+
+/* ------------------------------------------------------------------
+   pdf.js textLayer — official stylesheet (pdfjs-dist 6.3 web/pdf_viewer.css
+   lines 647-796, flattened; editor-cursor/toolbar sections omitted — the
+   AnnotationEditor layer is not used here). The transparent spans overlay
+   the canvas exactly and carry the native text selection the annotation
+   toolbar listens on.
+   ------------------------------------------------------------------ */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer.highlighting {
+  touch-action: none;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role='img'] {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.textLayer .highlight {
+  --highlight-bg-color: rgb(180 0 170 / 0.25);
+  --highlight-selected-bg-color: rgb(0 100 0 / 0.25);
+  margin: -1px;
+  padding: 1px;
+  background-color: var(--highlight-bg-color);
+  border-radius: 4px;
+}
+
+.textLayer .highlight.appended {
+  position: initial;
+}
+
+.textLayer .highlight.begin {
+  border-radius: 4px 0 0 4px;
+}
+
+.textLayer .highlight.end {
+  border-radius: 0 4px 4px 0;
+}
+
+.textLayer .highlight.middle {
+  border-radius: 0;
+}
+
+.textLayer .highlight.selected {
+  background-color: var(--highlight-selected-bg-color);
+  scroll-margin-top: 50px;
+}
+
+.textLayer ::-moz-selection {
+  background: rgba(0 0 255 / 0.25);
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+
+.textLayer ::selection {
+  background: rgba(0 0 255 / 0.25);
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+
+.textLayer.selectionRendering ::-moz-selection {
+  background: transparent;
+  color: transparent;
+}
+
+.textLayer.selectionRendering ::selection {
+  background: transparent;
+  color: transparent;
+}
+
+.textLayer br::-moz-selection {
+  background: transparent;
+}
+
+.textLayer br::selection {
+  background: transparent;
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.textLayer.selecting .endOfContent {
+  top: 0;
 }

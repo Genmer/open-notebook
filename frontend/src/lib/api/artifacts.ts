@@ -14,10 +14,18 @@ export interface ArtifactJob {
   message: string
 }
 
-/** Shape of GET /commands/jobs/{job_id} (api/routers/commands.py). */
+/**
+ * Shape of GET /commands/jobs/{job_id} (api/routers/commands.py).
+ *
+ * `status` mirrors the backend CommandStatus enum in
+ * surreal_commands/core/client.py ('new' | 'running' | 'completed' | 'failed'
+ * | 'canceled', single-L 'canceled') plus the 'unknown' fallback the endpoint
+ * returns when the job record no longer exists. If the backend enum changes,
+ * update this union too.
+ */
 export interface CommandJobStatus {
   job_id: string
-  status: string
+  status: 'new' | 'running' | 'completed' | 'failed' | 'canceled' | 'unknown'
   result?: Record<string, unknown> | null
   error_message?: string | null
   created?: string | null

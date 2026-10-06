@@ -1,0 +1,19 @@
+-- Migration 34: agent configuration + per-session agent binding (PDR-004).
+-- Agents are predefined chat personas (system prompt + optional model and
+-- sampling overrides). Sessions reference them by id string in
+-- chat_session.agent, exactly the shape of chat_session.model_override
+-- (migration 8); dangling ids degrade to the default assistant at resolve
+-- time, so agent deletion does NOT cascade here.
+DEFINE TABLE IF NOT EXISTS agent SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE agent TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE agent TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS system_prompt ON TABLE agent TYPE string;
+DEFINE FIELD IF NOT EXISTS model ON TABLE agent TYPE option<record<model>>;
+DEFINE FIELD IF NOT EXISTS temperature ON TABLE agent TYPE option<float>;
+DEFINE FIELD IF NOT EXISTS max_tokens ON TABLE agent TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS enabled ON TABLE agent TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS sort_order ON TABLE agent TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS created ON TABLE agent DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE agent DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_agent_enabled_sort ON TABLE agent FIELDS enabled, sort_order;
+DEFINE FIELD IF NOT EXISTS agent ON TABLE chat_session TYPE option<string>;

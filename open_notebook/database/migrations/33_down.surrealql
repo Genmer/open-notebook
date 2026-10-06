@@ -1,0 +1,3 @@
+REMOVE EVENT IF NOT EXISTS source_annotation_cleanup ON TABLE source;
+REMOVE TABLE IF EXISTS source_annotation;
+REMOVE TABLE IF EXISTS annotation_settings;

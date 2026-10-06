@@ -1,6 +1,7 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { toast } from 'sonner'
 import { SourceDetailContent } from './SourceDetailContent'
 import { sourcesApi } from '@/lib/api/sources'
 import { insightsApi } from '@/lib/api/insights'
@@ -18,13 +19,35 @@ vi.mock('@/lib/api/sources', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     retry: vi.fn(),
+    fetchSourceFileBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
   },
+}))
+
+// PdfSourceViewer is dynamically imported (next/dynamic, ssr:false); a stub
+// keeps the viewer test light and exposes the props SourceDetailContent passes.
+// Like the real component it renders nothing while closed.
+vi.mock('@/components/sources/PdfSourceViewer', () => ({
+  default: (props: {
+    open?: boolean
+    notebookId?: string
+    filePath?: string | null
+    inline?: boolean
+  }) =>
+    props.open === false ? null : (
+      <div
+        data-testid="pdf-viewer-mock"
+        data-notebook={props.notebookId ?? ''}
+        data-file-path={props.filePath ?? ''}
+        data-inline={props.inline ? 'true' : 'false'}
+      />
+    ),
 }))
 
 vi.mock('@/lib/api/insights', () => ({
   insightsApi: {
     listForSource: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    getCommandStatus: vi.fn(),
   },
 }))
 
@@ -65,38 +88,12 @@ vi.mock('@/components/ui/select', () => ({
   ),
 }))
 
-// Minimal Radix-like tabs: role="tab", activation on mouseDown, and only
-// the active TabsContent renders (fork's title tests depend on all three).
-vi.mock('@/components/ui/tabs', async () => {
-  const React = await import('react')
-  const TabsCtx = React.createContext<{ value: string; setValue: (v: string) => void }>({
-    value: '',
-    setValue: () => {},
-  })
-  const Tabs = ({
-    children,
-    defaultValue,
-  }: React.PropsWithChildren<{ defaultValue?: string }>) => {
-    const [value, setValue] = React.useState(defaultValue ?? '')
-    const ctx = React.useMemo(() => ({ value, setValue }), [value])
-    return <TabsCtx.Provider value={ctx}>{children}</TabsCtx.Provider>
-  }
-  const TabsList = ({ children }: React.PropsWithChildren) => <div>{children}</div>
-  const TabsTrigger = ({ children, value }: React.PropsWithChildren<{ value: string }>) => {
-    const { value: active, setValue } = React.useContext(TabsCtx)
-    return (
-      <button role="tab" aria-selected={active === value} onMouseDown={() => setValue(value)}>
-        {children}
-      </button>
-    )
-  }
-  const TabsContent = ({ children, value }: React.PropsWithChildren<{ value: string }>) => {
-    const { value: active } = React.useContext(TabsCtx)
-    if (active !== value) return null
-    return <div role="tabpanel">{children}</div>
-  }
-  return { Tabs, TabsList, TabsTrigger, TabsContent }
-})
+vi.mock('@/components/ui/tabs', () => ({
+  Tabs: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  TabsList: ({ children }: React.PropsWithChildren) => <div role="tablist">{children}</div>,
+  TabsTrigger: ({ children }: React.PropsWithChildren) => <button role="tab">{children}</button>,
+  TabsContent: ({ children }: React.PropsWithChildren) => <div role="tabpanel">{children}</div>,
+}))
 
 vi.mock('sonner', () => ({
   toast: {
@@ -107,6 +104,8 @@ vi.mock('sonner', () => ({
 
 const mockSourcesGet = vi.mocked(sourcesApi.get)
 const mockListInsights = vi.mocked(insightsApi.listForSource)
+const mockCreateInsight = vi.mocked(insightsApi.create)
+const mockGetCommandStatus = vi.mocked(insightsApi.getCommandStatus)
 const mockListTransformations = vi.mocked(transformationsApi.list)
 
 const notFoundError = Object.assign(new Error('Request failed with status code 404'), {
@@ -241,6 +240,83 @@ describe('SourceDetailContent', () => {
     screen.getByText('common.close').click()
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('does not start polling when creation finishes after unmount', async () => {
+    mockSourcesGet.mockResolvedValue(loadedSource)
+    let resolveCreate!: (value: Awaited<ReturnType<typeof insightsApi.create>>) => void
+    mockCreateInsight.mockReturnValue(new Promise(resolve => {
+      resolveCreate = resolve
+    }))
+
+    const view = renderContent(undefined, loadedSource.id)
+    await startInsightGeneration()
+    await waitFor(() => expect(mockCreateInsight).toHaveBeenCalled())
+
+    view.unmount()
+    await act(async () => {
+      resolveCreate({
+        status: 'pending',
+        message: 'started',
+        source_id: loadedSource.id,
+        transformation_id: 'transformation:summary',
+        command_id: 'job-1',
+      })
+    })
+
+    expect(mockGetCommandStatus).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend error when insight generation fails', async () => {
+    mockSourcesGet.mockResolvedValue(loadedSource)
+    mockCreateInsight.mockResolvedValue({
+      status: 'pending',
+      message: 'started',
+      source_id: loadedSource.id,
+      transformation_id: 'transformation:summary',
+      command_id: 'job-1',
+    })
+    mockGetCommandStatus.mockResolvedValue({
+      job_id: 'job-1',
+      status: 'failed',
+      error_message: 'Model ran out of memory',
+    })
+
+    renderContent(undefined, loadedSource.id)
+    await startInsightGeneration()
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'sources.insightGenerationFailed',
+        expect.objectContaining({ description: 'Model ran out of memory' })
+      )
+    })
+  })
+
+  it('does not apply terminal effects when the job fails after unmount', async () => {
+    mockSourcesGet.mockResolvedValue(loadedSource)
+    mockCreateInsight.mockResolvedValue({
+      status: 'pending',
+      message: 'started',
+      source_id: loadedSource.id,
+      transformation_id: 'transformation:summary',
+      command_id: 'job-1',
+    })
+    let resolveStatus!: (value: { job_id: string; status: string; error_message?: string }) => void
+    mockGetCommandStatus.mockReturnValue(new Promise(resolve => {
+      resolveStatus = resolve
+    }))
+
+    const view = renderContent(undefined, loadedSource.id)
+    await startInsightGeneration()
+    await waitFor(() => expect(mockGetCommandStatus).toHaveBeenCalledWith('job-1'))
+
+    view.unmount()
+    await act(async () => {
+      resolveStatus({ job_id: 'job-1', status: 'failed', error_message: 'Stale failure' })
+    })
+
+    expect(toast.error).not.toHaveBeenCalled()
+  })
 })
 
 describe('SourceDetailContent transformation titles', () => {
@@ -308,10 +384,10 @@ describe('SourceDetailContent transformation titles', () => {
     fireEvent.mouseDown(await screen.findByRole('tab', { name: /common\.insights/ }))
 
     // t() returns the key, so this text only appears via displayTransformationTitle.
-    // The mocked select keeps its options mounted, so the same label can also
-    // appear there — assert at least one insight-list occurrence.
+    // The mocked transformation select also lists the same label as an
+    // <option>, so assert on the insight-row badge specifically.
     const matches = await screen.findAllByText('sources.transformationTitleDenseSummary')
-    expect(matches.length).toBeGreaterThan(0)
+    expect(matches.some(el => el.tagName === 'SPAN' && el.className.includes('text-teal'))).toBe(true)
   })
 
   it('offers localized preset titles and verbatim custom titles in the transformation select', async () => {
@@ -328,5 +404,98 @@ describe('SourceDetailContent transformation titles', () => {
       await screen.findByRole('option', { name: 'sources.transformationTitleDenseSummary' })
     ).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'My Custom Rule' })).toBeInTheDocument()
+  })
+})
+
+describe('SourceDetailContent PDF viewer entry', () => {
+  const pdfSource: SourceDetailResponse = {
+    ...loadedSource,
+    id: 'source:pdf',
+    title: '需求工程.pdf',
+    asset: { file_path: '/data/uploads/需求工程.pdf', url: undefined },
+  }
+  const txtSource: SourceDetailResponse = {
+    ...loadedSource,
+    id: 'source:txt',
+    title: 'notes.txt',
+    asset: { file_path: '/data/uploads/notes.txt', url: undefined },
+  }
+
+  const renderWith = (source: SourceDetailResponse, notebookId?: string) => {
+    mockSourcesGet.mockResolvedValue(source)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <SourceDetailContent sourceId={source.id} notebookId={notebookId} />
+      </QueryClientProvider>
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockListInsights.mockResolvedValue([])
+    mockListTransformations.mockResolvedValue([])
+  })
+
+  it('shows the "view original file" button for a PDF source and opens the viewer with its path', async () => {
+    renderWith(pdfSource, 'nb:9')
+
+    fireEvent.click(await screen.findByTestId('open-pdf-viewer'))
+
+    const viewer = await screen.findByTestId('pdf-viewer-mock')
+    expect(viewer).toHaveAttribute('data-file-path', '/data/uploads/需求工程.pdf')
+    // notebookId 从 ?nb= 链路透传，供「保存解析为笔记」使用
+    expect(viewer).toHaveAttribute('data-notebook', 'nb:9')
+  })
+
+  it('embeds the viewer inline and toggles back to the parsed text with the same button', async () => {
+    renderWith(pdfSource)
+
+    const button = await screen.findByTestId('open-pdf-viewer')
+    expect(button).toHaveTextContent('sources.pdfViewer.open')
+
+    // First click: the parsed text is replaced by the inline viewer.
+    fireEvent.click(button)
+    const viewer = await screen.findByTestId('pdf-viewer-mock')
+    expect(viewer).toHaveAttribute('data-inline', 'true')
+    expect(screen.queryByText('Source content')).not.toBeInTheDocument()
+    // Same button, now "restore".
+    expect(button).toHaveTextContent('sources.pdfViewer.restore')
+
+    // Second click: the viewer unmounts and the parsed text comes back.
+    fireEvent.click(button)
+    expect(screen.queryByTestId('pdf-viewer-mock')).not.toBeInTheDocument()
+    expect(await screen.findByText('Source content')).toBeInTheDocument()
+    expect(button).toHaveTextContent('sources.pdfViewer.open')
+  })
+
+  it('hides the button for non-PDF uploads', async () => {
+    renderWith(txtSource)
+
+    await screen.findByText('notes.txt')
+    expect(screen.queryByTestId('open-pdf-viewer')).not.toBeInTheDocument()
+  })
+
+  it('hides the button for sources without an uploaded file', async () => {
+    renderWith(loadedSource)
+
+    await screen.findByText('Loaded source')
+    expect(screen.queryByTestId('open-pdf-viewer')).not.toBeInTheDocument()
+  })
+
+  it('disables the button when the file is unavailable on disk', async () => {
+    renderWith({ ...pdfSource, file_available: false })
+
+    const button = await screen.findByTestId('open-pdf-viewer')
+    await waitFor(() => {
+      expect(button).toBeDisabled()
+    })
+  })
+
+  it('keeps the viewer mounted-but-closed until the button opens it', async () => {
+    renderWith(pdfSource)
+
+    await screen.findByTestId('open-pdf-viewer')
+    expect(screen.queryByTestId('pdf-viewer-mock')).not.toBeInTheDocument()
   })
 })

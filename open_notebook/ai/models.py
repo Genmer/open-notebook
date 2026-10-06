@@ -182,8 +182,10 @@ class DefaultModels(RecordModel):
     default_qa_model: Optional[str] = None
 
     @classmethod
-    async def get_instance(cls) -> "DefaultModels":
-        """Always fetch fresh defaults from database (override parent caching behavior)"""
+    async def get_instance(cls, force_reload: bool = False) -> "DefaultModels":
+        """Always fetch fresh defaults from database (override parent caching
+        behavior); force_reload is accepted for signature compatibility and
+        ignored since this override never serves cached data."""
         result = await repo_query(
             "SELECT * FROM ONLY $record_id",
             {"record_id": ensure_record_id(cls.record_id)},

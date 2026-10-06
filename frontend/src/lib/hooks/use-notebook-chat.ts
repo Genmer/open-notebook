@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { buildChatContextConfig } from '@/lib/utils/source-context'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { chatApi } from '@/lib/api/chat'
+import { chatApi, ChatStreamEvent } from '@/lib/api/chat'
+import { useParallelChat } from '@/lib/hooks/use-parallel-chat'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import {
   NotebookChatMessage,
@@ -16,6 +17,10 @@ import {
   NoteResponse
 } from '@/lib/types/api'
 import { ContextSelections } from '@/app/(dashboard)/notebooks/[id]/page'
+
+// Re-arm on every SSE event/byte chunk; only fires when the stream goes
+// genuinely silent (same technique as use-parallel-chat).
+const STREAM_IDLE_TIMEOUT_MS = 120_000
 
 interface UseNotebookChatParams {
   notebookId: string
@@ -34,6 +39,28 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [charCount, setCharCount] = useState<number>(0)
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
+  // Pending agent binding (PDR-004); mutually exclusive with the model override
+  const [pendingAgentOverride, setPendingAgentOverride] = useState<string | null>(null)
+  // Parallel answers (PDR-004): live fan-out state shared with the composer
+  const parallel = useParallelChat()
+  // Single-run token streaming: the accumulating text lives in its own state
+  // (never a per-token setMessages — that would re-run groupParallelMessages
+  // and re-map the whole list on every chunk). null = not streaming.
+  const [streamingContent, setStreamingContent] = useState<string | null>(null)
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const streamTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const streamMountedRef = useRef(false)
+
+  // Unmount safety (use-parallel-chat technique): clear the watchdog and
+  // abort any in-flight stream so nothing leaks past the component lifetime.
+  useEffect(() => {
+    streamMountedRef.current = true
+    return () => {
+      streamMountedRef.current = false
+      if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current)
+      streamAbortRef.current?.abort()
+    }
+  }, [])
 
   // Fetch sessions for this notebook
   const {
@@ -152,35 +179,41 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return response.context
   }, [notebookId, sources, notes, contextSelections])
 
-  // Send message (synchronous, no streaming)
-  const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
-    let sessionId = currentSessionId
-
-    // Auto-create session if none exists
-    if (!sessionId) {
-      try {
-        const defaultTitle = message.length > 30
-          ? `${message.substring(0, 30)}...`
-          : message
-        const newSession = await chatApi.createSession({
-          notebook_id: notebookId,
-          title: defaultTitle,
-          // Include pending model override when creating session
-          model_override: pendingModelOverride ?? undefined
-        })
-        sessionId = newSession.id
-        setCurrentSessionId(sessionId)
-        // Clear pending model override now that it's applied to the session
-        setPendingModelOverride(null)
-        queryClient.invalidateQueries({
-          queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
-        })
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { detail?: string } }, message?: string };
-        toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
-        return
-      }
+  // Auto-create a session if none exists (shared by the single-run and
+  // parallel send paths); returns null on failure after toasting.
+  const ensureSessionId = useCallback(async (message: string): Promise<string | null> => {
+    if (currentSessionId) return currentSessionId
+    try {
+      const defaultTitle = message.length > 30
+        ? `${message.substring(0, 30)}...`
+        : message
+      const newSession = await chatApi.createSession({
+        notebook_id: notebookId,
+        title: defaultTitle,
+        // Include pending model override when creating session
+        model_override: pendingModelOverride ?? undefined,
+        agent: pendingAgentOverride ?? undefined
+      })
+      setCurrentSessionId(newSession.id)
+      // Clear pending bindings now that they are applied to the session
+      setPendingModelOverride(null)
+      setPendingAgentOverride(null)
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+      })
+      return newSession.id
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
+      return null
     }
+  }, [currentSessionId, notebookId, pendingModelOverride, pendingAgentOverride, queryClient, t])
+
+  // Send message (token-streamed over SSE; /chat/execute stays as the
+  // compatibility/rollback path on the backend). Signature unchanged.
+  const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
+    const sessionId = await ensureSessionId(message)
+    if (!sessionId) return
 
     // Add user message optimistically
     const userMessage: NotebookChatMessage = {
@@ -191,41 +224,123 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
     setMessages(prev => [...prev, userMessage])
     setIsSending(true)
+    setStreamingContent('')
+
+    const abortController = new AbortController()
+    streamAbortRef.current = abortController
+
+    const clearStreamTimeout = () => {
+      if (streamTimeoutRef.current) {
+        clearTimeout(streamTimeoutRef.current)
+        streamTimeoutRef.current = null
+      }
+    }
+    // 120s idle watchdog; re-armed on every SSE event AND every received
+    // byte chunk (so the backend's 15s `: ping` keep-alive counts).
+    const armStreamTimeout = () => {
+      clearStreamTimeout()
+      streamTimeoutRef.current = setTimeout(() => {
+        abortController.abort()
+      }, STREAM_IDLE_TIMEOUT_MS)
+    }
 
     try {
       // Build context and send message
       const context = await buildContext()
-      const response = await chatApi.sendMessage({
-        session_id: sessionId,
-        message,
-        context,
-        model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
-      })
 
-      // Update messages with API response
-      setMessages(response.messages)
+      // Flow state as local variables (useState would stale-close inside
+      // the SSE event callback).
+      let sawComplete = false
+      let streamError: string | null = null
+      const onEvent = (ev: ChatStreamEvent) => {
+        armStreamTimeout()
+        if (ev.type === 'delta') {
+          if (streamMountedRef.current) {
+            setStreamingContent(prev => (prev ?? '') + ev.content)
+          }
+        } else if (ev.type === 'complete') {
+          sawComplete = true
+          if (streamMountedRef.current) {
+            setStreamingContent(null)
+            // Authoritative replace, same semantics as the old sync path.
+            setMessages(ev.messages)
+          }
+        } else if (ev.type === 'error') {
+          streamError = ev.message
+        }
+      }
 
-      // Refetch current session to get updated data
-      await refetchCurrentSession()
-    } catch (err: unknown) {
+      armStreamTimeout()
+      await chatApi.streamRun(
+        sessionId,
+        {
+          message,
+          context,
+          model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+          agent_override: currentSession?.agent ?? undefined
+        },
+        onEvent,
+        abortController.signal,
+        armStreamTimeout
+      )
+
+      if (sawComplete) {
+        // Refetch only after the stream ended (same ordering as before);
+        // complete already replaced the message list authoritatively.
+        await refetchCurrentSession()
+      } else {
+        // error event or the stream was cut before complete
+        throw new Error(streamError || 'Chat stream ended without completing')
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
-      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      const detail = error.response?.data?.detail || error.message || ''
+      if (detail.includes('already in progress')) {
+        // 409 in-flight guard: a generation is already running for this session
+        toast.error(t('chat.streamBusy'))
+      } else {
+        toast.error(t('chat.streamFailed'), {
+          description: getApiErrorMessage(detail, (key) => t(key))
+        })
+      }
+      // Always reconcile with the checkpoint: the backend has almost
+      // certainly already stored the user message (input application writes
+      // it before generation), so deleting only the temp- message would
+      // desync the UI from the session state.
+      await refetchCurrentSession()
     } finally {
       setIsSending(false)
+      setStreamingContent(null)
+      clearStreamTimeout()
+      streamAbortRef.current = null
     }
   }, [
-    notebookId,
-    currentSessionId,
     currentSession,
-    pendingModelOverride,
+    ensureSessionId,
     buildContext,
     refetchCurrentSession,
-    queryClient,
     t
   ])
+
+  // Parallel answers (PDR-004): fan one question out to 2-5 participants.
+  // The live cards come from the parallel hook; the archived group lands in
+  // the session history and a refetch renders the authoritative copy.
+  const sendParallelMessage = useCallback(async (message: string, runs: string[]) => {
+    const sessionId = await ensureSessionId(message)
+    if (!sessionId) return
+    const context = await buildContext()
+    await parallel.start(sessionId, message, runs, context, refetchCurrentSession)
+  }, [ensureSessionId, buildContext, parallel, refetchCurrentSession])
+
+  const synthesizeParallel = useCallback(
+    (participant: { agent?: string; model?: string }, instruction?: string) => {
+      if (!currentSessionId) return Promise.resolve()
+      return parallel.synthesize(currentSessionId, participant, instruction)
+    },
+    [currentSessionId, parallel]
+  )
 
   // Switch session
   const switchSession = useCallback((sessionId: string) => {
@@ -253,7 +368,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return deleteSessionMutation.mutate(sessionId)
   }, [deleteSessionMutation])
 
-  // Set model override - handles both existing sessions and pending state
+  // Set model override - handles both existing sessions and pending state.
+  // The backend clears the session's agent binding when a model is set
+  // (mutual exclusion); the pending branch mirrors that locally.
   const setModelOverride = useCallback((model: string | null) => {
     if (currentSessionId) {
       // Session exists - update it directly
@@ -264,6 +381,21 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     } else {
       // No session yet - store as pending
       setPendingModelOverride(model)
+      setPendingAgentOverride(null)
+    }
+  }, [currentSessionId, updateSessionMutation])
+
+  // Set agent binding (PDR-004) - mirrors setModelOverride; the backend
+  // clears model_override when an agent is set.
+  const setAgentOverride = useCallback((agent: string | null) => {
+    if (currentSessionId) {
+      updateSessionMutation.mutate({
+        sessionId: currentSessionId,
+        data: { agent }
+      })
+    } else {
+      setPendingAgentOverride(agent)
+      setPendingModelOverride(null)
     }
   }, [currentSessionId, updateSessionMutation])
 
@@ -286,10 +418,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     currentSessionId,
     messages,
     isSending,
+    // Live streaming text (null when idle); the waiting/streaming bubble in
+    // ChatPanel renders it as plain text + cursor while isSending is true.
+    streamingMessage: streamingContent === null ? null : { content: streamingContent },
     loadingSessions,
     tokenCount,
     charCount,
     pendingModelOverride,
+    pendingAgentOverride,
 
     // Actions
     createSession,
@@ -298,6 +434,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     switchSession,
     sendMessage,
     setModelOverride,
+    setAgentOverride,
+    parallel,
+    sendParallelMessage,
+    synthesizeParallel,
     refetchSessions
   }
 }

@@ -10,21 +10,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2 } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
-  BaseChatSession
+  BaseChatSession,
+  NoteResponse,
+  SourceListResponse
 } from '@/lib/types/api'
+import type { ContextMode, ContextSelections } from '@/lib/types/notebook-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import { ModelSelector } from './ModelSelector'
+import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelector'
+import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
+import { ParallelLiveCard } from '@/components/chat/ParallelLiveCard'
+import { groupParallelMessages } from '@/lib/utils/parallel-messages'
+import { filterStreamingContent } from '@/lib/utils/stream-text'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
+import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
+import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
+import { GeminiSourcesColumn } from '@/app/(dashboard)/notebooks/components/GeminiSourcesColumn'
+import { GeminiStudioColumn } from '@/app/(dashboard)/notebooks/components/GeminiStudioColumn'
+import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
+import { useNotes } from '@/lib/hooks/use-notes'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
@@ -39,10 +55,27 @@ interface NotebookContextStats {
 interface ChatPanelProps {
   messages: SourceChatMessage[]
   isStreaming: boolean
+  // Live token-stream text (notebook chat only). Absent on source chats —
+  // the waiting bubble keeps its plain spinner there.
+  streamingMessage?: { content: string } | null
   contextIndicators: SourceChatContextIndicator | null
   onSendMessage: (message: string, modelOverride?: string) => void
   modelOverride?: string
   onModelChange?: (model?: string) => void
+  // Agent binding (PDR-04): when onAgentChange is provided the composer swaps
+  // the plain model selector for the agent/model participant picker.
+  agent?: string | null
+  onAgentChange?: (agent: string | null) => void
+  // Parallel answers (PDR-004, notebook chat only): live fan-out state plus
+  // send/synthesize handlers. Absent on source chats.
+  parallelChat?: {
+    phase: 'idle' | 'running' | 'done'
+    runs: import('@/lib/hooks/use-parallel-chat').ParallelRunState[]
+    synthesis: import('@/lib/hooks/use-parallel-chat').SynthesisState | null
+    isSynthesizing: boolean
+    send: (message: string, runs: string[]) => void
+    synthesize: (participant: { agent?: string; model?: string }) => void
+  }
   // Session management props
   sessions?: BaseChatSession[]
   currentSessionId?: string | null
@@ -60,15 +93,35 @@ interface ChatPanelProps {
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
   notebookId?: string
+  // 当前来源分组浏览范围：原引用直传给保存弹窗预选默认文件夹
+  sourceGrouping?: NotebookSourceFilters
+  // ── Workspace pass-through (notebook chat) ─────────────────────────────
+  // Feeds the fullscreen side panels with the notebook page's real data and
+  // context handlers, so the panels mount the actual workspace columns
+  // (GeminiSourcesColumn / GeminiStudioColumn) instead of a lite clone —
+  // checkbox selections in the panel affect the real chat context.
+  sources?: SourceListResponse[]
+  sourcesLoading?: boolean
+  refetchSources?: () => void
+  contextSelections?: ContextSelections
+  onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkSourceContext?: BulkContextHandler
+  onGroupingChange?: (filters: NotebookSourceFilters) => void
+  notes?: NoteResponse[]
+  notesLoading?: boolean
 }
 
 export function ChatPanel({
   messages,
   isStreaming,
+  streamingMessage,
   contextIndicators,
   onSendMessage,
   modelOverride,
   onModelChange,
+  agent,
+  onAgentChange,
+  parallelChat,
   sessions = [],
   currentSessionId,
   onCreateSession,
@@ -80,25 +133,49 @@ export function ChatPanel({
   contextType = 'source',
   notebookContextStats,
   onOpenContextPicker,
-  notebookId
+  notebookId,
+  sourceGrouping,
+  sources,
+  sourcesLoading,
+  refetchSources,
+  contextSelections,
+  onSourceContextModeChange,
+  onBulkSourceContext,
+  onGroupingChange,
+  notes,
+  notesLoading
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Fullscreen slide-out panels (sources left / notes right) — notebook chat
+  // only; the open/close flags live here so the layered Esc handler below can
+  // see them, while the react-query data fetching stays inside the
+  // conditional child (ChatFullscreenPanels) to keep this component
+  // provider-free in tests.
+  const [panelLeftOpen, setPanelLeftOpen] = useState(false)
+  const [panelRightOpen, setPanelRightOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { openModal } = useModalManager()
 
   // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
-  // 无需目标元素持有焦点；非全屏态不挂监听。
+  // 无需目标元素持有焦点；非全屏态不挂监听。分层退出：侧栏开着先收侧栏，
+  // 其次才退全屏（与 ArtifactViewDialog/PDF 全屏同款手势）。
   useEffect(() => {
     if (!isFullscreen) return
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsFullscreen(false)
+      if (event.key !== 'Escape') return
+      if (panelLeftOpen || panelRightOpen) {
+        setPanelLeftOpen(false)
+        setPanelRightOpen(false)
+      } else {
+        setIsFullscreen(false)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isFullscreen])
+  }, [isFullscreen, panelLeftOpen, panelRightOpen])
 
   // Stable reference-click handler so memoized messages don't re-render on
   // composer keystrokes (which no longer re-render this component at all, since
@@ -121,6 +198,13 @@ export function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Streaming follow: jump to the latest token (omitted behavior = 'auto',
+  // instant follow) so the typing bubble stays in view; the smooth [messages]
+  // effect above stays untouched.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView()
+  }, [streamingMessage?.content])
+
   return (
     <>
     <Card
@@ -128,7 +212,13 @@ export function ChatPanel({
         'flex flex-col overflow-hidden',
         // 全屏时 fixed 脱离 flex 流，尺寸锚定改为受控 class（h-screen/w-screen），
         // 不再依赖 h-full/flex-1 从父容器继承。
-        isFullscreen ? 'fixed inset-0 z-50 h-screen w-screen rounded-none' : 'h-full flex-1'
+        isFullscreen
+          ? 'fixed inset-0 z-50 h-screen w-screen rounded-none transition-[padding] duration-300'
+          : 'h-full flex-1',
+        // 面板开启时推挤而非覆盖：padding 让出面板宽度（w-96=24rem），
+        // 中间对话与左右面板三栏并存；窄屏（<lg）保持覆盖模式。
+        isFullscreen && panelLeftOpen && 'lg:pl-96',
+        isFullscreen && panelRightOpen && 'lg:pr-96'
       )}
     >
       <CardHeader className="pb-3 flex-shrink-0">
@@ -192,14 +282,33 @@ export function ChatPanel({
                 <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
               </div>
             ) : (
-              messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  notebookId={notebookId}
-                  onReferenceClick={handleReferenceClick}
-                />
-              ))
+              groupParallelMessages(messages).map((item) =>
+                item.kind === 'single' && item.message ? (
+                  <ChatMessage
+                    key={item.message.id}
+                    message={item.message}
+                    notebookId={notebookId}
+                    onReferenceClick={handleReferenceClick}
+                    sourceGrouping={sourceGrouping}
+                  />
+                ) : (
+                  <ParallelGroupView
+                    key={item.groupId}
+                    item={item}
+                    notebookId={notebookId}
+                    onReferenceClick={handleReferenceClick}
+                    sourceGrouping={sourceGrouping}
+                  />
+                )
+              )
+            )}
+            {parallelChat && parallelChat.phase === 'running' && (
+              <ParallelLiveCard
+                runs={parallelChat.runs}
+                isSynthesizing={parallelChat.isSynthesizing}
+                synthesis={parallelChat.synthesis}
+                onSynthesize={parallelChat.synthesize}
+              />
             )}
             {isStreaming && (
               <div className="flex gap-3 justify-start">
@@ -208,8 +317,19 @@ export function ChatPanel({
                     <Bot className="h-4 w-4 text-teal" />
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-card border">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                <div className="rounded-lg px-4 py-2 bg-card border max-w-[80%]">
+                  {(streamingMessage?.content ?? '') === '' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    // Plain text while streaming: token-level re-parsing via
+                    // MarkdownRenderer (KaTeX/highlight) would be too costly;
+                    // the authoritative message renders markdown once
+                    // complete arrives.
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {filterStreamingContent(streamingMessage!.content)}
+                      <span aria-hidden className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -258,13 +378,176 @@ export function ChatPanel({
         {/* Input Area */}
         <ChatComposer
           onSendMessage={onSendMessage}
+          agent={agent}
+          onAgentChange={onAgentChange}
+          parallelChat={parallelChat}
           isStreaming={isStreaming}
           modelOverride={modelOverride}
           onModelChange={onModelChange}
         />
       </CardContent>
+
+      {/* Fullscreen slide-out panels + edge handles (notebook chat only): the
+          fullscreen Card is `fixed`, so absolute children anchor to it and the
+          reading area behind the panels stays interactive. */}
+      {isFullscreen && !!notebookId && (
+        <ChatFullscreenPanels
+          notebookId={notebookId}
+          leftOpen={panelLeftOpen}
+          rightOpen={panelRightOpen}
+          onLeftOpenChange={setPanelLeftOpen}
+          onRightOpenChange={setPanelRightOpen}
+          onExitFullscreen={() => {
+            setPanelLeftOpen(false)
+            setPanelRightOpen(false)
+            setIsFullscreen(false)
+          }}
+          onOpenSource={(sourceId) => openModal('source', sourceId)}
+          sources={sources}
+          sourcesLoading={sourcesLoading}
+          refetchSources={refetchSources}
+          contextSelections={contextSelections}
+          onSourceContextModeChange={onSourceContextModeChange}
+          onBulkSourceContext={onBulkSourceContext}
+          grouping={sourceGrouping}
+          onGroupingChange={onGroupingChange}
+          notes={notes}
+          notesLoading={notesLoading}
+        />
+      )}
     </Card>
 
+    </>
+  )
+}
+
+/**
+ * Slide-out panels + edge handles + note-reading dialog for the fullscreen
+ * chat Card. Split out of ChatPanel so the react-query notes fetch (and its
+ * Provider requirement) only exists once the panels actually mount — the
+ * chat itself stays renderable without a QueryClient.
+ *
+ * When the workspace pass-through props are present (notebook page chat),
+ * the panels mount the REAL workspace columns — GeminiSourcesColumn on the
+ * left, GeminiStudioColumn on the right — so the fullscreen experience is
+ * pixel-identical to the notebook page, and context checkboxes inside the
+ * panel drive the actual chat context. Without them (no data passed), the
+ * lite ArtifactSidePanels lists are used as a fallback.
+ */
+function ChatFullscreenPanels({
+  notebookId,
+  leftOpen,
+  rightOpen,
+  onLeftOpenChange,
+  onRightOpenChange,
+  onExitFullscreen,
+  onOpenSource,
+  sources,
+  sourcesLoading,
+  refetchSources,
+  contextSelections,
+  onSourceContextModeChange,
+  onBulkSourceContext,
+  grouping,
+  onGroupingChange,
+  notes,
+  notesLoading,
+}: {
+  notebookId: string
+  leftOpen: boolean
+  rightOpen: boolean
+  onLeftOpenChange: (open: boolean) => void
+  onRightOpenChange: (open: boolean) => void
+  onExitFullscreen: () => void
+  onOpenSource: (sourceId: string) => void
+  sources?: SourceListResponse[]
+  sourcesLoading?: boolean
+  refetchSources?: () => void
+  contextSelections?: ContextSelections
+  onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkSourceContext?: BulkContextHandler
+  grouping?: NotebookSourceFilters
+  onGroupingChange?: (filters: NotebookSourceFilters) => void
+  notes?: NoteResponse[]
+  notesLoading?: boolean
+}) {
+  const { t } = useTranslation()
+  const [readingNote, setReadingNote] = useState<NoteResponse | null>(null)
+  const { data: panelNotes = [] } = useNotes(notebookId)
+  const resolvedNotes = notes ?? panelNotes
+  // Real workspace columns mount only when the page passed its data through.
+  const useWorkspaceColumns = Array.isArray(sources)
+
+  const leftSlot = useWorkspaceColumns ? (
+    <GeminiSourcesColumn
+      notebookId={notebookId}
+      sources={sources}
+      isLoading={!!sourcesLoading}
+      onRefresh={refetchSources ?? (() => {})}
+      contextSelections={contextSelections?.sources ?? {}}
+      onContextModeChange={onSourceContextModeChange ?? (() => {})}
+      onBulkContextModeChange={onBulkSourceContext ?? (() => {})}
+      grouping={grouping}
+      onGroupingChange={onGroupingChange}
+    />
+  ) : undefined
+  const rightSlot = useWorkspaceColumns ? (
+    <GeminiStudioColumn
+      notebookId={notebookId}
+      notes={resolvedNotes}
+      isLoading={!!notesLoading}
+      sources={sources}
+      contextSelections={contextSelections}
+      sourceGrouping={grouping}
+      embedded
+    />
+  ) : undefined
+
+  return (
+    <>
+      {!leftOpen && (
+        <EdgePanelHandle
+          side="left"
+          ariaLabel={t('artifacts.openSourcesPanel')}
+          label={t('artifacts.sourcesPanelTitle')}
+          onClick={() => onLeftOpenChange(true)}
+          testid="chat-handle-left"
+        />
+      )}
+      {!rightOpen && (
+        <EdgePanelHandle
+          side="right"
+          ariaLabel={t('artifacts.openNotesPanel')}
+          label={t('artifacts.notesPanelTitle')}
+          onClick={() => onRightOpenChange(true)}
+          testid="chat-handle-right"
+        />
+      )}
+      <ArtifactSidePanels
+        notebookId={notebookId}
+        notes={resolvedNotes}
+        leftOpen={leftOpen}
+        rightOpen={rightOpen}
+        onLeftOpenChange={onLeftOpenChange}
+        onRightOpenChange={onRightOpenChange}
+        onExitFullscreen={onExitFullscreen}
+        onOpenSource={onOpenSource}
+        onNoteSelect={(note) => setReadingNote(note)}
+        leftPanel={leftSlot}
+        rightPanel={rightSlot}
+      />
+      {/* Note reading dialog opened from the right panel (same experience as
+          the PDF fullscreen panels). */}
+      <ArtifactViewDialog
+        open={!!readingNote}
+        onOpenChange={(next) => { if (!next) setReadingNote(null) }}
+        note={readingNote ? { title: readingNote.title, content: readingNote.content } : undefined}
+        notebookId={notebookId}
+        notes={resolvedNotes}
+        activeNoteId={readingNote?.id ?? null}
+        onNoteSelect={(note) => setReadingNote(note)}
+        onOpenSource={onOpenSource}
+      />
     </>
   )
 }
@@ -276,13 +559,22 @@ interface ChatComposerProps {
   isStreaming: boolean
   modelOverride?: string
   onModelChange?: (model?: string) => void
+  agent?: string | null
+  onAgentChange?: (agent: string | null) => void
+  parallelChat?: {
+    phase: 'idle' | 'running' | 'done'
+    send: (message: string, runs: string[]) => void
+  }
 }
 
 function ChatComposer({
   onSendMessage,
   isStreaming,
   modelOverride,
-  onModelChange
+  onModelChange,
+  agent,
+  onAgentChange,
+  parallelChat
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
@@ -299,6 +591,20 @@ function ChatComposer({
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
       onSendMessage(input.trim(), modelOverride)
+      setInput('')
+    }
+  }
+
+  const handleParallelSend = (runs: string[]) => {
+    // The picker now opens on an empty input, so an empty-input confirm lands
+    // here: hint instead of silently doing nothing, and refocus the composer.
+    if (!input.trim()) {
+      toast.error(t('chat.parallelEmptyHint'))
+      document.getElementById(chatInputId)?.focus()
+      return
+    }
+    if (!isStreaming && parallelChat) {
+      parallelChat.send(input.trim(), runs)
       setInput('')
     }
   }
@@ -332,7 +638,19 @@ function ChatComposer({
     <div className="flex-shrink-0 p-4 space-y-3 border-t">
       {/* Model selector + enter-to-send preference */}
       <div className="flex items-center justify-between gap-2">
-        {onModelChange && (
+        {onAgentChange ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
+            <ChatParticipantSelector
+              value={{ agent: agent ?? null, modelOverride: modelOverride ?? null }}
+              onChange={(participant) => {
+                onAgentChange(participant.agent ?? null)
+                onModelChange?.(participant.modelOverride ?? undefined)
+              }}
+              disabled={isStreaming}
+            />
+          </div>
+        ) : onModelChange && (
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
             <ModelSelector
@@ -379,6 +697,12 @@ function ChatComposer({
           className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
           rows={1}
         />
+        {parallelChat && (
+          <ParallelRunsPicker
+            disabled={isStreaming || parallelChat.phase === 'running'}
+            onSend={handleParallelSend}
+          />
+        )}
         <Button
           onClick={handleSend}
           disabled={!input.trim() || isStreaming}
@@ -396,18 +720,95 @@ function ChatComposer({
   )
 }
 
+// Archived parallel group (PDR-004): the human question renders through the
+// normal ChatMessage row; the answers sit in a responsive grid, with the
+// synthesis conclusion highlighted below.
+function ParallelGroupView({
+  item,
+  notebookId,
+  onReferenceClick,
+  sourceGrouping,
+}: {
+  item: import('@/lib/utils/parallel-messages').MessageListItem<SourceChatMessage>
+  notebookId?: string
+  onReferenceClick: (type: string, id: string) => void
+  sourceGrouping?: NotebookSourceFilters
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-2" data-testid={`parallel-group-${item.groupId}`}>
+      {item.question && (
+        <ChatMessage
+          message={item.question}
+          notebookId={notebookId}
+          onReferenceClick={onReferenceClick}
+          sourceGrouping={sourceGrouping}
+        />
+      )}
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        {(item.answers ?? []).map((answer) => (
+          <div
+            key={answer.id}
+            className="rounded-lg border bg-card p-3 space-y-1.5 min-w-0"
+            data-testid={`parallel-answer-${answer.id}`}
+          >
+            <p className="text-xs font-medium text-muted-foreground truncate">
+              {t('chat.answeredBy', {
+                name: answer.agent_name || answer.model_name || t('chat.groupDefault'),
+              })}
+            </p>
+            <div className="max-h-72 overflow-y-auto text-sm">
+              <AIMessageContent
+                content={answer.content}
+                onReferenceClick={onReferenceClick}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      {item.synthesis && (
+        <div
+          className="rounded-lg border border-gold/40 bg-card p-3 space-y-1.5"
+          data-testid={`parallel-synthesis-${item.groupId}`}
+        >
+          <p className="text-xs font-medium text-gold flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('chat.synthesisResultTitle')}
+            <span className="text-muted-foreground font-normal">
+              {t('chat.answeredBy', {
+                name:
+                  item.synthesis.agent_name ||
+                  item.synthesis.model_name ||
+                  t('chat.groupDefault'),
+              })}
+            </span>
+          </p>
+          <div className="text-sm">
+            <AIMessageContent
+              content={item.synthesis.content}
+              onReferenceClick={onReferenceClick}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Single chat message row. Memoized so historical messages don't re-render when
 // unrelated state (e.g. the composer input) changes.
 interface ChatMessageProps {
   message: SourceChatMessage
   notebookId?: string
   onReferenceClick: (type: string, id: string) => void
+  sourceGrouping?: NotebookSourceFilters
 }
 
 const ChatMessage = memo(function ChatMessage({
   message,
   notebookId,
-  onReferenceClick
+  onReferenceClick,
+  sourceGrouping
 }: ChatMessageProps) {
   return (
     <div
@@ -443,6 +844,7 @@ const ChatMessage = memo(function ChatMessage({
           <MessageActions
             content={message.content}
             notebookId={notebookId}
+            sourceGrouping={sourceGrouping}
           />
         )}
       </div>

@@ -78,7 +78,6 @@ export const zhTW = {
     no: "否",
     saving: "正在儲存...",
     description: "描述",
-    saveToNote: "儲存到筆記",
     copyToClipboard: "複製到剪貼簿",
     close: "關閉",
     insights: "見解",
@@ -223,6 +222,7 @@ export const zhTW = {
     language: "切換語言",
     theme: "主題",
     ask: "提問",
+    agents: "智慧體",
   },
   notebooks: {
     title: "筆記本",
@@ -270,6 +270,25 @@ export const zhTW = {
     recentlyViewedNotebook: "筆記本",
     recentlyViewedSource: "來源",
     lastViewed: "檢視於{{time}}",
+    saveNote: {
+      typeLabel: "儲存類型",
+      modeSource: "存為來源",
+      modeNote: "存為筆記",
+      title: "儲存到筆記本",
+      description: "為這則內容命名，並選擇存為來源或存為筆記。",
+      nameLabel: "名稱",
+      namePlaceholder: "填寫名稱",
+      submit: "儲存"
+    },
+    saveAsSource: {
+      title: "存為來源",
+      action: "存為來源",
+      description: "將此筆記內容轉為文字來源，加入目前筆記本。",
+      nameLabel: "來源名稱",
+      namePlaceholder: "填寫來源名稱",
+      noEmbedHint: "將以未嵌入狀態加入，並預設計入筆記本對話上下文（可在對話上下文選擇器中調整）；如需向量檢索，可稍後在來源列表補嵌入。",
+      submit: "加入筆記本",
+    },
   },
   sources: {
     newSource: "新增來源",
@@ -302,7 +321,6 @@ export const zhTW = {
     loadingMore: "正在載入更多...",
     noSourcesYet: "暫無來源",
     allSourcesDescShort: "在此檢視所有來源。",
-    cannotSaveNoteNoNotebook: "無法儲存筆記：缺少筆記本 ID",
     createFirstSource: "新增您的第一個來源開始構建知識庫。",
     deleteSourceConfirm: "確定要刪除此來源嗎？",
     deleteConfirm: "確定要刪除嗎？",
@@ -467,14 +485,21 @@ export const zhTW = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "分析技術類或科研類論文",
+    transformationDescKeyInsights: "擷取重要見解與可執行要點",
+    transformationDescDenseSummary: "為內容生成詳盡深入的摘要",
+    transformationDescReflectionQuestions: "從文件生成反思問題，幫助進一步探索",
+    transformationDescTableOfContents: "描述文件涵蓋的各個主題",
+    transformationDescSimpleSummary: "為內容生成簡短摘要",
     embedMissing: {
+      columnCta: "{{count}} 篇未嵌入，一鍵補嵌",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const zhTW = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "未嵌入",
+      failed: "嵌入失敗",
+    },
+    overview: {
+      title: "知識庫全域資源概覽",
+      totalBadge: "全庫 {{count}} 篇",
+      linkedLabel: "本筆記本已關聯",
+      pendingLabel: "待引入文獻",
+      count: "{{count}} 篇",
+      importAll: "一鍵引入全庫文獻 ({{count}})",
+      allLinked: "全庫文獻已全部關聯至本筆記本",
+      viewAll: "查看全庫",
+    },
+    pdfViewer: {
+      restore: "恢復",
+      open: "以原始檔案顯示",
+      title: "原始檔案預覽",
+      outline: "目錄",
+      noOutline: "此文件沒有目錄",
+      parsingToc: "正在解析目錄…",
+      page: "第 {{page}} / {{total}} 頁",
+      loading: "正在載入文件…",
+      loadFailed: "文件載入失敗",
+      zoomIn: "放大",
+      zoomOut: "縮小",
+      prevPage: "上一頁",
+      nextPage: "下一頁",
+      close: "關閉",
+      notPdf: "此檔案不是 PDF，無法預覽",
+      enterFullscreen: "全螢幕閱讀",
+      exitFullscreen: "退出全螢幕",
+    },
+    fileView: {
+      analyzeSection: "AI 解析本章",
+      analyzing: "解析中…",
+      analysisTitle: "「{{title}}」AI 解析",
+      analysisTruncated: "章節文字過長，已截斷後解析",
+      analysisFailed: "AI 解析失敗，請重試",
+      saveAnalysis: "儲存為筆記",
+    },
+    copy: "複製",
+    copied: "已複製",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const zhTW = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "此頁無文字層（掃描頁）：文字劃線不可用，框選批註將於下一期支援",
+      orphanedHint: "來源檔案已變更，重新框選將於下期可用",
+      colors: {
+        gold: "重點",
+        fern: "已掌握",
+        plum: "疑問",
+        slate: "參考",
+        clay: "易錯",
+      },
+      toolbar: {
+        colorAria: "標為{{name}}",
+        line: "線型",
+        wavy: "波浪底線",
+        straight: "直線底線",
+        comment: "批註",
+        copy: "複製",
+        copied: "已複製",
+      },
+      hover: {
+        edit: "編輯批註",
+        delete: "刪除標註",
+        deleted: "標註已刪除",
+        undo: "復原",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "第 {{page}} 頁",
+      },
+      toast: {
+        createFailed: "標註建立失敗",
+        updateFailed: "標註更新失敗",
+        deleteFailed: "標註刪除失敗",
+        restoreFailed: "標註還原失敗",
+        crossPage: "跨頁內容請分段標註",
+        tooLong: "選取範圍過長，請分段標註",
+      },
+      deleteConfirm: {
+        count: "刪除後將一併移除 {{count}} 則標註。",
+      },
+    },
   },
   chat: {
     sessions: "對話",
@@ -647,6 +754,34 @@ export const zhTW = {
     contextPickerCounts: "見解 {{insights}} · 全文 {{full}} · 筆記 {{notes}}",
     enterFullscreen: "進入全螢幕",
     exitFullscreen: "退出全螢幕",
+    participantConfig: "對話參與者",
+    participantDesc: "選擇智慧體角色或單一模型；智慧體與模型互斥，選一清一。",
+    participantPlaceholder: "選擇參與者",
+    groupDefault: "預設助理",
+    groupAgents: "智慧體",
+    groupModels: "模型",
+    participantAgentHint: "套用後，後續回答將採用該智慧體的人設與取樣參數。",
+    participantModelHint: "套用後，後續回答將固定使用該模型。",
+    agentMissing: "智慧體已刪除，已回退預設助理",
+    answeredBy: "由 {{name}} 回答",
+    parallelSend: "並行問答",
+    parallelPickTitle: "選擇並行參與者",
+    parallelPickCount: "已選 {{count}}/{{max}}",
+    parallelPickHint: "可勾選多個，同時提問",
+    parallelMaxReached: "已達 5 個上限",
+    parallelConfirm: "並行提問",
+    parallelProgress: "並行進行中：{{done}}/{{total}} 完成",
+    parallelWaiting: "等待回答…",
+    parallelFailed: "並行問答失敗",
+    streamFailed: "回覆產生失敗",
+    streamBusy: "此會話正在產生回覆，請稍後再試",
+    synthesisPickLabel: "總結合併：",
+    synthesisDefaultPicker: "系統預設模型",
+    synthesisRun: "產生總結",
+    synthesisResultTitle: "總結結論",
+    synthesisFailed: "總結產生失敗",
+    parallelEmptyHint: "請先輸入問題，再發起並行問答",
+    parallelTriggerCount: "並行問答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "提問與搜尋",
@@ -1266,6 +1401,7 @@ export const zhTW = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "問答",
+    typeSourceSectionAnalysis: "章節 AI 解析",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const zhTW = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "即時任務執行檢視器",
+
+
+
+
+
+
+        completed: "已完成",
+
+
+
+
+
+
+        failed: "執行失敗",
+
+
+
+
+
+
+        canceled: "已取消",
+
+
+
+
+
+
+        running: "產生中…",
+
+
+
+
+
+
+        elapsed: "已用時",
+
+
+
+
+
+
+        stageFallback: "任務執行",
+
+
+
+
+
+
+        processing: "處理中",
+
+
+
+
+
+
+        taskId: "任務 ID",
+
+
+
+
+
+
+        openTaskCenter: "開啟進度管理",
+
+
+
+
+
+
+        stageFlow: "階段執行流",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "上下文輸入",
+
+
+
+
+
+
+        modelOutput: "模型推理輸出",
+
+
+
+
+
+
+        tokenRate: "推理速率",
+
+
+
+
+
+
+        processedChunks: "已處理分塊",
+
+
+
+
+
+
+        chunksDesc: "向量處理塊數",
+
+
+
+
+
+
+        execStatus: "執行狀態",
+
+
+
+
+
+
+        workerNode: "背景 Worker 節點",
+
+
+
+
+
+
+        timeStats: "耗時統計",
+
+
+
+
+
+
+        stopwatchDesc: "持續秒錶跟蹤",
+
+
+
+
+
+
+        terminalTitle: "即時終端 ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "暫停滾屏",
+
+
+
+
+
+
+        autoScroll: "自動滾屏",
+
+
+
+
+
+
+        copyLogs: "複製日誌",
+
+
+
+
+
+
+        clearOutput: "清空輸出",
+
+
+
+
+
+
+        logsCopied: "已複製即時終端日誌到剪貼簿",
+
+
+
+
+
+
+        logsCleared: "終端日誌視圖已清空",
+
+
+
+
+
+
+        errorDetails: "執行異常詳情",
+
+
+
+
+
+
+        cancelTask: "取消任務",
+
+
+
+
+
+
+        closeDrawer: "關閉抽屜",
+
+
+
+
+
+
+        footerReady: "即時日誌流雙向監聽已就緒",
+
+
+
+
+
+
+        doneCollapse: "完成並收起",
+
+
+
+
+
+
+        fallbackStream1: "權杖流正在流經上下文圖譜…",
+
+
+
+
+
+
+        fallbackStream2: "正在綜合關鍵概念斷言與引用錨點…",
+
+
+
+
+
+
+        fallbackStream3: "正在校驗 JSON 結構契約與標題層級…",
+
+
+
+
+
+
+        fallbackStream4: "正在執行非同步工作流寫回資料庫儲存…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "佇列排隊",
+
+
+
+
+
+
+          queueDesc: "Worker 節點調度與資源分配",
+
+
+
+
+
+
+          prepare: "環境就緒",
+
+
+
+
+
+
+          prepareDesc: "載入上下文與依賴參數",
+
+
+
+
+
+
+          execute: "任務執行",
+
+
+
+
+
+
+          executeDesc: "背景核心處理程序持續運算",
+
+
+
+
+
+
+          finalize: "產物歸檔",
+
+
+
+
+
+
+          finalizeDesc: "持久化狀態與返回執行結果",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const zhTW = {
       cancel: "取消任務",
       cancelSuccess: "任務已取消",
       cancelFailed: "取消任務失敗，請重試。",
+      viewLiveProgress: "查看即時進展",
+      viewDetails: "執行詳情",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const zhTW = {
     readOnlyView: "唯讀預覽",
     enterFullscreen: "進入全螢幕",
     exitFullscreen: "退出全螢幕",
+    editNote: "編輯筆記",
+    sourcesPanelTitle: "來源",
+    notesPanelTitle: "筆記",
+    openSourcesPanel: "開啟來源側欄",
+    openNotesPanel: "開啟筆記側欄",
+    closePanel: "關閉側欄",
+    panelEmptySources: "筆記本尚無來源",
+    panelEmptyNotes: "筆記本尚無筆記",
+  },
+  geminiSources: {
+    newFolder: "新增資料夾",
+    addExisting: "從現有新增",
+    tabHierarchical: "層級資源 ({{count}})",
+    tabWebResearch: "網路導源",
+    selectAllForChat: "全選參與對話",
+    deselectAll: "全不選",
+    searchPlaceholder: "搜尋資源...",
+    loadingTree: "載入資源目錄中...",
+    empty: "尚無知識資源，可點右上角新增或透過網路導源探索",
+    ungrouped: "未歸檔資源",
+    folderBadgeMixed: "本筆記本 {{local}} 個 · 知識庫共 {{total}} 個（{{missing}} 個未加入）",
+    folderBadgeLocal: "本筆記本 {{count}} 個",
+    folderEmptyInNotebook: "該資料夾在目前筆記本中暫無資源",
+    folderTotalCount: "該資料夾總來源數: {{count}}",
+    addNewResource: "新增新資源",
+    webResearchTitle: "智慧網路導源",
+    fastMode: "快速",
+    deepMode: "深度",
+    fastModeDesc: "秒級回應：提取關鍵詞並行檢索，清洗正文後一鍵勾選沉澱為來源。",
+    deepModeDesc: "深度智慧體：長鏈路自主規劃、多跳檢索與交叉驗證，輸出結構化報告並匯入來源。",
+    fastPlaceholder: "輸入探索關鍵詞或課題...",
+    deepPlaceholder: "輸入深度研究主題...",
+    foundSources: "已搜尋到的優質來源 ({{count}})",
+    importing: "入庫中...",
+    bulkAdd: "批次加入筆記本",
+    researchFastDone: "探索完成，已擷取高品質來源",
+    researchDeepDone: "深度研讀完成，已形成結構化來源",
+    researchFailed: "網路搜尋與導源失敗，請稍後重試",
+    selectAtLeastOne: "請至少勾選一個要加入筆記本的網頁",
+    savedPages: "成功將 {{count}} 個網頁作為來源沉澱至筆記本",
+    addPagesFailed: "新增網頁來源失敗",
+    mockTitleInsights: "{{topic}} 核心架構解析與產業實務綜述",
+    mockSnippetInsights: "針對 {{topic}} 的深度調研，系統剖析核心機制、關鍵效能指標與工業級部署經驗。",
+    mockTitleSpec: "{{topic}} 官方技術白皮書與最佳實務指南",
+    mockSnippetSpec: "系統梳理了 {{topic}} 的設計決策、資料模型定義及常見效能陷阱防範。",
+    mockTitleBenchmark: "全景評測：{{topic}} 與主流開源方案的橫向對比",
+    mockSnippetBenchmark: "基於真實吞吐量與長鏈路並發壓力下的評測結論，揭示核心差異與場景選型推薦。",
+    noViewError: "未找到可用檢視",
+    folderCreated: "資料夾建立成功",
+    folderCreateFailed: "建立資料夾失敗",
+  },
+  geminiStudio: {
+    title: "Studio 工作室",
+    notesCount: "{{count}} 篇筆記",
+    newNote: "新增筆記",
+    toolbox: "工具箱",
+    openTasks: "開啟進度管理",
+    notesStream: "筆記卡片流 ({{count}})",
+    saveHint: "可從對話一鍵沉澱",
+    loadingNotes: "載入筆記中...",
+    emptyNotes: "尚無筆記卡片",
+    emptyNotesHint: "可在對話中點擊「儲存為筆記」，或劃選關鍵文字一鍵沉澱至此處。",
+    noContent: "無內容",
+    generateFailed: "產生工件失敗",
+    generateDone: "{{tool}} 產生成功，已作為筆記沉澱",
+    jobProgressTitle: "{{tool}} · 產生進度",
+    jobProgressHint: "任務已在背景非同步執行，可即時檢視狀態或跳轉進度管理",
+    instructionLabel: "產生指令與側重點（可選）",
+    instructionPlaceholder: "輸入給 AI 的客製指令或關注側重點...",
+    contextHint: "將基於目前選取的 {{count}} 個知識來源及相關筆記進行提煉產生，完成後自動沉澱為筆記。",
+    runInBackground: "背景執行，關閉",
+    submitting: "正在提交任務...",
+    generateAndSave: "立即產生並存為筆記",
+    tagPodcast: "播客",
+    tagArtifact: "快捷工件",
+    tools: {
+      audioOverview: {
+        desc: "產生雙人主持的深度對談音訊播客（真實語音合成）",
+      },
+      studyGuide: {
+        desc: "提煉核心概念、考試測驗問答與系統複習大綱",
+        instruction: "請為我整理一份系統的學習指南，包含核心概念術語解析、關鍵要點總結以及自測選擇題與簡答題。",
+      },
+      briefingDoc: {
+        desc: "產生專業執行簡報、關鍵論據、策略啟示與結論",
+        instruction: "請提煉一份專業的高階主管專案簡報，包含背景摘要、關鍵支撐事實、潛在風險評估及後續行動建議。",
+      },
+      faq: {
+        desc: "基於來源提取最關鍵的常見問答與詳細解答",
+        instruction: "請全面梳理目前資料，整理出讀者最常關心的核心問題與翔實解答。",
+      },
+      flashcards: {
+        desc: "提取核心知識點與問答對，產生正反面抽認記憶卡片",
+        instruction: "請提煉核心概念與重要結論，產生便於記憶與抽認自測的問答知識卡片集。",
+      },
+    },
+  },
+  agents: {
+    title: "智慧體",
+    desc: "預定義對話角色：系統提示詞 + 可選的模型與取樣參數，在筆記本對話中選擇使用。",
+    create: "新增智慧體",
+    edit: "編輯智慧體",
+    delete: "刪除",
+    empty: "還沒有智慧體，點擊右上角建立第一個",
+    disabled: "已停用",
+    inUse: "{{count}} 個工作階段使用中",
+    createSuccess: "智慧體建立成功",
+    updateSuccess: "智慧體已更新",
+    deleteSuccess: "智慧體已刪除",
+    deleteConfirmTitle: "刪除智慧體",
+    deleteConfirmDesc: "確定刪除「{{name}}」？綁定它的 {{count}} 個工作階段將自動回退為預設助理，歷史訊息保留。",
+    loadFailed: "載入智慧體失敗",
+    editorDesc: "定義角色人設、預設模型與取樣參數。",
+    nameLabel: "名稱",
+    namePlaceholder: "例如：研究助理",
+    descriptionLabel: "描述",
+    descriptionPlaceholder: "一句話說明這個角色的用途（可選）",
+    promptLabel: "系統提示詞",
+    promptPlaceholder: "描述這個角色的身份、語氣與回答方式……",
+    promptHint: "將在對話系統提示詞開頭注入；引用與引用標註規則保持不變。",
+    modelLabel: "綁定模型",
+    modelPlaceholder: "跟隨對話預設模型",
+    modelHint: "留空則使用對話頁選擇的模型或系統預設模型。",
+    temperatureField: "溫度",
+    maxTokensField: "最大 Token 數",
+    enabledLabel: "啟用",
+    enabledHint: "停用後不在對話選擇器中出現，已綁定工作階段回退預設助理。",
+    validationRequired: "名稱與系統提示詞為必填項",
+    validationTemperature: "溫度取值需在 0 到 2 之間",
+    validationMaxTokens: "最大 Token 數需為正整數",
+    temperatureLabel: "溫度 {{value}}",
+    temperatureHelp: "溫度控制回答的隨機程度，取值 0–2：數值越低輸出越穩定、精確，適合事實問答、資料整理等任務；數值越高輸出越發散、有創造性，適合創意寫作與腦力激盪。留空則跟隨對話頁的預設設定。",
+    maxTokensLabel: "上限 {{value}} tokens",
+    templateLabel: "從範本開始",
+    templatePickerDesc: "按產業分類選擇一個預設智能體，選中後自動填入名稱、提示詞與採樣參數，之後仍可自由修改。",
+    templateBlankName: "從空白開始",
+    templateBlankDesc: "不套用範本，自行填寫名稱與系統提示詞。",
+    templateUse: "使用此範本",
+    templateCat: {
+      software: "軟體開發",
+      ruankao: "軟考備考",
+      llm: "大模型",
+      business: "商業",
+      education: "教育",
+      creative: "創作",
+      general: "通用",
+    },
+    polishPrompt: "潤飾提示詞",
+    polishing: "潤飾中",
+    polishFailed: "提示詞潤飾失敗",
   },
 } satisfies TranslationShape;

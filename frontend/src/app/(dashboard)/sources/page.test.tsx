@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { pushMock, viewGroupsMock } = vi.hoisted(() => ({
+const { pushMock, viewGroupsMock, annotationCountMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   viewGroupsMock: vi.fn(),
+  annotationCountMock: vi.fn<
+    (id: string, opts?: { signal?: AbortSignal }) => Promise<number>
+  >(),
 }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, replace: vi.fn(), prefetch: vi.fn() }),
@@ -12,7 +15,29 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
-// useTranslation is mocked globally in setup.ts (t returns the key string).
+// F9：本文件覆盖 setup.ts 的全局 t() mock —— 默认行为一致（无参键原样返回），
+// 仅对计数键提供带 {{count}} 的具体模板，使插值与 mono 拆分可被断言。
+vi.mock('@/lib/hooks/use-translation', () => {
+  const templates: Record<string, string> = {
+    'sources.annotations.deleteConfirm.count': 'Deleting will also remove {{count}} annotation(s).',
+  }
+  return {
+    useTranslation: () => ({
+      t: (key: string, params?: Record<string, unknown>) =>
+        (templates[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) =>
+          String(params?.[name] ?? '')
+        ),
+      language: 'en-US',
+      setLanguage: vi.fn(),
+    }),
+  }
+})
+
+vi.mock('@/lib/api/source-annotations', () => ({
+  sourceAnnotationsApi: {
+    count: (...args: unknown[]) => annotationCountMock(...(args as [string, { signal?: AbortSignal }?])),
+  },
+}))
 
 const listMock = vi.fn()
 const deleteMock = vi.fn()
@@ -293,7 +318,9 @@ describe('SourcesPage bulk actions over 100 sources', () => {
     )
   }
 
-  it('loops the ungroup API in 100-id chunks', async () => {
+  // 全量并发下渲染 150 行 + 全选 + 串行分块较重：默认 5s 在满载机器上会超时
+  // （HEAD 上无本批改动时全量也会超），按 vitest 提示给这两个重测试放宽超时。
+  it('loops the ungroup API in 100-id chunks', { timeout: 20000 }, async () => {
     await selectAllAndUngroup()
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2))
@@ -307,7 +334,7 @@ describe('SourcesPage bulk actions over 100 sources', () => {
     expect(new Set(allIds).size).toBe(150)
   })
 
-  it('keeps going after a failed chunk and reports the partial result', async () => {
+  it('keeps going after a failed chunk and reports the partial result', { timeout: 20000 }, async () => {
     mutateAsync.mockRejectedValueOnce(new Error('chunk 1 exploded'))
 
     await selectAllAndUngroup()
@@ -767,5 +794,91 @@ describe('SourcesPage folder navigation and AI view hints', () => {
     expect(screen.getByTestId('active-family-hint')).toHaveTextContent(
       'sources.grouping.familyAiHint'
     )
+  })
+})
+
+describe('SourcesPage delete confirm annotation count (F9)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listMock.mockResolvedValue([source('a'), source('b')])
+    // 行级交互需要可见的表格：落在具体文件夹层（视图根层是文件夹网格）
+    useSourceViewStore.setState({
+      activeViewId: 'source_view:v1',
+      selectedGroupByView: { 'source_view:v1': 'source_group:g1' },
+      hasHydrated: true,
+    })
+  })
+
+  async function openDeleteDialog() {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('a')).toBeInTheDocument())
+    fireEvent.contextMenu(screen.getByText('a'))
+    fireEvent.click(screen.getByText('sources.deleteSource'))
+    await waitFor(() =>
+      expect(screen.getByText('sources.deleteConfirmWithTitle')).toBeInTheDocument()
+    )
+  }
+
+  it('shows the cascade line with mono digits and a stronger confirm label when count > 0', async () => {
+    annotationCountMock.mockResolvedValue(3)
+    await openDeleteDialog()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('delete-annotation-count')).toBeInTheDocument()
+    )
+    // 插值进句子：模板 'Deleting will also remove {{count}} annotation(s).'
+    const line = screen.getByTestId('delete-annotation-count')
+    expect(line).toHaveTextContent('Deleting will also remove 3 annotation(s).')
+    // 数字段单独包了 mono span
+    const mono = screen
+      .getByTestId('delete-annotation-count')
+      .querySelector('span.font-mono')
+    expect(mono).not.toBeNull()
+    expect(mono).toHaveTextContent('3')
+    // 只对当前确认的源请求一次
+    expect(annotationCountMock).toHaveBeenCalledTimes(1)
+    expect(annotationCountMock).toHaveBeenCalledWith(
+      'source:a',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+    // 确认按钮文案升级（复用 destructive 样式层级，不换组件）
+    expect(
+      screen.getByRole('button', { name: 'common.deleteForever' })
+    ).toBeInTheDocument()
+  })
+
+  it('hides the line and keeps the plain delete label when count is 0', async () => {
+    annotationCountMock.mockResolvedValue(0)
+    await openDeleteDialog()
+
+    await waitFor(() => expect(annotationCountMock).toHaveBeenCalledTimes(1))
+    // 让已 resolve 的计数回调跑完再断言“不出现”
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(screen.queryByTestId('delete-annotation-count')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'common.deleteForever' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'common.delete' })).toBeInTheDocument()
+  })
+
+  it('aborts the in-flight count request when the dialog closes', async () => {
+    // 请求挂起直到 signal abort，验证关闭对话框确实取消了请求
+    annotationCountMock.mockImplementation(
+      (_id, opts) =>
+        new Promise<number>((_resolve, reject) => {
+          opts?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          )
+        })
+    )
+    await openDeleteDialog()
+    await waitFor(() => expect(annotationCountMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+
+    const opts = annotationCountMock.mock.calls[0]?.[1] as
+      | { signal: AbortSignal }
+      | undefined
+    expect(opts?.signal).toBeDefined()
+    await waitFor(() => expect(opts!.signal.aborted).toBe(true))
   })
 })

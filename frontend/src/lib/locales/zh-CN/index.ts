@@ -78,7 +78,6 @@ export const zhCN = {
     no: "否",
     saving: "正在保存...",
     description: "描述",
-    saveToNote: "保存到笔记",
     copyToClipboard: "复制到剪贴板",
     close: "关闭",
     insights: "见解",
@@ -223,6 +222,7 @@ export const zhCN = {
     language: "切换语言",
     theme: "主题",
     ask: "提问",
+    agents: "智能体",
   },
   notebooks: {
     title: "笔记本",
@@ -270,6 +270,25 @@ export const zhCN = {
     recentlyViewedNotebook: "笔记本",
     recentlyViewedSource: "来源",
     lastViewed: "查看于{{time}}",
+    saveNote: {
+      typeLabel: "保存类型",
+      modeSource: "存为来源",
+      modeNote: "存为笔记",
+      title: "保存到笔记本",
+      description: "为这条内容命名，并选择存为来源或存为笔记。",
+      nameLabel: "名称",
+      namePlaceholder: "填写名称",
+      submit: "保存"
+    },
+    saveAsSource: {
+      title: "存为来源",
+      action: "存为来源",
+      description: "将此笔记内容转为文本来源，加入当前笔记本。",
+      nameLabel: "来源名称",
+      namePlaceholder: "填写来源名称",
+      noEmbedHint: "将以未嵌入状态加入，并默认计入笔记本对话上下文（可在对话上下文选择器中调整）；如需向量检索，可稍后在来源列表补嵌入。",
+      submit: "加入笔记本",
+    },
   },
   sources: {
     newSource: "新建来源",
@@ -302,7 +321,6 @@ export const zhCN = {
     loadingMore: "正在加载更多...",
     noSourcesYet: "暂无来源",
     allSourcesDescShort: "在此查看所有来源。",
-    cannotSaveNoteNoNotebook: "无法保存笔记：缺少笔记本 ID",
     createFirstSource: "添加您的第一个来源开始构建知识库。",
     deleteSourceConfirm: "确定要删除此来源吗？",
     deleteConfirm: "确定要删除吗？",
@@ -467,14 +485,21 @@ export const zhCN = {
     transformationTitleSimpleSummary: "Simple Summary（简单摘要）",
     transformationTitleTableOfContents: "Table of Contents（目录）",
     transformationTitleKeyInsights: "Key Insights（核心见解）",
+    transformationDescPaperAnalysis: "分析技术类或科研类论文",
+    transformationDescKeyInsights: "提取重要见解与可执行要点",
+    transformationDescDenseSummary: "为内容生成详尽深入的摘要",
+    transformationDescReflectionQuestions: "从文档生成反思问题，帮助进一步探索",
+    transformationDescTableOfContents: "描述文档涵盖的各个主题",
+    transformationDescSimpleSummary: "为内容生成简短摘要",
     embedMissing: {
+      columnCta: "{{count}} 篇未嵌入，一键补嵌",
       button: "嵌入全部未完成",
       confirmTitle: "嵌入所有未完成的来源？",
       confirmDescription: "有 {{count}} 个来源尚未完成嵌入。任务将在后台运行，开始后无法中断或取消。",
       confirmCta: "开始嵌入",
       startedToast: "已开始嵌入所有未完成的来源",
       progressTitle: "嵌入进度",
-      errorHint: "嵌入失败。请在「模型」页检查是否已配置嵌入模型。",
+      errorHint: "嵌入失败。请在「模型」页检查嵌入模型与 API Key 配置后重试。",
       badge: {
         notEmbedded: "未嵌入",
         queued: "排队中",
@@ -483,6 +508,49 @@ export const zhCN = {
         failed: "失败",
       },
     },
+    embedStateDot: {
+      unembedded: "未嵌入",
+      failed: "嵌入失败",
+    },
+    overview: {
+      title: "知识库全局资源概览",
+      totalBadge: "全库 {{count}} 篇",
+      linkedLabel: "本笔记本已关联",
+      pendingLabel: "待引入文献",
+      count: "{{count}} 篇",
+      importAll: "一键引入全库文献 ({{count}})",
+      allLinked: "全库文献已全部关联至本笔记本",
+      viewAll: "查看全库",
+    },
+    pdfViewer: {
+      restore: "恢复",
+      open: "以源文件展示",
+      title: "源文件预览",
+      outline: "目录",
+      noOutline: "该文档没有目录",
+      parsingToc: "正在解析目录…",
+      page: "第 {{page}} / {{total}} 页",
+      loading: "正在加载文档…",
+      loadFailed: "文档加载失败",
+      zoomIn: "放大",
+      zoomOut: "缩小",
+      prevPage: "上一页",
+      nextPage: "下一页",
+      close: "关闭",
+      notPdf: "该文件不是 PDF，无法预览",
+      enterFullscreen: "全屏阅读",
+      exitFullscreen: "退出全屏",
+    },
+    fileView: {
+      analyzeSection: "AI 解析本章",
+      analyzing: "解析中…",
+      analysisTitle: "「{{title}}」AI 解析",
+      analysisTruncated: "章节文本过长，已截断后解析",
+      analysisFailed: "AI 解析失败，请重试",
+      saveAnalysis: "保存为笔记",
+    },
+    copy: "复制",
+    copied: "已复制",
     grouping: {
       aiContentViewName: "按内容",
       aiTitleViewName: "按文件名",
@@ -603,6 +671,45 @@ export const zhCN = {
         failed: "AI 分类失败",
       },
     },
+    annotations: {
+      scanNotice: "此页无文本层（扫描页）：文字划线不可用，框选批注将在下一期支持",
+      orphanedHint: "源文件已变更，重新框选将于下期可用",
+      colors: {
+        gold: "重点",
+        fern: "已掌握",
+        plum: "疑问",
+        slate: "参考",
+        clay: "易错",
+      },
+      toolbar: {
+        colorAria: "标为{{name}}",
+        line: "线型",
+        wavy: "波浪下划线",
+        straight: "直线下划线",
+        comment: "批注",
+        copy: "复制",
+        copied: "已复制",
+      },
+      hover: {
+        edit: "编辑批注",
+        delete: "删除标注",
+        deleted: "标注已删除",
+        undo: "撤销",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "第 {{page}} 页",
+      },
+      toast: {
+        createFailed: "标注创建失败",
+        updateFailed: "标注更新失败",
+        deleteFailed: "标注删除失败",
+        restoreFailed: "标注恢复失败",
+        crossPage: "跨页内容请分段标注",
+        tooLong: "选区过长，请分段标注",
+      },
+      deleteConfirm: {
+        count: "删除后将一并移除 {{count}} 条标注。",
+      },
+    },
   },
   chat: {
     sessions: "会话",
@@ -647,6 +754,34 @@ export const zhCN = {
     contextPickerCounts: "见解 {{insights}} · 全文 {{full}} · 笔记 {{notes}}",
     enterFullscreen: "进入全屏",
     exitFullscreen: "退出全屏",
+    participantConfig: "对话参与者",
+    participantDesc: "选择智能体角色或单个模型；智能体与模型互斥，选一清一。",
+    participantPlaceholder: "选择参与者",
+    groupDefault: "默认助手",
+    groupAgents: "智能体",
+    groupModels: "模型",
+    participantAgentHint: "应用后，后续回答将采用该智能体的人设与采样参数。",
+    participantModelHint: "应用后，后续回答将固定使用该模型。",
+    agentMissing: "智能体已删除，已回退默认助手",
+    answeredBy: "由 {{name}} 回答",
+    parallelSend: "并发问答",
+    parallelPickTitle: "选择并发参与者",
+    parallelPickCount: "已选 {{count}}/{{max}}",
+    parallelPickHint: "可勾选多个，同时提问",
+    parallelMaxReached: "已达 5 个上限",
+    parallelConfirm: "并发提问",
+    parallelProgress: "并发进行中：{{done}}/{{total}} 完成",
+    parallelWaiting: "等待回答…",
+    parallelFailed: "并发问答失败",
+    streamFailed: "回复生成失败",
+    streamBusy: "该会话正在生成回复，请稍候再试",
+    synthesisPickLabel: "总结合并：",
+    synthesisDefaultPicker: "系统默认模型",
+    synthesisRun: "生成总结",
+    synthesisResultTitle: "总结结论",
+    synthesisFailed: "总结生成失败",
+    parallelEmptyHint: "请先输入问题，再发起并发问答",
+    parallelTriggerCount: "并发问答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "提问与搜索",
@@ -1266,6 +1401,7 @@ export const zhCN = {
     typeSourceChat: "来源对话",
     typePrompt: "提示词",
     typeQaExplain: "答疑",
+    typeSourceSectionAnalysis: "章节 AI 解析",
     loadMore: "加载更多",
     recordsShown: "已显示 {{shown}} / {{total}} 条",
     emptyTitle: "暂无用量记录",
@@ -1296,6 +1432,356 @@ export const zhCN = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "实时任务执行检视器",
+
+
+
+
+
+
+        completed: "已完成",
+
+
+
+
+
+
+        failed: "执行失败",
+
+
+
+
+
+
+        canceled: "已取消",
+
+
+
+
+
+
+        running: "生成中…",
+
+
+
+
+
+
+        elapsed: "已用时",
+
+
+
+
+
+
+        stageFallback: "任务执行",
+
+
+
+
+
+
+        processing: "处理中",
+
+
+
+
+
+
+        taskId: "任务 ID",
+
+
+
+
+
+
+        openTaskCenter: "打开进度管理",
+
+
+
+
+
+
+        stageFlow: "阶段执行流",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "上下文输入",
+
+
+
+
+
+
+        modelOutput: "模型推理输出",
+
+
+
+
+
+
+        tokenRate: "推理速率",
+
+
+
+
+
+
+        processedChunks: "已处理分块",
+
+
+
+
+
+
+        chunksDesc: "向量处理块数",
+
+
+
+
+
+
+        execStatus: "执行状态",
+
+
+
+
+
+
+        workerNode: "后台 Worker 节点",
+
+
+
+
+
+
+        timeStats: "耗时统计",
+
+
+
+
+
+
+        stopwatchDesc: "持续秒表跟踪",
+
+
+
+
+
+
+        terminalTitle: "实时终端 ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "暂停滚屏",
+
+
+
+
+
+
+        autoScroll: "自动滚屏",
+
+
+
+
+
+
+        copyLogs: "复制日志",
+
+
+
+
+
+
+        clearOutput: "清空输出",
+
+
+
+
+
+
+        logsCopied: "已复制实时终端日志到剪贴板",
+
+
+
+
+
+
+        logsCleared: "终端日志视图已清空",
+
+
+
+
+
+
+        errorDetails: "执行异常详情",
+
+
+
+
+
+
+        cancelTask: "取消任务",
+
+
+
+
+
+
+        closeDrawer: "关闭抽屉",
+
+
+
+
+
+
+        footerReady: "实时日志流双向监听已就绪",
+
+
+
+
+
+
+        doneCollapse: "完成并收起",
+
+
+
+
+
+
+        fallbackStream1: "令牌流正在流经上下文图谱…",
+
+
+
+
+
+
+        fallbackStream2: "正在综合关键概念断言与引用锚点…",
+
+
+
+
+
+
+        fallbackStream3: "正在校验 JSON 结构契约与标题层级…",
+
+
+
+
+
+
+        fallbackStream4: "正在执行异步工作流写回数据库存储…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "队列排队",
+
+
+
+
+
+
+          queueDesc: "Worker 节点调度与资源分配",
+
+
+
+
+
+
+          prepare: "环境就绪",
+
+
+
+
+
+
+          prepareDesc: "加载上下文与依赖参数",
+
+
+
+
+
+
+          execute: "任务执行",
+
+
+
+
+
+
+          executeDesc: "后台核心进程持续运算",
+
+
+
+
+
+
+          finalize: "产物归档",
+
+
+
+
+
+
+          finalizeDesc: "持久化状态与返回执行结果",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "进度管理",
       description: "汇总所有后台操作：见解生成、向量构建、数据导入导出等。",
       refresh: "刷新",
@@ -1306,6 +1792,8 @@ export const zhCN = {
       cancel: "取消任务",
       cancelSuccess: "任务已取消",
       cancelFailed: "取消任务失败，请重试。",
+      viewLiveProgress: "查看实时进展",
+      viewDetails: "执行详情",
       filter: {
         all: "全部",
         active: "进行中",
@@ -1591,5 +2079,155 @@ export const zhCN = {
     readOnlyView: "只读预览",
     enterFullscreen: "进入全屏",
     exitFullscreen: "退出全屏",
+    editNote: "编辑笔记",
+    sourcesPanelTitle: "来源",
+    notesPanelTitle: "笔记",
+    openSourcesPanel: "打开来源侧栏",
+    openNotesPanel: "打开笔记侧栏",
+    closePanel: "关闭侧栏",
+    panelEmptySources: "笔记本暂无来源",
+    panelEmptyNotes: "笔记本暂无笔记",
+  },
+  geminiSources: {
+    newFolder: "新建文件夹",
+    addExisting: "从已有添加",
+    tabHierarchical: "层级资源 ({{count}})",
+    tabWebResearch: "网络导源",
+    selectAllForChat: "全选参与对话",
+    deselectAll: "全不选",
+    searchPlaceholder: "搜索资源...",
+    loadingTree: "加载资源目录中...",
+    empty: "暂无知识资源，可点击右上角添加或通过网络导源探索",
+    ungrouped: "未归档资源",
+    folderBadgeMixed: "本笔记本 {{local}} 个 · 知识库共 {{total}} 个（{{missing}} 个未加入）",
+    folderBadgeLocal: "本笔记本 {{count}} 个",
+    folderEmptyInNotebook: "该文件夹在当前笔记本中暂无资源",
+    folderTotalCount: "该文件夹总来源数: {{count}}",
+    addNewResource: "添加新资源",
+    webResearchTitle: "智能网络导源",
+    fastMode: "快速",
+    deepMode: "深度",
+    fastModeDesc: "秒级响应：提取关键词并发检索，清洗正文后一键勾选沉淀为来源。",
+    deepModeDesc: "深度智能体：长链路自主规划、多跳检索与交叉验证，输出结构化报告并导入来源。",
+    fastPlaceholder: "输入探索关键词或课题...",
+    deepPlaceholder: "输入深度研究主题...",
+    foundSources: "已搜寻到的优质来源 ({{count}})",
+    importing: "入库中...",
+    bulkAdd: "批量加入笔记本",
+    researchFastDone: "探索完成，已抓取高质量来源",
+    researchDeepDone: "深度研读完成，已形成结构化来源",
+    researchFailed: "网络搜索与导源失败，请稍后重试",
+    selectAtLeastOne: "请至少勾选一个要加入笔记本的网页",
+    savedPages: "成功将 {{count}} 个网页作为来源沉淀至笔记本",
+    addPagesFailed: "添加网页来源失败",
+    mockTitleInsights: "{{topic}} 核心架构解析与行业实践综述",
+    mockSnippetInsights: "针对 {{topic}} 的深度调研，系统剖析核心机制、关键性能指标与工业级部署经验。",
+    mockTitleSpec: "{{topic}} 官方技术白皮书与最佳实践指南",
+    mockSnippetSpec: "系统梳理了 {{topic}} 的设计决策、数据模型定义及常见性能陷阱防范。",
+    mockTitleBenchmark: "全景评测：{{topic}} 与主流开源方案的横向对比",
+    mockSnippetBenchmark: "基于真实吞吐量与长链路并发压力下的评测结论，揭示核心差异与场景选型推荐。",
+    noViewError: "未找到可用视图",
+    folderCreated: "文件夹创建成功",
+    folderCreateFailed: "创建文件夹失败",
+  },
+  geminiStudio: {
+    title: "Studio 工作室",
+    notesCount: "{{count}} 篇笔记",
+    newNote: "新建笔记",
+    toolbox: "工具箱",
+    openTasks: "打开进度管理",
+    notesStream: "笔记卡片流 ({{count}})",
+    saveHint: "可从对话一键沉淀",
+    loadingNotes: "加载笔记中...",
+    emptyNotes: "暂无笔记卡片",
+    emptyNotesHint: "可在对话中点击「保存为笔记」，或划选关键文字一键沉淀至此处。",
+    noContent: "无内容",
+    generateFailed: "生成工件失败",
+    generateDone: "{{tool}} 生成成功，已作为笔记沉淀",
+    jobProgressTitle: "{{tool}} · 生成进度",
+    jobProgressHint: "任务已在后台异步执行，可实时查看状态或跳转进度管理",
+    instructionLabel: "生成指令与侧重点（可选）",
+    instructionPlaceholder: "输入给 AI 的定制指令或关注侧重点...",
+    contextHint: "将基于当前选取的 {{count}} 个知识来源及相关笔记进行提炼生成，完成后自动沉淀为笔记。",
+    runInBackground: "后台运行，关闭",
+    submitting: "正在提交任务...",
+    generateAndSave: "立即生成并存为笔记",
+    tagPodcast: "播客",
+    tagArtifact: "快捷工件",
+    tools: {
+      audioOverview: {
+        desc: "生成双人主持的深度对谈音频播客（真实语音合成）",
+      },
+      studyGuide: {
+        desc: "提炼核心概念、考试测验问答与系统复习大纲",
+        instruction: "请为我整理一份系统的学习指南，包含核心概念术语解析、关键要点总结以及自测选择题与简答题。",
+      },
+      briefingDoc: {
+        desc: "生成专业执行简报、关键论据、战略启示与结论",
+        instruction: "请提炼一份专业的高管项目简报，包含背景摘要、关键支撑事实、潜在风险评估及后续行动建议。",
+      },
+      faq: {
+        desc: "基于来源提取最关键的常见问答与详细解答",
+        instruction: "请全面梳理当前资料，整理出读者最常关心的核心问题与翔实解答。",
+      },
+      flashcards: {
+        desc: "提取核心知识点与问答对，生成正反面抽认记忆卡片",
+        instruction: "请提炼核心概念与重要结论，生成便于记忆与抽认自测的问答知识卡片集。",
+      },
+    },
+  },
+  agents: {
+    title: "智能体",
+    desc: "预定义对话角色：系统提示词 + 可选的模型与采样参数，在笔记本对话中选择使用。",
+    create: "新建智能体",
+    edit: "编辑智能体",
+    delete: "删除",
+    empty: "还没有智能体，点击右上角创建第一个",
+    disabled: "已停用",
+    inUse: "{{count}} 个会话使用中",
+    createSuccess: "智能体创建成功",
+    updateSuccess: "智能体已更新",
+    deleteSuccess: "智能体已删除",
+    deleteConfirmTitle: "删除智能体",
+    deleteConfirmDesc: "确定删除「{{name}}」？绑定它的 {{count}} 个会话将自动回退为默认助手，历史消息保留。",
+    loadFailed: "加载智能体失败",
+    editorDesc: "定义角色人设、默认模型与采样参数。",
+    nameLabel: "名称",
+    namePlaceholder: "例如：研究助理",
+    descriptionLabel: "描述",
+    descriptionPlaceholder: "一句话说明这个角色的用途（可选）",
+    promptLabel: "系统提示词",
+    promptPlaceholder: "描述这个角色的身份、语气与回答方式……",
+    promptHint: "将在对话系统提示词开头注入；引用与引用标注规则保持不变。",
+    modelLabel: "绑定模型",
+    modelPlaceholder: "跟随对话默认模型",
+    modelHint: "留空则使用对话页选择的模型或系统默认模型。",
+    temperatureField: "温度",
+    maxTokensField: "最大 Token 数",
+    enabledLabel: "启用",
+    enabledHint: "停用后不在对话选择器中出现，已绑定会话回退默认助手。",
+    validationRequired: "名称与系统提示词为必填项",
+    validationTemperature: "温度取值需在 0 到 2 之间",
+    validationMaxTokens: "最大 Token 数需为正整数",
+    temperatureLabel: "温度 {{value}}",
+    temperatureHelp: "温度控制回答的随机程度，取值 0–2：数值越低输出越稳定、精确，适合事实问答、资料整理等任务；数值越高输出越发散、有创造性，适合创意写作与头脑风暴。留空则跟随对话页的默认设置。",
+    maxTokensLabel: "上限 {{value}} tokens",
+    templateLabel: "从模板开始",
+    templatePickerDesc: "按行业分类选择一个预设智能体，选中后自动填入名称、提示词与采样参数，之后仍可自由修改。",
+    templateBlankName: "从空白开始",
+    templateBlankDesc: "不套用模板，自行填写名称与系统提示词。",
+    templateUse: "使用此模板",
+    templateCat: {
+      software: "软件开发",
+      ruankao: "软考备考",
+      llm: "大模型",
+      business: "商业",
+      education: "教育",
+      creative: "创作",
+      general: "通用",
+    },
+    polishPrompt: "润色提示词",
+    polishing: "润色中",
+    polishFailed: "提示词润色失败",
   },
 } satisfies TranslationShape;

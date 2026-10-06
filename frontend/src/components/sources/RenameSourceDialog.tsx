@@ -48,7 +48,7 @@ export function RenameSourceDialog({ open, source, onConfirm, onOpenChange }: Re
 
   return (
     <Dialog open={open} onOpenChange={(o) => !submitting && onOpenChange(o)}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t('sources.grouping.renameSourceTitle')}</DialogTitle>
         </DialogHeader>

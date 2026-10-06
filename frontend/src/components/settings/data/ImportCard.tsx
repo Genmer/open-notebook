@@ -253,7 +253,7 @@ export function ImportCard() {
 
         {status === 'completed' && summary && (
           <div className="space-y-3">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 xl:max-w-5xl">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">
                   {t('dataManagement.import.summary.imported')}

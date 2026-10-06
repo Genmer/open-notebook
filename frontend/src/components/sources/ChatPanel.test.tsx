@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatPanel } from './ChatPanel'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
+import { toast } from 'sonner'
 import type { SourceTitleResponse } from '@/lib/types/api'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string)
@@ -11,14 +12,55 @@ vi.mock('@/lib/hooks/use-modal-manager', () => ({
   useModalManager: () => ({ openModal: vi.fn() }),
 }))
 
+// Stubbed so the empty-input parallel hint can be asserted without a Toaster.
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}))
+
+// The real picker mounts react-query hooks (use-models/use-agents) and a Radix
+// Popover that never opens in jsdom. This probe stands in and surfaces the
+// exact `disabled` prop ChatComposer computes, clicking through to onSend.
+vi.mock('@/components/chat/ParallelRunsPicker', () => ({
+  ParallelRunsPicker: ({
+    disabled,
+    onSend,
+  }: {
+    disabled?: boolean
+    onSend: (runs: string[]) => void
+  }) => (
+    <button
+      type="button"
+      data-testid="parallel-runs-trigger"
+      disabled={disabled}
+      onClick={() => onSend(['default'])}
+    />
+  ),
+}))
+
+const mockToastError = vi.mocked(toast.error)
+
 vi.mock('@/lib/hooks/use-sources', () => ({
   hasActiveInsightJobs: () => false,
   useSourceTitles: vi.fn(),
 }))
 
 // Keep the message-content deps light for this composer-focused test.
+// Probe: expose the received sourceGrouping so the ChatPanel → memo ChatMessage
+// → MessageActions hand-off is asserted with a same-value check.
 vi.mock('@/components/sources/MessageActions', () => ({
-  MessageActions: () => null,
+  MessageActions: ({
+    sourceGrouping,
+  }: {
+    sourceGrouping?: { viewId?: string; group?: string }
+  }) => (
+    <div
+      data-testid="message-actions-probe"
+      data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
+    />
+  ),
 }))
 
 const mockUseSourceTitles = vi.mocked(useSourceTitles)
@@ -122,6 +164,65 @@ describe('ChatPanel composer', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
 
     expect(onSendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChatPanel parallel composer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // jsdom does not implement scrollIntoView (used by the auto-scroll effect).
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  const renderWithParallel = () => {
+    const parallelChat = {
+      phase: 'idle' as const,
+      runs: [],
+      synthesis: null,
+      isSynthesizing: false,
+      send: vi.fn(),
+      synthesize: vi.fn(),
+    }
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        parallelChat={parallelChat}
+      />
+    )
+    return {
+      parallelChat,
+      textarea: screen.getByRole('textbox') as HTMLTextAreaElement,
+    }
+  }
+
+  it('keeps the parallel trigger clickable while the input is empty', () => {
+    const { textarea } = renderWithParallel()
+    expect(textarea.value).toBe('')
+
+    expect(screen.getByTestId('parallel-runs-trigger')).not.toBeDisabled()
+  })
+
+  it('hints and refocuses the composer instead of sending on an empty-input confirm', () => {
+    const { parallelChat, textarea } = renderWithParallel()
+
+    fireEvent.click(screen.getByTestId('parallel-runs-trigger'))
+
+    expect(parallelChat.send).not.toHaveBeenCalled()
+    expect(mockToastError).toHaveBeenCalledWith('chat.parallelEmptyHint')
+    expect(textarea).toHaveFocus()
+  })
+
+  it('sends the trimmed input through the parallel channel and clears it', () => {
+    const { parallelChat, textarea } = renderWithParallel()
+    fireEvent.change(textarea, { target: { value: '  fan out  ' } })
+
+    fireEvent.click(screen.getByTestId('parallel-runs-trigger'))
+
+    expect(parallelChat.send).toHaveBeenCalledWith('fan out', ['default'])
+    expect(textarea.value).toBe('')
   })
 })
 
@@ -399,5 +500,127 @@ describe('ChatPanel fullscreen toggle', () => {
 
     expect(card.className).toContain('h-full flex-1')
     expect(card.className).not.toContain('fixed')
+  })
+})
+
+describe('ChatPanel streaming bubble', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  // The waiting/streaming bubble is the only element carrying max-w-[80%];
+  // the composer's send button also spins an animate-spin Loader2 while
+  // isStreaming, so spinner assertions must scope inside the bubble.
+  const getBubble = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('.max-w-\\[80\\%\\]')
+
+  it('renders streaming text as plain text with a cursor, not markdown', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '# Partial answer' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    // Raw text stays literal — MarkdownRenderer would turn it into an h1
+    expect(screen.getByText('# Partial answer')).toBeInTheDocument()
+    expect(container.querySelector('h1')).toBeNull()
+    const bubble = getBubble(container)
+    // blinking cursor marks the live stream
+    expect(bubble?.querySelector('.animate-pulse')).not.toBeNull()
+    // no markdown container class inside the streaming bubble
+    expect(bubble?.textContent).toContain('# Partial answer')
+  })
+
+  it('filters think segments from the streaming text', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '<think>hidden</think>visible part' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('visible part')).toBeInTheDocument()
+    expect(screen.queryByText(/hidden/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the spinner while no delta has arrived yet', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    const bubble = getBubble(container)
+    expect(bubble?.querySelector('.animate-spin')).not.toBeNull()
+    expect(bubble?.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('falls back to the spinner when streamingMessage is not provided (source chat)', () => {
+    const { container } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(getBubble(container)?.querySelector('.animate-spin')).not.toBeNull()
+  })
+})
+
+describe('ChatPanel message actions grouping hand-off', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  const aiMessage = { id: 'm1', type: 'ai' as const, content: 'Answer body' }
+
+  it('hands sourceGrouping to MessageActions of an AI message unchanged', () => {
+    const sourceGrouping = { viewId: 'view:1', group: 'group:9' }
+    render(
+      <ChatPanel
+        messages={[aiMessage]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="nb:1"
+        sourceGrouping={sourceGrouping}
+      />
+    )
+
+    expect(screen.getByTestId('message-actions-probe')).toHaveAttribute(
+      'data-source-grouping',
+      JSON.stringify(sourceGrouping)
+    )
+  })
+
+  it('leaves MessageActions without grouping when none is given', () => {
+    render(
+      <ChatPanel
+        messages={[aiMessage]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="nb:1"
+      />
+    )
+
+    expect(screen.getByTestId('message-actions-probe')).toHaveAttribute('data-source-grouping', '')
   })
 })

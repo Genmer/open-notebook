@@ -78,7 +78,6 @@ export const ptBR = {
     no: "Não",
     saving: "Salvando...",
     description: "Descrição",
-    saveToNote: "Salvar em nota",
     copyToClipboard: "Copiar para área de transferência",
     close: "Fechar",
     insights: "Insights",
@@ -223,6 +222,7 @@ export const ptBR = {
     language: "Alternar idioma",
     theme: "Tema",
     ask: "Perguntar",
+    agents: "Agentes",
   },
   notebooks: {
     title: "Cadernos",
@@ -270,6 +270,25 @@ export const ptBR = {
     recentlyViewedNotebook: "Caderno",
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
+    saveNote: {
+      typeLabel: "Salvar como",
+      modeSource: "Salvar como fonte",
+      modeNote: "Salvar como nota",
+      title: "Salvar no caderno",
+      description: "Dê um nome a este conteúdo e escolha salvá-lo como fonte ou como nota.",
+      nameLabel: "Nome",
+      namePlaceholder: "Digite um nome",
+      submit: "Salvar"
+    },
+    saveAsSource: {
+      title: "Salvar como fonte",
+      action: "Salvar como fonte",
+      description: "Cria uma fonte de texto com o conteúdo desta nota neste caderno.",
+      nameLabel: "Nome da fonte",
+      namePlaceholder: "Digite um nome para a fonte",
+      noEmbedHint: "Será adicionada sem embeddings e incluída por padrão no contexto do chat do caderno (ajuste no seletor de contexto do chat); se precisar de busca vetorial, execute o embedding depois na lista de fontes.",
+      submit: "Adicionar ao caderno",
+    },
   },
   sources: {
     newSource: "Nova Fonte",
@@ -302,7 +321,6 @@ export const ptBR = {
     loadingMore: "Carregando mais...",
     noSourcesYet: "Nenhuma fonte ainda",
     allSourcesDescShort: "Veja todas as suas fontes aqui.",
-    cannotSaveNoteNoNotebook: "Não é possível salvar nota: ID do caderno não disponível",
     createFirstSource: "Adicione sua primeira fonte para começar a construir sua base de conhecimento.",
     deleteSourceConfirm: "Tem certeza que deseja excluir esta fonte?",
     deleteConfirm: "Tem certeza que deseja excluir isto?",
@@ -467,14 +485,21 @@ export const ptBR = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "Analisa um artigo técnico ou científico",
+    transformationDescKeyInsights: "Extrai insights importantes e itens acionáveis",
+    transformationDescDenseSummary: "Cria um resumo rico e aprofundado do conteúdo",
+    transformationDescReflectionQuestions: "Gera perguntas de reflexão do documento para ajudar a explorá-lo melhor",
+    transformationDescTableOfContents: "Descreve os diferentes tópicos do documento",
+    transformationDescSimpleSummary: "Gera um pequeno resumo do conteúdo",
     embedMissing: {
+      columnCta: "{{count}} fontes não incorporadas — incorporar agora",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const ptBR = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "Não incorporada",
+      failed: "Falha na incorporação",
+    },
+    overview: {
+      title: "Visão geral da base de conhecimento",
+      totalBadge: "{{count}} na biblioteca",
+      linkedLabel: "Vinculadas a este notebook",
+      pendingLabel: "Fontes pendentes",
+      count: "{{count}}",
+      importAll: "Importar {{count}} da biblioteca",
+      allLinked: "Todas as fontes da biblioteca estão vinculadas a este notebook",
+      viewAll: "Ver biblioteca",
+    },
+    pdfViewer: {
+      restore: "Restaurar",
+      open: "Ver arquivo original",
+      title: "Pré-visualização do arquivo original",
+      outline: "Sumário",
+      noOutline: "Este documento não tem sumário",
+      parsingToc: "Analisando o sumário…",
+      page: "Página {{page}} de {{total}}",
+      loading: "Carregando documento…",
+      loadFailed: "Falha ao carregar o documento",
+      zoomIn: "Ampliar",
+      zoomOut: "Reduzir",
+      prevPage: "Página anterior",
+      nextPage: "Próxima página",
+      close: "Fechar",
+      notPdf: "Este arquivo não é um PDF e não pode ser visualizado",
+      enterFullscreen: "Ler em tela cheia",
+      exitFullscreen: "Sair da tela cheia",
+    },
+    fileView: {
+      analyzeSection: "Analisar seção com IA",
+      analyzing: "Analisando…",
+      analysisTitle: "Análise de IA de \"{{title}}\"",
+      analysisTruncated: "O texto da seção foi truncado antes da análise",
+      analysisFailed: "A análise de IA falhou, tente novamente",
+      saveAnalysis: "Salvar como nota",
+    },
+    copy: "Copiar",
+    copied: "Copiado",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const ptBR = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "Esta página não tem camada de texto (página digitalizada). O destaque de texto não está disponível; anotações por seleção de área chegarão em uma atualização futura.",
+      orphanedHint: "O arquivo de origem foi alterado; a reancoragem estará disponível em uma atualização futura.",
+      colors: {
+        gold: "Ponto-chave",
+        fern: "Dominado",
+        plum: "Dúvida",
+        slate: "Referência",
+        clay: "Propenso a erro",
+      },
+      toolbar: {
+        colorAria: "Marcar como {{name}}",
+        line: "Estilo da linha",
+        wavy: "Sublinhado ondulado",
+        straight: "Sublinhado reto",
+        comment: "Nota",
+        copy: "Copiar",
+        copied: "Copiado",
+      },
+      hover: {
+        edit: "Editar nota",
+        delete: "Excluir anotação",
+        deleted: "Anotação excluída",
+        undo: "Desfazer",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "Página {{page}}",
+      },
+      toast: {
+        createFailed: "Falha ao criar a anotação",
+        updateFailed: "Falha ao atualizar a anotação",
+        deleteFailed: "Falha ao excluir a anotação",
+        restoreFailed: "Falha ao restaurar a anotação",
+        crossPage: "A seleção abrange várias páginas. Faça anotações uma página por vez.",
+        tooLong: "A seleção é longa demais. Divida-a em partes menores.",
+      },
+      deleteConfirm: {
+        count: "A exclusão também removerá {{count}} anotação(ões).",
+      },
+    },
   },
   chat: {
     sessions: "Sessões",
@@ -647,6 +754,34 @@ export const ptBR = {
     contextPickerCounts: "Insights {{insights}} · Integrais {{full}} · Notas {{notes}}",
     enterFullscreen: "Ativar tela cheia",
     exitFullscreen: "Sair da tela cheia",
+    participantConfig: "Participante da conversa",
+    participantDesc: "Escolha uma persona agente ou um modelo; são mutuamente exclusivos — escolher um limpa o outro.",
+    participantPlaceholder: "Selecionar participante",
+    groupDefault: "Assistente padrão",
+    groupAgents: "Agentes",
+    groupModels: "Modelos",
+    participantAgentHint: "Ao aplicar, as respostas seguintes usam a persona e os parâmetros deste agente.",
+    participantModelHint: "Ao aplicar, as respostas seguintes ficam fixadas neste modelo.",
+    agentMissing: "Agente excluído — usando o assistente padrão",
+    answeredBy: "Respondido por {{name}}",
+    parallelSend: "Pergunta paralela",
+    parallelPickTitle: "Escolher participantes paralelos",
+    parallelPickCount: "{{count}}/{{max}} escolhidos",
+    parallelPickHint: "Marque vários e pergunte de uma vez",
+    parallelMaxReached: "Limite de 5 atingido",
+    parallelConfirm: "Perguntar em paralelo",
+    parallelProgress: "Em andamento: {{done}}/{{total}} prontos",
+    parallelWaiting: "Aguardando a resposta…",
+    parallelFailed: "Falha na pergunta paralela",
+    streamFailed: "Falha ao gerar a resposta",
+    streamBusy: "Esta sessão já está gerando uma resposta; aguarde",
+    synthesisPickLabel: "Sintetizar e mesclar:",
+    synthesisDefaultPicker: "Modelo padrão do sistema",
+    synthesisRun: "Sintetizar",
+    synthesisResultTitle: "Resposta sintetizada",
+    synthesisFailed: "Falha na síntese",
+    parallelEmptyHint: "Digite primeiro uma pergunta e depois inicie as respostas paralelas",
+    parallelTriggerCount: "Paralelo · {{count}}",
   },
   searchPage: {
     askAndSearch: "Perguntar e Buscar",
@@ -1266,6 +1401,7 @@ export const ptBR = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Q&A",
+    typeSourceSectionAnalysis: "Análise de seção com IA",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const ptBR = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Inspetor de tarefas ao vivo",
+
+
+
+
+
+
+        completed: "Concluído",
+
+
+
+
+
+
+        failed: "Falha na execução",
+
+
+
+
+
+
+        canceled: "Cancelado",
+
+
+
+
+
+
+        running: "Gerando…",
+
+
+
+
+
+
+        elapsed: "Decorrido",
+
+
+
+
+
+
+        stageFallback: "Executando",
+
+
+
+
+
+
+        processing: "Processando",
+
+
+
+
+
+
+        taskId: "ID da tarefa",
+
+
+
+
+
+
+        openTaskCenter: "Abrir gerenciamento de tarefas",
+
+
+
+
+
+
+        stageFlow: "Fluxo de etapas",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Entrada de contexto",
+
+
+
+
+
+
+        modelOutput: "Saída do modelo",
+
+
+
+
+
+
+        tokenRate: "Velocidade de tokens",
+
+
+
+
+
+
+        processedChunks: "Blocos processados",
+
+
+
+
+
+
+        chunksDesc: "Blocos de vetores",
+
+
+
+
+
+
+        execStatus: "Status",
+
+
+
+
+
+
+        workerNode: "Worker em segundo plano",
+
+
+
+
+
+
+        timeStats: "Tempo decorrido",
+
+
+
+
+
+
+        stopwatchDesc: "Cronômetro contínuo",
+
+
+
+
+
+
+        terminalTitle: "terminal ao vivo ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Pausar rolagem",
+
+
+
+
+
+
+        autoScroll: "Rolagem automática",
+
+
+
+
+
+
+        copyLogs: "Copiar registros",
+
+
+
+
+
+
+        clearOutput: "Limpar saída",
+
+
+
+
+
+
+        logsCopied: "Registros do terminal copiados para a área de transferência",
+
+
+
+
+
+
+        logsCleared: "Saída do terminal limpa",
+
+
+
+
+
+
+        errorDetails: "Detalhes do erro",
+
+
+
+
+
+
+        cancelTask: "Cancelar tarefa",
+
+
+
+
+
+
+        closeDrawer: "Fechar painel",
+
+
+
+
+
+
+        footerReady: "Escuta bidirecional do fluxo de registros pronta",
+
+
+
+
+
+
+        doneCollapse: "Concluir e recolher",
+
+
+
+
+
+
+        fallbackStream1: "Fluxo de tokens atravessando o grafo de contexto…",
+
+
+
+
+
+
+        fallbackStream2: "Sintetizando afirmações conceituais chave e âncoras de citação…",
+
+
+
+
+
+
+        fallbackStream3: "Validando contrato de esquema JSON e cabeçalhos Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Gravando a saída assíncrona do worker no banco de dados…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "Na fila",
+
+
+
+
+
+
+          queueDesc: "Agendamento do worker e alocação de recursos",
+
+
+
+
+
+
+          prepare: "Preparação",
+
+
+
+
+
+
+          prepareDesc: "Carregando contexto e dependências",
+
+
+
+
+
+
+          execute: "Execução",
+
+
+
+
+
+
+          executeDesc: "Processo em segundo plano calculando",
+
+
+
+
+
+
+          finalize: "Finalização",
+
+
+
+
+
+
+          finalizeDesc: "Persistindo estado e resultados",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const ptBR = {
       cancel: "Cancelar tarefa",
       cancelSuccess: "Tarefa cancelada",
       cancelFailed: "Não foi possível cancelar a tarefa. Tente novamente.",
+      viewLiveProgress: "Ver progresso ao vivo",
+      viewDetails: "Detalhes",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const ptBR = {
     readOnlyView: "Visualização somente leitura",
     enterFullscreen: "Ativar tela cheia",
     exitFullscreen: "Sair da tela cheia",
+    editNote: "Editar nota",
+    sourcesPanelTitle: "Fontes",
+    notesPanelTitle: "Notas",
+    openSourcesPanel: "Abrir painel de fontes",
+    openNotesPanel: "Abrir painel de notas",
+    closePanel: "Fechar painel",
+    panelEmptySources: "Sem fontes neste caderno",
+    panelEmptyNotes: "Sem notas neste caderno",
+  },
+  geminiSources: {
+    newFolder: "Nova pasta",
+    addExisting: "Adicionar existente",
+    tabHierarchical: "Recursos ({{count}})",
+    tabWebResearch: "Pesquisa na web",
+    selectAllForChat: "Selecionar tudo para o chat",
+    deselectAll: "Desmarcar tudo",
+    searchPlaceholder: "Pesquisar recursos...",
+    loadingTree: "Carregando recursos...",
+    empty: "Sem recursos ainda — adicione no topo ou explore pela pesquisa web",
+    ungrouped: "Não agrupados",
+    folderBadgeMixed: "{{local}} neste caderno · {{total}} na biblioteca ({{missing}} não adicionados)",
+    folderBadgeLocal: "{{count}} neste caderno",
+    folderEmptyInNotebook: "Esta pasta ainda não tem recursos neste caderno",
+    folderTotalCount: "Fontes totais na pasta: {{count}}",
+    addNewResource: "Adicionar novo recurso",
+    webResearchTitle: "Pesquisa na web",
+    fastMode: "Rápido",
+    deepMode: "Profundo",
+    fastModeDesc: "Resposta em segundos: extrai palavras-chave, busca em paralelo e limpa o texto — marque páginas para salvar como fontes.",
+    deepModeDesc: "Agente profundo: planeja de forma autônoma, busca em múltiplos saltos e valida cruzando — importa um relatório estruturado como fontes.",
+    fastPlaceholder: "Digite uma palavra-chave ou tópico...",
+    deepPlaceholder: "Digite um tópico de pesquisa profunda...",
+    foundSources: "Fontes de qualidade encontradas ({{count}})",
+    importing: "Importando...",
+    bulkAdd: "Adicionar tudo ao caderno",
+    researchFastDone: "Pesquisa concluída — fontes de qualidade obtidas",
+    researchDeepDone: "Pesquisa profunda concluída — fontes estruturadas prontas",
+    researchFailed: "A pesquisa na web falhou, tente novamente mais tarde",
+    selectAtLeastOne: "Selecione ao menos uma página para adicionar",
+    savedPages: "{{count}} páginas adicionadas como fontes",
+    addPagesFailed: "Falha ao adicionar páginas como fontes",
+    mockTitleInsights: "{{topic}}: arquitetura central e práticas do setor",
+    mockSnippetInsights: "Análise profunda de {{topic}}: mecanismos centrais, métricas-chave e experiência de implantação em produção.",
+    mockTitleSpec: "{{topic}}: whitepaper oficial e boas práticas",
+    mockSnippetSpec: "Revisão sistemática das decisões de projeto, modelos de dados e armadilhas de desempenho comuns do {{topic}}.",
+    mockTitleBenchmark: "Comparativo: {{topic}} versus alternativas open source",
+    mockSnippetBenchmark: "Conclusões com throughput real e carga concorrente prolongada: diferenças-chave e recomendação por cenário.",
+    noViewError: "Nenhuma visualização disponível",
+    folderCreated: "Pasta criada",
+    folderCreateFailed: "Falha ao criar a pasta",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "{{count}} notas",
+    newNote: "Nova nota",
+    toolbox: "Caixa de ferramentas",
+    openTasks: "Abrir tarefas",
+    notesStream: "Cartões de notas ({{count}})",
+    saveHint: "Capture do chat em um clique",
+    loadingNotes: "Carregando notas...",
+    emptyNotes: "Nenhuma nota ainda",
+    emptyNotesHint: "Salve uma nota do chat ou selecione texto-chave para capturá-lo aqui.",
+    noContent: "Sem conteúdo",
+    generateFailed: "Falha ao gerar o artefato",
+    generateDone: "{{tool}} gerado e salvo como nota",
+    jobProgressTitle: "{{tool}} · progresso",
+    jobProgressHint: "A tarefa roda em segundo plano — acompanhe o progresso ou abra o centro de tarefas",
+    instructionLabel: "Instrução e foco (opcional)",
+    instructionPlaceholder: "Instrução personalizada ou foco para a IA...",
+    contextHint: "Gera a partir das {{count}} fontes selecionadas e notas relacionadas, salvando o resultado como nota.",
+    runInBackground: "Continuar em segundo plano",
+    submitting: "Enviando...",
+    generateAndSave: "Gerar e salvar como nota",
+    tagPodcast: "Podcast",
+    tagArtifact: "Artefato",
+    tools: {
+      audioOverview: {
+        desc: "Podcast de análise com dois apresentadores (síntese de voz real)",
+      },
+      studyGuide: {
+        desc: "Conceitos-chave, perguntas de quiz e roteiro de revisão sistemático",
+        instruction: "Prepare um guia de estudos sistemático com análise dos termos-chave, resumo dos pontos essenciais e questões de múltipla escolha e dissertativas de autoavaliação.",
+      },
+      briefingDoc: {
+        desc: "Briefing executivo com argumentos-chave, implicações estratégicas e conclusões",
+        instruction: "Elabore um briefing executivo profissional com resumo do contexto, fatos de apoio-chave, avaliação de riscos e próximas ações recomendadas.",
+      },
+      faq: {
+        desc: "As perguntas frequentes mais importantes com respostas detalhadas de suas fontes",
+        instruction: "Revise todos os materiais e compile as perguntas essenciais mais frequentes com respostas exaustivas.",
+      },
+      flashcards: {
+        desc: "Conhecimento-chave em pares pergunta/resposta estilo flashcards",
+        instruction: "Destile conceitos e conclusões-chave em flashcards memorizáveis.",
+      },
+    },
+  },
+  agents: {
+    title: "Agentes",
+    desc: "Personas de chat predefinidas: prompt de sistema mais modelo e parâmetros de amostragem opcionais, selecionáveis nos chats do caderno.",
+    create: "Novo agente",
+    edit: "Editar agente",
+    delete: "Excluir",
+    empty: "Sem agentes ainda — crie o primeiro no canto superior direito",
+    disabled: "Desativado",
+    inUse: "{{count}} sessões em uso",
+    createSuccess: "Agente criado",
+    updateSuccess: "Agente atualizado",
+    deleteSuccess: "Agente excluído",
+    deleteConfirmTitle: "Excluir agente",
+    deleteConfirmDesc: "Excluir \"{{name}}\"? Suas {{count}} sessões vinculadas voltarão ao assistente padrão; o histórico é mantido.",
+    loadFailed: "Falha ao carregar o agente",
+    editorDesc: "Defina a persona, o modelo padrão e os parâmetros de amostragem.",
+    nameLabel: "Nome",
+    namePlaceholder: "ex. assistente de pesquisa",
+    descriptionLabel: "Descrição",
+    descriptionPlaceholder: "Uma linha sobre o que esta persona faz (opcional)",
+    promptLabel: "Prompt de sistema",
+    promptPlaceholder: "Descreva a identidade, o tom e o estilo de resposta da persona...",
+    promptHint: "Injetado no topo do prompt de sistema do chat; as regras de citação continuam valendo.",
+    modelLabel: "Modelo vinculado",
+    modelPlaceholder: "Seguir o padrão do chat",
+    modelHint: "Deixe vazio para usar o modelo escolhido no chat ou o padrão do sistema.",
+    temperatureField: "Temperatura",
+    maxTokensField: "Tokens máx.",
+    enabledLabel: "Ativado",
+    enabledHint: "Agentes desativados somem do seletor do chat; sessões vinculadas voltam ao assistente padrão.",
+    validationRequired: "Nome e prompt de sistema são obrigatórios",
+    validationTemperature: "A temperatura deve estar entre 0 e 2",
+    validationMaxTokens: "Tokens máximos devem ser um inteiro positivo",
+    temperatureLabel: "temp {{value}}",
+    temperatureHelp: "A temperatura controla o grau de aleatoriedade das respostas, em uma escala de 0 a 2. Valores mais baixos deixam a saída mais estável e precisa — bons para tarefas factuais como perguntas e respostas ou resumos de pesquisa. Valores mais altos deixam a saída mais variada e criativa — melhores para escrita criativa e brainstorming. Deixe vazio para seguir o padrão do chat.",
+    maxTokensLabel: "limite {{value}} tokens",
+    templateLabel: "Começar com um modelo",
+    templatePickerDesc: "Escolha um agente predefinido por setor. Ao selecionar, nome, prompt e padrões de amostragem são preenchidos automaticamente — tudo continua editável depois.",
+    templateBlankName: "Começar do zero",
+    templateBlankDesc: "Pule os modelos e preencha você mesmo o nome e o prompt de sistema.",
+    templateUse: "Usar este modelo",
+    templateCat: {
+      software: "Software",
+      ruankao: "Preparação para o exame Ruankao",
+      llm: "LLM",
+      business: "Negócios",
+      education: "Educação",
+      creative: "Criativo",
+      general: "Geral",
+    },
+    polishPrompt: "Polir o prompt",
+    polishing: "Polindo…",
+    polishFailed: "Falha ao polir o prompt",
   },
 } satisfies TranslationShape;

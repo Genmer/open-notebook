@@ -60,3 +60,7 @@ What this makes easier, what it makes harder, what to watch. (bullets)
 | [ADR-010](ADR-010-local-token-usage-tracking.md) | Token usage tracking is local-only, best-effort, and off by default-able | Accepted |
 | [ADR-011](ADR-011-data-transfer-export-import.md) | Data export/import — single zip package, id-skip idempotency, direct SQL writes | Accepted |
 | [ADR-012](ADR-012-chat-context-preferences.md) | Chat context preferences: schemaless (notebook, folder, source) table, no DELETE | Accepted |
+| [ADR-013](ADR-013-task-failure-explain-ai.md) | Task-failure explanations are assembled server-side and answered by an optional qa model slot | Accepted |
+| [ADR-014](ADR-014-model-config-export-import.md) | Model configuration export/import — package format v2, plain-text API keys by user decision, conflict-confirm import | Accepted |
+| [PDR-003](PDR-003-source-annotation-system.md) | 来源标注系统规划定稿——18 项开放问题全部裁决（页级路由/条件互斥/标称对账等；规划与 MVP 任务清单见 `../plans/`） | Accepted |
+| [PDR-004](PDR-004-agents-and-parallel-chat.md) | 智能体配置与多路并发对话——智能体表+配置页+分组选择器；并发走后端单 SSE 端点（执行与持久化解耦）；工作流缓做，锁定"预设链"演进形态 | Accepted |

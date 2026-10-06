@@ -56,6 +56,17 @@ describe('UsageToolbar', () => {
     expect(onCallTypeChange).toHaveBeenCalledWith('embedding')
   })
 
+  it('lists and selects the section AI analysis call type', async () => {
+    const onCallTypeChange = vi.fn()
+    render(<UsageToolbar days={7} onDaysChange={vi.fn()} callType="" onCallTypeChange={onCallTypeChange} />)
+
+    await openSelect()
+    expect(CALL_TYPE_CHOICES.some(({ value }) => value === 'source_section_analysis')).toBe(true)
+
+    fireEvent.keyDown(screen.getByRole('option', { name: 'usage.typeSourceSectionAnalysis' }), { key: 'Enter' })
+    expect(onCallTypeChange).toHaveBeenCalledWith('source_section_analysis')
+  })
+
   it('maps the sentinel back to an empty "all" filter', async () => {
     const onCallTypeChange = vi.fn()
     render(

@@ -15,10 +15,12 @@ Behavior notes:
 from typing import Any, Iterable, List, Optional, Tuple
 
 from fastapi import HTTPException
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
+from open_notebook.exceptions import NotFoundError
 
 
 # Shared response models
@@ -27,6 +29,18 @@ class ChatMessage(BaseModel):
     type: str = Field(..., description="Message type (human|ai)")
     content: str = Field(..., description="Message content")
     timestamp: Optional[str] = Field(None, description="Message timestamp")
+    model_name: Optional[str] = Field(
+        None, description="Model that produced this AI message (PDR-004)"
+    )
+    agent_name: Optional[str] = Field(
+        None, description="Agent persona that produced this AI message (PDR-004)"
+    )
+    run_role: Optional[str] = Field(
+        None, description="Run role: answer (default) | synthesis (PDR-004)"
+    )
+    group_id: Optional[str] = Field(
+        None, description="Parallel-run group this message belongs to (PDR-004)"
+    )
 
 
 class SuccessResponse(BaseModel):
@@ -83,12 +97,44 @@ def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
     """Convert LangGraph/LangChain state messages into `ChatMessage` models."""
     messages: List[ChatMessage] = []
     for msg in raw_messages:
+        kwargs = getattr(msg, "additional_kwargs", None) or {}
+        # LangChain messages expose `.id` as None (not missing) when unset.
+        msg_id = getattr(msg, "id", None) or f"msg_{len(messages)}"
         messages.append(
             ChatMessage(
-                id=getattr(msg, "id", f"msg_{len(messages)}"),
+                id=msg_id,
                 type=msg.type if hasattr(msg, "type") else "unknown",
                 content=msg.content if hasattr(msg, "content") else str(msg),
                 timestamp=None,  # LangChain messages don't have timestamps by default
+                model_name=kwargs.get("model_name"),
+                agent_name=kwargs.get("agent_name"),
+                run_role=kwargs.get("run_role"),
+                group_id=kwargs.get("group_id"),
             )
         )
     return messages
+
+
+async def resolve_agent_binding(agent_id: Optional[str]) -> Optional[Any]:
+    """Resolve a chat_session agent reference to a live Agent (PDR-004).
+
+    Dangling ids (agent deleted) and disabled agents degrade to None — the
+    default assistant — instead of erroring, so history sessions never get
+    stuck. ObjectModel.get raises NotFoundError rather than returning None,
+    hence the explicit except arm.
+    """
+    if not agent_id:
+        return None
+    try:
+        from open_notebook.domain.agent import Agent
+
+        agent = await Agent.get(agent_id)
+        if not agent.enabled:
+            logger.warning(f"Agent {agent_id} is disabled; using default assistant")
+            return None
+        return agent
+    except NotFoundError:
+        logger.warning(
+            f"Agent {agent_id} no longer exists; using default assistant"
+        )
+        return None

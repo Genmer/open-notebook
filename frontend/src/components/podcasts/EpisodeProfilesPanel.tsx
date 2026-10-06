@@ -201,7 +201,7 @@ export function EpisodeProfilesPanel({
                 </CardHeader>
 
                 <CardContent className="space-y-4 text-sm">
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {t('podcasts.outlineModel')}

@@ -78,7 +78,6 @@ export const trTR = {
     no: "Hayır",
     saving: "Kaydediliyor...",
     description: "Açıklama",
-    saveToNote: "Nota kaydet",
     copyToClipboard: "Panoya kopyala",
     close: "Kapat",
     insights: "İçgörüler",
@@ -223,6 +222,7 @@ export const trTR = {
     language: "Dili değiştir",
     theme: "Tema",
     ask: "Sor",
+    agents: "Ajanlar",
   },
   notebooks: {
     title: "Defterler",
@@ -270,6 +270,25 @@ export const trTR = {
     recentlyViewedNotebook: "Defter",
     recentlyViewedSource: "Kaynak",
     lastViewed: "{{time}} görüntülendi",
+    saveNote: {
+      typeLabel: "Kayıt türü",
+      modeSource: "Kaynak olarak kaydet",
+      modeNote: "Not olarak kaydet",
+      title: "Deftere kaydet",
+      description: "Bu içeriğe bir ad verin ve kaynak olarak mı yoksa not olarak mı kaydedileceğini seçin.",
+      nameLabel: "Ad",
+      namePlaceholder: "Bir ad girin",
+      submit: "Kaydet"
+    },
+    saveAsSource: {
+      title: "Kaynak olarak kaydet",
+      action: "Kaynak olarak kaydet",
+      description: "Bu notun içeriğinden bu defterde bir metin kaynağı oluşturur.",
+      nameLabel: "Kaynak adı",
+      namePlaceholder: "Kaynak için bir ad girin",
+      noEmbedHint: "Gömme olmadan eklenir ve varsayılan olarak defterin sohbet bağlamına dahil edilir (sohbet bağlam seçicide ayarlanabilir); vektör araması gerekiyorsa daha sonra kaynak listesinden gömmeyi çalıştırabilirsiniz.",
+      submit: "Deftere ekle",
+    },
   },
   sources: {
     newSource: "Yeni Kaynak",
@@ -302,7 +321,6 @@ export const trTR = {
     loadingMore: "Daha fazla yükleniyor...",
     noSourcesYet: "Henüz kaynak yok",
     allSourcesDescShort: "Tüm kaynaklarınızı burada görüntüleyin.",
-    cannotSaveNoteNoNotebook: "Not kaydedilemiyor: defter kimliği mevcut değil",
     createFirstSource: "Bilgi tabanınızı oluşturmaya başlamak için ilk kaynağınızı ekleyin.",
     deleteSourceConfirm: "Bu kaynağı silmek istediğinizden emin misiniz?",
     deleteConfirm: "Bunu silmek istediğinizden emin misiniz?",
@@ -467,14 +485,21 @@ export const trTR = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "Teknik veya bilimsel bir makaleyi analiz eder",
+    transformationDescKeyInsights: "Önemli içgörüleri ve uygulanabilir maddeleri çıkarır",
+    transformationDescDenseSummary: "İçerik için zengin, derin bir özet oluşturur",
+    transformationDescReflectionQuestions: "Belgeyi daha fazla keşfetmek için yansıtma soruları üretir",
+    transformationDescTableOfContents: "Belgenin kapsadığı farklı konuları açıklar",
+    transformationDescSimpleSummary: "İçerik için kısa bir özet oluşturur",
     embedMissing: {
+      columnCta: "{{count}} kaynak gömülmedi — şimdi göm",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const trTR = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "Gömülmedi",
+      failed: "Gömme başarısız",
+    },
+    overview: {
+      title: "Bilgi tabanı genel görünümü",
+      totalBadge: "Kitaplıkta {{count}}",
+      linkedLabel: "Bu deftere bağlı",
+      pendingLabel: "Bekleyen kaynaklar",
+      count: "{{count}}",
+      importAll: "Kitaplıktan {{count}} içe aktar",
+      allLinked: "Kitaplıktaki tüm kaynaklar bu deftere bağlı",
+      viewAll: "Kitaplığı görüntüle",
+    },
+    pdfViewer: {
+      restore: "Geri yükle",
+      open: "Orijinal dosyayı görüntüle",
+      title: "Orijinal dosya önizlemesi",
+      outline: "İçindekiler",
+      noOutline: "Bu belgenin içindekiler bölümü yok",
+      parsingToc: "İçindekiler çözümleniyor…",
+      page: "Sayfa {{page}} / {{total}}",
+      loading: "Belge yükleniyor…",
+      loadFailed: "Belge yüklenemedi",
+      zoomIn: "Yakınlaştır",
+      zoomOut: "Uzaklaştır",
+      prevPage: "Önceki sayfa",
+      nextPage: "Sonraki sayfa",
+      close: "Kapat",
+      notPdf: "Bu dosya bir PDF değil ve önizlenemez",
+      enterFullscreen: "Tam ekranda oku",
+      exitFullscreen: "Tam ekrandan çık",
+    },
+    fileView: {
+      analyzeSection: "Yapay zekâ ile bölümü analiz et",
+      analyzing: "Analiz ediliyor…",
+      analysisTitle: "\"{{title}}\" için yapay zekâ analizi",
+      analysisTruncated: "Bölüm metni analizden önce kısaltıldı",
+      analysisFailed: "Yapay zekâ analizi başarısız oldu, lütfen tekrar deneyin",
+      saveAnalysis: "Not olarak kaydet",
+    },
+    copy: "Kopyala",
+    copied: "Kopyalandı",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const trTR = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "Bu sayfada metin katmanı yok (taranmış sayfa). Metin vurgulama kullanılamaz; kutu seçimiyle not alma gelecekteki bir güncellemede desteklenecek.",
+      orphanedHint: "Kaynak dosya değişti; yeniden sabitleme gelecekteki bir güncellemede kullanıma sunulacak.",
+      colors: {
+        gold: "Kilit nokta",
+        fern: "Öğrenildi",
+        plum: "Soru",
+        slate: "Referans",
+        clay: "Hataya açık",
+      },
+      toolbar: {
+        colorAria: "{{name}} olarak işaretle",
+        line: "Çizgi stili",
+        wavy: "Dalgalı altı çizgi",
+        straight: "Düz altı çizgi",
+        comment: "Not",
+        copy: "Kopyala",
+        copied: "Kopyalandı",
+      },
+      hover: {
+        edit: "Notu düzenle",
+        delete: "Vurguyu sil",
+        deleted: "Vurgu silindi",
+        undo: "Geri al",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "Sayfa {{page}}",
+      },
+      toast: {
+        createFailed: "Vurgu oluşturulamadı",
+        updateFailed: "Vurgu güncellenemedi",
+        deleteFailed: "Vurgu silinemedi",
+        restoreFailed: "Vurgu geri yüklenemedi",
+        crossPage: "Seçim birden çok sayfaya yayılıyor. Lütfen sayfa sayfa not alın.",
+        tooLong: "Seçim çok uzun. Lütfen daha küçük parçalara bölün.",
+      },
+      deleteConfirm: {
+        count: "Silme işlemi {{count}} vurguyu da kaldıracak.",
+      },
+    },
   },
   chat: {
     sessions: "Oturumlar",
@@ -647,6 +754,34 @@ export const trTR = {
     contextPickerCounts: "Öngörü {{insights}} · Tam {{full}} · Not {{notes}}",
     enterFullscreen: "Tam ekran yap",
     exitFullscreen: "Tam ekrandan çık",
+    participantConfig: "Sohbet katılımcısı",
+    participantDesc: "Bir ajan kişiliği ya da tek bir model seçin; ikisi birbirini dışlar — birini seçmek diğerini temizler.",
+    participantPlaceholder: "Katılımcı seç",
+    groupDefault: "Varsayılan asistan",
+    groupAgents: "Ajanlar",
+    groupModels: "Modeller",
+    participantAgentHint: "Uygulandıktan sonra verilen yanıtlar bu ajanın kişiliğini ve örnekleme ayarlarını kullanır.",
+    participantModelHint: "Uygulandıktan sonra yanıtlar bu modele sabitlenir.",
+    agentMissing: "Ajan silindi — varsayılan asistan kullanılıyor",
+    answeredBy: "{{name}} yanıtladı",
+    parallelSend: "Paralel soru",
+    parallelPickTitle: "Paralel katılımcıları seçin",
+    parallelPickCount: "{{count}}/{{max}} seçildi",
+    parallelPickHint: "Birkaçını işaretleyip aynı anda sor",
+    parallelMaxReached: "5 sınırına ulaşıldı",
+    parallelConfirm: "Paralel sor",
+    parallelProgress: "Sürüyor: {{done}}/{{total}} tamam",
+    parallelWaiting: "Yanıt bekleniyor…",
+    parallelFailed: "Paralel soru başarısız",
+    streamFailed: "Yanıt oluşturulamadı",
+    streamBusy: "Bu oturum zaten bir yanıt oluşturuyor; lütfen bekleyin",
+    synthesisPickLabel: "Birleştir ve özetle:",
+    synthesisDefaultPicker: "Sistem varsayılan modeli",
+    synthesisRun: "Özetle",
+    synthesisResultTitle: "Birleştirilmiş yanıt",
+    synthesisFailed: "Özetleme başarısız",
+    parallelEmptyHint: "Önce bir soru yazın, sonra paralel yanıtları başlatın",
+    parallelTriggerCount: "Paralel · {{count}}",
   },
   searchPage: {
     askAndSearch: "Sor ve Ara",
@@ -1266,6 +1401,7 @@ export const trTR = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Soru-cevap",
+    typeSourceSectionAnalysis: "Bölüm yapay zekâ analizi",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const trTR = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Canlı görev denetçisi",
+
+
+
+
+
+
+        completed: "Tamamlandı",
+
+
+
+
+
+
+        failed: "Yürütme başarısız",
+
+
+
+
+
+
+        canceled: "İptal edildi",
+
+
+
+
+
+
+        running: "Üretiliyor…",
+
+
+
+
+
+
+        elapsed: "Geçen",
+
+
+
+
+
+
+        stageFallback: "Çalışıyor",
+
+
+
+
+
+
+        processing: "İşleniyor",
+
+
+
+
+
+
+        taskId: "Görev kimliği",
+
+
+
+
+
+
+        openTaskCenter: "Görev yönetimini aç",
+
+
+
+
+
+
+        stageFlow: "Aşama akışı",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Bağlam girdisi",
+
+
+
+
+
+
+        modelOutput: "Model çıktısı",
+
+
+
+
+
+
+        tokenRate: "Token hızı",
+
+
+
+
+
+
+        processedChunks: "İşlenen parçalar",
+
+
+
+
+
+
+        chunksDesc: "Vektör parçaları",
+
+
+
+
+
+
+        execStatus: "Durum",
+
+
+
+
+
+
+        workerNode: "Arka plan Worker'ı",
+
+
+
+
+
+
+        timeStats: "Geçen süre",
+
+
+
+
+
+
+        stopwatchDesc: "Canlı kronometre",
+
+
+
+
+
+
+        terminalTitle: "canlı terminal ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Otomatik kaydırmayı duraklat",
+
+
+
+
+
+
+        autoScroll: "Otomatik kaydırma",
+
+
+
+
+
+
+        copyLogs: "Günlükleri kopyala",
+
+
+
+
+
+
+        clearOutput: "Çıktıyı temizle",
+
+
+
+
+
+
+        logsCopied: "Terminal günlükleri panoya kopyalandı",
+
+
+
+
+
+
+        logsCleared: "Terminal çıktısı temizlendi",
+
+
+
+
+
+
+        errorDetails: "Hata ayrıntıları",
+
+
+
+
+
+
+        cancelTask: "Görevi iptal et",
+
+
+
+
+
+
+        closeDrawer: "Paneli kapat",
+
+
+
+
+
+
+        footerReady: "Canlı günlük akışı dinleyicisi hazır",
+
+
+
+
+
+
+        doneCollapse: "Tamamla ve daralt",
+
+
+
+
+
+
+        fallbackStream1: "Token akışı bağlam grafiğinden geçiyor…",
+
+
+
+
+
+
+        fallbackStream2: "Temel kavramsal önermeler ve alıntı çapaları sentezleniyor…",
+
+
+
+
+
+
+        fallbackStream3: "JSON şema sözleşmesi ve Markdown başlıkları doğrulanıyor…",
+
+
+
+
+
+
+        fallbackStream4: "Zaman uyumsuz worker çıktısı veri deposuna yazılıyor…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "Kuyrukta",
+
+
+
+
+
+
+          queueDesc: "Worker zamanlaması ve kaynak tahsisi",
+
+
+
+
+
+
+          prepare: "Hazırlık",
+
+
+
+
+
+
+          prepareDesc: "Bağlam ve bağımlılıklar yükleniyor",
+
+
+
+
+
+
+          execute: "Yürütme",
+
+
+
+
+
+
+          executeDesc: "Arka plan işlemi hesaplıyor",
+
+
+
+
+
+
+          finalize: "Sonlandırma",
+
+
+
+
+
+
+          finalizeDesc: "Durum ve sonuçlar kalıcılaştırılıyor",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const trTR = {
       cancel: "Görevi iptal et",
       cancelSuccess: "Görev iptal edildi",
       cancelFailed: "Görev iptal edilemedi. Tekrar deneyin.",
+      viewLiveProgress: "Canlı ilerlemeyi görüntüle",
+      viewDetails: "Ayrıntılar",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const trTR = {
     readOnlyView: "Salt okunur görünüm",
     enterFullscreen: "Tam ekran yap",
     exitFullscreen: "Tam ekrandan çık",
+    editNote: "Notu düzenle",
+    sourcesPanelTitle: "Kaynaklar",
+    notesPanelTitle: "Notlar",
+    openSourcesPanel: "Kaynak kenar çubuğunu aç",
+    openNotesPanel: "Not kenar çubuğunu aç",
+    closePanel: "Kenar çubuğunu kapat",
+    panelEmptySources: "Bu not defterinde kaynak yok",
+    panelEmptyNotes: "Bu not defterinde not yok",
+  },
+  geminiSources: {
+    newFolder: "Yeni klasör",
+    addExisting: "Mevcut olanları ekle",
+    tabHierarchical: "Kaynaklar ({{count}})",
+    tabWebResearch: "Web araştırması",
+    selectAllForChat: "Sohbet için tümünü seç",
+    deselectAll: "Tümünün seçimini kaldır",
+    searchPlaceholder: "Kaynak ara...",
+    loadingTree: "Kaynaklar yükleniyor...",
+    empty: "Henüz kaynak yok — üstten ekleyin veya web araştırmasıyla keşfedin",
+    ungrouped: "Grupsuz",
+    folderBadgeMixed: "Bu defterde {{local}} · kütüphanede toplam {{total}} ({{missing}} eklenmedi)",
+    folderBadgeLocal: "Bu defterde {{count}}",
+    folderEmptyInNotebook: "Bu klasörde bu deftere ait kaynak yok",
+    folderTotalCount: "Klasördeki toplam kaynak: {{count}}",
+    addNewResource: "Yeni kaynak ekle",
+    webResearchTitle: "Web araştırması",
+    fastMode: "Hızlı",
+    deepMode: "Derin",
+    fastModeDesc: "Saniyeler içinde: anahtar kelimeleri çıkarır, paralel arar, metni temizler — sayfaları kaynak olarak kaydedin.",
+    deepModeDesc: "Derin ajan: otonom planlama, çok adımlı arama ve çapraz doğrulama — yapılandırılmış raporu kaynak olarak içe aktarır.",
+    fastPlaceholder: "Bir anahtar kelime veya konu girin...",
+    deepPlaceholder: "Derin araştırma konusunu girin...",
+    foundSources: "Bulunan kaliteli kaynaklar ({{count}})",
+    importing: "İçe aktarılıyor...",
+    bulkAdd: "Tümünü deftere ekle",
+    researchFastDone: "Araştırma tamamlandı — kaliteli kaynaklar alındı",
+    researchDeepDone: "Derin araştırma tamamlandı — yapılandırılmış kaynaklar hazır",
+    researchFailed: "Web araması başarısız oldu, lütfen sonra tekrar deneyin",
+    selectAtLeastOne: "Eklemek için en az bir sayfa seçin",
+    savedPages: "{{count}} sayfa kaynak olarak eklendi",
+    addPagesFailed: "Sayfalar kaynak olarak eklenemedi",
+    mockTitleInsights: "{{topic}}: çekirdek mimari ve sektör uygulamaları",
+    mockSnippetInsights: "{{topic}} üzerine derin inceleme: çekirdek mekanizmalar, kilit metrikler ve üretime geçiş deneyimi.",
+    mockTitleSpec: "{{topic}} resmi teknik dokümanı ve en iyi uygulamalar",
+    mockSnippetSpec: "{{topic}} tasarım kararlarının, veri modellerinin ve yaygın performans tuzaklarının sistematik incelemesi.",
+    mockTitleBenchmark: "Karşılaştırma: {{topic}} ve önde gelen açık kaynak alternatifleri",
+    mockSnippetBenchmark: "Gerçek verim ve sürekli eşzamanlı yük altındaki sonuçlar: temel farklar ve senaryoya göre öneriler.",
+    noViewError: "Kullanılabilir görünüm yok",
+    folderCreated: "Klasör oluşturuldu",
+    folderCreateFailed: "Klasör oluşturulamadı",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "{{count}} not",
+    newNote: "Yeni not",
+    toolbox: "Araç kutusu",
+    openTasks: "Görevleri aç",
+    notesStream: "Not kartları ({{count}})",
+    saveHint: "Sohbetten tek tıkla kaydet",
+    loadingNotes: "Notlar yükleniyor...",
+    emptyNotes: "Henüz not yok",
+    emptyNotesHint: "Sohbetten bir not kaydedin veya önemli metni seçip buraya ekleyin.",
+    noContent: "İçerik yok",
+    generateFailed: "Artifakt oluşturulamadı",
+    generateDone: "{{tool}} oluşturuldu ve not olarak kaydedildi",
+    jobProgressTitle: "{{tool}} · ilerleme",
+    jobProgressHint: "Görev arka planda çalışıyor — durumu izleyin veya görev merkezini açın",
+    instructionLabel: "Talimat ve odak (isteğe bağlı)",
+    instructionPlaceholder: "YZ için özel talimat veya odak...",
+    contextHint: "Seçili {{count}} kaynaktan ve ilgili notlardan üretir, sonucu not olarak kaydeder.",
+    runInBackground: "Arka planda sürdür",
+    submitting: "Gönderiliyor...",
+    generateAndSave: "Üret ve not olarak kaydet",
+    tagPodcast: "Podcast",
+    tagArtifact: "Artifakt",
+    tools: {
+      audioOverview: {
+        desc: "İki sunuculu derin analiz podcasti (gerçek konuşma sentezi)",
+      },
+      studyGuide: {
+        desc: "Temel kavramlar, test soruları ve sistematik tekrar planı",
+        instruction: "Anahtar terim analizi, önemli noktaların özeti ve kendi kendini test etmek için çoktan seçmeli ve açık uçlu sorular içeren sistematik bir çalışma rehberi hazırla.",
+      },
+      briefingDoc: {
+        desc: "Kilit argümanlar, stratejik çıkarımlar ve sonuçlarla yönetici brifingi",
+        instruction: "Bağlam özeti, kılavaytlar, risk değerlendirmesi ve önerilen sonraki adımlarla profesyonel bir yönetici brifingi hazırla.",
+      },
+      faq: {
+        desc: "Kaynaklarınızdan en önemli SSS'ler ve ayrıntılı yanıtlar",
+        instruction: "Materyalleri gözden geçir ve en sık sorulan temel soruları kapsamlı yanıtlarla derle.",
+      },
+      flashcards: {
+        desc: "Temel bilgileri soru/cevap kart çiftleri haline getir",
+        instruction: "Temel kavramları ve sonuçları ezberlenebilir soru-cevap kartlarına dönüştür.",
+      },
+    },
+  },
+  agents: {
+    title: "Ajanlar",
+    desc: "Önceden tanımlı sohbet kişilikleri: sistem istemi ve isteğe bağlı model ile örnekleme ayarları, defter sohbetlerinde seçilebilir.",
+    create: "Yeni ajan",
+    edit: "Ajanı düzenle",
+    delete: "Sil",
+    empty: "Henüz ajan yok — ilkini sağ üstten oluşturun",
+    disabled: "Devre dışı",
+    inUse: "{{count}} oturumda kullanılıyor",
+    createSuccess: "Ajan oluşturuldu",
+    updateSuccess: "Ajan güncellendi",
+    deleteSuccess: "Ajan silindi",
+    deleteConfirmTitle: "Ajanı sil",
+    deleteConfirmDesc: "\"{{name}}\" silinsin mi? Bağlı {{count}} oturum varsayılan asistana döner; geçmiş korunur.",
+    loadFailed: "Ajan yüklenemedi",
+    editorDesc: "Kişiliği, varsayılan modeli ve örnekleme parametrelerini tanımlayın.",
+    nameLabel: "Ad",
+    namePlaceholder: "örn. Araştırma Asistanı",
+    descriptionLabel: "Açıklama",
+    descriptionPlaceholder: "Bu kişiliğin ne işe yaradığına dair tek satır (isteğe bağlı)",
+    promptLabel: "Sistem istemi",
+    promptPlaceholder: "Kişiliğin kimliğini, tonunu ve yanıt tarzını açıklayın...",
+    promptHint: "Sohbetin sistem isteminin başına eklenir; atıf kuralları geçerliliğini korur.",
+    modelLabel: "Bağlı model",
+    modelPlaceholder: "Sohbet varsayılanını izle",
+    modelHint: "Sohbet seçimini veya sistem varsayılanını kullanmak için boş bırakın.",
+    temperatureField: "Sıcaklık",
+    maxTokensField: "Maks. token",
+    enabledLabel: "Etkin",
+    enabledHint: "Devre dışı ajanlar sohbet seçicisinden kaybolur; bağlı oturumlar varsayılan asistana döner.",
+    validationRequired: "Ad ve sistem istemi zorunludur",
+    validationTemperature: "Sıcaklık 0 ile 2 arasında olmalı",
+    validationMaxTokens: "Maks. token pozitif bir tam sayı olmalı",
+    temperatureLabel: "sıc. {{value}}",
+    temperatureHelp: "Sıcaklık, yanıtların ne kadar rastgele olacağını 0–2 ölçeğinde kontrol eder. Düşük değerler çıktıyı daha kararlı ve hassas yapar — soru-cevap veya araştırma özetleri gibi olgusal görevler için uygundur. Yüksek değerler çıktıyı daha çeşitli ve yaratıcı yapar — yaratıcı yazım ve beyin fırtınası için daha iyidir. Sohbetin varsayılanına uymak için boş bırakın.",
+    maxTokensLabel: "üst sınır {{value}} token",
+    templateLabel: "Bir şablondan başla",
+    templatePickerDesc: "Sektöre göre hazır bir ajan seçin. Seçim, adı, promptu ve örnekleme varsayılanlarını otomatik doldurur — sonrasında her şey düzenlenebilir kalır.",
+    templateBlankName: "Sıfırdan başla",
+    templateBlankDesc: "Şablonları atla; adı ve sistem promptunu kendin yaz.",
+    templateUse: "Bu şablonu kullan",
+    templateCat: {
+      software: "Yazılım",
+      ruankao: "Ruankao sınav hazırlığı",
+      llm: "LLM",
+      business: "İş",
+      education: "Eğitim",
+      creative: "Yaratıcı",
+      general: "Genel",
+    },
+    polishPrompt: "İstemi cilala",
+    polishing: "Cilalanıyor…",
+    polishFailed: "İstem cilalanamadı",
   },
 } satisfies TranslationShape;

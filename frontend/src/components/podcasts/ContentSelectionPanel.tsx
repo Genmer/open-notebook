@@ -136,7 +136,7 @@ export function ContentSelectionPanel({
                           })
                           queryClient.prefetchQuery({
                             queryKey: QUERY_KEYS.notes(notebook.id),
-                            queryFn: () => notesApi.list({ notebook_id: notebook.id }),
+                            queryFn: () => notesApi.list({ notebook_id: notebook.id, include_content: true }),
                           })
                         }}
                         onClick={(event) => event.stopPropagation()}

@@ -110,7 +110,7 @@ export function GenerateArtifactDialog({
         <DialogTitle>{t('artifacts.title')}</DialogTitle>
         <DialogDescription>{t('artifacts.description')}</DialogDescription>
 
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
           {ARTIFACT_OPTIONS.map(({ type, icon: Icon, titleKey, descKey }) => (
             <button
               key={type}
@@ -118,16 +118,16 @@ export function GenerateArtifactDialog({
               onClick={() => setArtifactType(type)}
               aria-pressed={artifactType === type}
               data-testid={`artifact-type-${type}`}
-              className={`w-full flex items-start gap-3 rounded-md border p-3 text-left transition-colors ${
+              className={`flex items-start gap-3 rounded-md border p-3 text-left transition-colors ${
                 artifactType === type
                   ? 'border-teal bg-teal/5'
                   : 'hover:bg-accent/40'
               }`}
             >
               <Icon className="h-5 w-5 mt-0.5 text-teal" />
-              <span>
+              <span className="min-w-0">
                 <span className="block text-sm font-medium">{t(titleKey)}</span>
-                <span className="block text-xs text-muted-foreground">
+                <span className="block text-xs text-muted-foreground line-clamp-2">
                   {t(descKey)}
                 </span>
               </span>

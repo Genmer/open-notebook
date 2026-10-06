@@ -17,6 +17,7 @@ import {
   Loader2,
   CheckCircle2,
   ExternalLink,
+  Eye,
   BookOpen,
   Folder,
   FolderOpen,
@@ -30,7 +31,7 @@ import {
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { ContextMode, ContextTreeGroup } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import {
   Select,
@@ -52,7 +53,8 @@ import {
   useRemoveSourceFromNotebook,
   useUpdateSource,
 } from '@/lib/hooks/use-sources'
-import { useMoveToGroup } from '@/lib/hooks/use-source-views'
+import { useCopyToGroup, useMoveToGroup, useUngroupMembers } from '@/lib/hooks/use-source-views'
+import { EmbedMissingPanel } from '@/components/sources/EmbedMissingPanel'
 import { displayViewName } from '@/lib/utils/view-display'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
@@ -73,7 +75,7 @@ interface GeminiSourcesColumnProps {
   onRefresh: () => void
   contextSelections: Record<string, ContextMode>
   onContextModeChange: (sourceId: string, mode: ContextMode) => void
-  onBulkContextModeChange: (action: SourceBulkAction) => void
+  onBulkContextModeChange: BulkContextHandler
   grouping?: NotebookSourceFilters
   onGroupingChange?: (filters: NotebookSourceFilters) => void
 }
@@ -123,7 +125,7 @@ export function GeminiSourcesColumn({
 
   // 右键操作状态（完整移植默认视图能力）
   const [rowAction, setRowAction] = useState<
-    { kind: 'rename' | 'move'; source: SourceListResponse } | null
+    { kind: 'rename' | 'move' | 'copy'; source: SourceListResponse } | null
   >(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [sourceToDelete, setSourceToDelete] = useState<string | null>(null)
@@ -135,6 +137,8 @@ export function GeminiSourcesColumn({
   const removeFromNotebook = useRemoveSourceFromNotebook()
   const updateSource = useUpdateSource()
   const moveToGroup = useMoveToGroup()
+  const copyToGroup = useCopyToGroup()
+  const ungroupMembers = useUngroupMembers()
 
   // 视图列表与当前视图解析
   const { data: views } = useSourceViews() ?? {}
@@ -187,7 +191,10 @@ export function GeminiSourcesColumn({
             id: ts.id,
             title: ts.title,
             insights_count: ts.insights_count,
-            embedded: true,
+            // Real embed state from the context-tree endpoint (derived from the
+            // source_embedding table), never a hardcoded true.
+            embedded: ts.embedded,
+            embedding_status: ts.embedding_status,
             embedded_chunks: 0,
             created: '',
             updated: '',
@@ -270,6 +277,55 @@ export function GeminiSourcesColumn({
       })
       const groupName = (viewGroups ?? []).find((g) => g.id === targetGroupId)?.name ?? ''
       toast.success(t('sources.grouping.moveSuccessWithTarget', { count: 1, group: groupName }))
+      queryClient.invalidateQueries({ queryKey: ['contextTree'] })
+      refetchTree()
+      onRefresh()
+    } catch {
+      // error toast comes from the mutation hook
+    }
+  }
+
+  // 复制到文件夹（与 classic sources 页 handleRowCopy 同语义：created/failed 汇总）
+  const handleCopyConfirm = async (targetGroupId: string | null) => {
+    const target = rowAction
+    setRowAction(null)
+    if (!target || target.kind !== 'copy' || !targetGroupId) return
+    try {
+      const res = await copyToGroup.mutateAsync({
+        groupId: targetGroupId,
+        sourceIds: [target.source.id],
+      })
+      if (res.failed.length === 0) {
+        toast.success(
+          t('sources.grouping.copyCreatedToast', {
+            title: target.source.title || t('sources.untitledSource'),
+          })
+        )
+      } else {
+        toast.warning(
+          t('sources.grouping.bulkPartial', {
+            success: res.created.length,
+            failed: res.failed.length,
+          })
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['contextTree'] })
+      refetchTree()
+      onRefresh()
+    } catch {
+      // error toast comes from the mutation hook
+    }
+  }
+
+  // 移出文件夹（仅对有归属的来源提供；ungroupMembers 只失效 views+sources，这里补齐树刷新）
+  const handleUngroupSource = async (source: SourceListResponse) => {
+    if (!resolvedViewId) return
+    try {
+      await ungroupMembers.mutateAsync({
+        viewId: resolvedViewId,
+        sourceIds: [source.id],
+      })
+      toast.success(t('sources.grouping.ungroupSuccess', { count: 1 }))
       queryClient.invalidateQueries({ queryKey: ['contextTree'] })
       refetchTree()
       onRefresh()
@@ -361,13 +417,14 @@ export function GeminiSourcesColumn({
     (s) => (contextSelections[s.id] ?? 'full') !== 'off'
   ).length
 
-  // 全选 / 全不选切换
+  // 全选 / 全不选切换：带上 fullSources（分页 + context-tree 合并的全量），
+  // 否则批量只改到已分页加载的来源，树里其余来源的勾选状态纹丝不动。
   const allIncluded = fullSources.length > 0 && includedCount === fullSources.length
   const handleToggleSelectAll = () => {
     if (allIncluded) {
-      onBulkContextModeChange('exclude')
+      onBulkContextModeChange('exclude', fullSources)
     } else {
-      onBulkContextModeChange('full')
+      onBulkContextModeChange('full', fullSources)
     }
   }
 
@@ -398,23 +455,23 @@ export function GeminiSourcesColumn({
       const mockItems: WebSearchResultItem[] = [
         {
           id: 'res-1',
-          title: `${mockDomain} 核心架构解析与行业实践综述`,
+          title: t('geminiSources.mockTitleInsights', { topic: mockDomain }),
           url: 'https://example.com/research-insights',
-          snippet: `针对 ${mockDomain} 的深度调研，系统剖析核心机制、关键性能指标与工业级部署经验。`,
+          snippet: t('geminiSources.mockSnippetInsights', { topic: mockDomain }),
           selected: true,
         },
         {
           id: 'res-2',
-          title: `${mockDomain} 官方技术白皮书与最佳实践指南`,
+          title: t('geminiSources.mockTitleSpec', { topic: mockDomain }),
           url: 'https://example.org/spec-and-best-practices',
-          snippet: `系统梳理了 ${mockDomain} 的设计决策、数据模型定义及常见性能陷阱防范。`,
+          snippet: t('geminiSources.mockSnippetSpec', { topic: mockDomain }),
           selected: true,
         },
         {
           id: 'res-3',
-          title: `全景评测：${mockDomain} 与主流开源方案的横向对比`,
+          title: t('geminiSources.mockTitleBenchmark', { topic: mockDomain }),
           url: 'https://example.net/benchmark-comparison',
-          snippet: `基于真实吞吐量与长链路并发压力下的评测结论，揭示核心差异与场景选型推荐。`,
+          snippet: t('geminiSources.mockSnippetBenchmark', { topic: mockDomain }),
           selected: false,
         },
       ]
@@ -422,11 +479,11 @@ export function GeminiSourcesColumn({
       setResearchResults(mockItems)
       toast.success(
         researchMode === 'fast'
-          ? 'Fast Research 探索完成，已抓取高质量来源'
-          : 'Deep Research 智能体研读完成，已形成结构化来源'
+          ? t('geminiSources.researchFastDone')
+          : t('geminiSources.researchDeepDone')
       )
     } catch {
-      toast.error('网络搜索与导源失败，请稍后重试')
+      toast.error(t('geminiSources.researchFailed'))
     } finally {
       setIsResearching(false)
     }
@@ -436,7 +493,7 @@ export function GeminiSourcesColumn({
   const handleSaveSelectedSources = async () => {
     const selectedItems = researchResults.filter((item) => item.selected)
     if (selectedItems.length === 0) {
-      toast.error('请至少勾选一个要加入笔记本的网页')
+      toast.error(t('geminiSources.selectAtLeastOne'))
       return
     }
 
@@ -456,12 +513,12 @@ export function GeminiSourcesColumn({
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
       refetchTree()
       onRefresh()
-      toast.success(`成功将 ${added} 个网页作为来源沉淀至笔记本`)
+      toast.success(t('geminiSources.savedPages', { count: added }))
       setResearchResults([])
       setResearchPrompt('')
       setActiveTab('sources')
     } catch {
-      toast.error('添加网页来源失败')
+      toast.error(t('geminiSources.addPagesFailed'))
     } finally {
       setIsAddingSources(false)
     }
@@ -552,8 +609,12 @@ export function GeminiSourcesColumn({
             className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
             title={
               totalCount > allFolderSources.length
-                ? `本笔记本 ${allFolderSources.length} 个 · 知识库共 ${totalCount} 个（${totalCount - allFolderSources.length} 个未加入）`
-                : `本笔记本 ${allFolderSources.length} 个`
+                ? t('geminiSources.folderBadgeMixed', {
+                    local: allFolderSources.length,
+                    total: totalCount,
+                    missing: totalCount - allFolderSources.length,
+                  })
+                : t('geminiSources.folderBadgeLocal', { count: allFolderSources.length })
             }
           >
             {allFolderSources.length}
@@ -569,9 +630,9 @@ export function GeminiSourcesColumn({
             {directSources.length === 0 && node.children.length === 0 ? (
               <div className="flex flex-col gap-1.5 p-2 rounded-md bg-muted/20 border border-dashed border-border/60 text-[11px] text-muted-foreground my-1">
                 <div className="flex items-center justify-between">
-                  <span>该文件夹在当前笔记本中暂无资源</span>
+                  <span>{t('geminiSources.folderEmptyInNotebook')}</span>
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
-                    该文件夹总来源数: {totalCount}
+                    {t('geminiSources.folderTotalCount', { count: totalCount })}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 pt-0.5">
@@ -584,7 +645,7 @@ export function GeminiSourcesColumn({
                     }}
                   >
                     <Link2 className="h-3 w-3" />
-                    从已有添加
+                    {t('geminiSources.addExisting')}
                   </button>
                   <button
                     type="button"
@@ -595,7 +656,7 @@ export function GeminiSourcesColumn({
                     }}
                   >
                     <Plus className="h-3 w-3" />
-                    添加新资源
+                    {t('geminiSources.addNewResource')}
                   </button>
                 </div>
               </div>
@@ -616,25 +677,40 @@ export function GeminiSourcesColumn({
     const mode = contextSelections[source.id] ?? 'full'
     const isChecked = mode !== 'off'
     const isLink = !!source.asset?.url
+    // 嵌入三态（纯展示，绝不触发 embedding）：failed 红 / 未嵌入琥珀 / 其余不渲染
+    const embedFailed = source.embedding_status === 'failed'
+    const embedUnembedded = source.embedded === false && !embedFailed
+    // 有文件夹归属才提供「移出文件夹」，避免对未归档来源假成功
+    const isGrouped =
+      sourceToGroupMap.has(source.id) ||
+      sourceToGroupMap.has(source.id.replace(/^source:/, ''))
 
     return (
       <ContextMenu key={source.id}>
         <ContextMenuTrigger asChild>
+          {/* 整行可点击打开详情（third arg 供 AI 解析保存链路的 nb 供数）；勾选与 hover 按钮自行 stopPropagation */}
           <div
-            className={`group flex items-center gap-2 p-1.5 px-2 rounded-md border transition-all ${
+            className={`group flex cursor-pointer items-center gap-2 p-1.5 px-2 rounded-md border transition-all ${
               isChecked
                 ? 'bg-card border-border/80 hover:border-primary/40'
                 : 'bg-muted/20 border-border/30 opacity-60'
             }`}
+            onClick={() => openModal('source', source.id, { notebookId })}
           >
-            <Checkbox
-              id={`source-${source.id}`}
-              checked={isChecked}
-              onCheckedChange={(checked) =>
-                onContextModeChange(source.id, checked ? 'full' : 'off')
-              }
-              className="h-3.5 w-3.5 shrink-0"
-            />
+            {/* Checkbox 是唯一的勾选入口：包裹层 stopPropagation 防止点勾选冒泡弹详情 */}
+            <div
+              className="flex items-center shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Checkbox
+                checked={isChecked}
+                onCheckedChange={(checked) =>
+                  onContextModeChange(source.id, checked ? 'full' : 'off')
+                }
+                aria-label={source.title ?? t('sources.untitledSource')}
+                className="h-3.5 w-3.5 shrink-0"
+              />
+            </div>
 
             {isLink ? (
               <LinkIcon className="h-3.5 w-3.5 text-sky-500 shrink-0" />
@@ -642,19 +718,54 @@ export function GeminiSourcesColumn({
               <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             )}
 
-            <label
-              htmlFor={`source-${source.id}`}
-              className="text-xs font-medium text-foreground truncate flex-1 cursor-pointer"
+            <span
+              className="text-xs font-medium text-foreground truncate flex-1 min-w-0 cursor-pointer"
               title={source.title ?? undefined}
             >
-              {source.title || '无标题来源'}
-            </label>
+              {source.title || t('sources.untitledSource')}
+            </span>
+
+            {embedFailed ? (
+              <span
+                role="img"
+                aria-label={t('sources.embedStateDot.failed')}
+                title={t('sources.embedStateDot.failed')}
+                className="h-2 w-2 rounded-full bg-destructive shrink-0"
+              />
+            ) : embedUnembedded ? (
+              <span
+                role="img"
+                aria-label={t('sources.embedStateDot.unembedded')}
+                title={t('sources.embedStateDot.unembedded')}
+                className="h-2 w-2 rounded-full bg-amber-500 shrink-0"
+              />
+            ) : null}
+
+            {/* hover 详情按钮：24px 命中区，悬停/键盘聚焦/组内聚焦时揭示 */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto group-focus-within:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation()
+                openModal('source', source.id, { notebookId })
+              }}
+              aria-label={t('sources.details')}
+              title={t('sources.details')}
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </ContextMenuTrigger>
         <SourceContextMenuContent
-          onOpen={() => openModal('source', source.id)}
+          onOpen={() => openModal('source', source.id, { notebookId })}
           onRename={() => setRowAction({ kind: 'rename', source })}
           onMove={() => setRowAction({ kind: 'move', source })}
+          onCopy={() => setRowAction({ kind: 'copy', source })}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onUngroup={
+            isGrouped ? () => handleUngroupSource(source) : undefined
+          }
           onRemoveFromNotebook={() => {
             setSourceToRemove(source.id)
             setRemoveDialogOpen(true)
@@ -670,41 +781,42 @@ export function GeminiSourcesColumn({
 
   return (
     <Card className="h-full flex flex-col border-border/80 shadow-xs bg-card">
-      <CardHeader className="p-4 pb-3 border-b border-border/60">
+      <CardHeader className="p-3 pb-2 border-b border-border/60 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base font-semibold">
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            <CardTitle className="text-sm font-semibold">
               {t('navigation.sources')}
             </CardTitle>
             <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 font-normal">
-              {includedCount}/{sources.length}
+              {includedCount}/{fullSources.length}
             </Badge>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setNewFolderOpen(true)}
-              title="新建文件夹"
+              title={t('geminiSources.newFolder')}
+              aria-label={t('geminiSources.newFolder')}
             >
               <FolderPlus className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setAddExistingOpen(true)}
-              title="从已有添加"
+              title={t('geminiSources.addExisting')}
+              aria-label={t('geminiSources.addExisting')}
             >
               <Link2 className="h-3.5 w-3.5" />
-              <span>从已有添加</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 text-xs shadow-none px-2"
+              className="h-7 gap-1 text-xs shadow-none px-2"
               onClick={() => setAddSourceOpen(true)}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -715,7 +827,7 @@ export function GeminiSourcesColumn({
 
         {/* 视图切换下拉选择器 */}
         {views && views.length > 1 && (
-          <div className="mt-2.5">
+          <div className="mt-2">
             <Select
               value={resolvedViewId ?? 'none'}
               onValueChange={(value) =>
@@ -755,16 +867,16 @@ export function GeminiSourcesColumn({
         <Tabs
           value={activeTab}
           onValueChange={(val) => setActiveTab(val as 'sources' | 'research')}
-          className="mt-3 w-full"
+          className="mt-2 w-full"
         >
-          <TabsList className="grid grid-cols-2 w-full h-8 p-0.5 bg-muted/60">
-            <TabsTrigger value="sources" className="text-xs h-7 gap-1.5">
-              <Folder className="h-3.5 w-3.5" />
-              层级资源 ({sources.length})
+          <TabsList className="grid grid-cols-2 w-full h-7 p-0.5 bg-muted/60">
+            <TabsTrigger value="sources" className="text-xs h-6 gap-1.5">
+              <Folder className="h-3 w-3" />
+              {t('geminiSources.tabHierarchical', { count: sources.length })}
             </TabsTrigger>
-            <TabsTrigger value="research" className="text-xs h-7 gap-1.5">
-              <Globe className="h-3.5 w-3.5 text-primary" />
-              网络导源 (Web)
+            <TabsTrigger value="research" className="text-xs h-6 gap-1.5">
+              <Globe className="h-3 w-3 text-primary" />
+              {t('geminiSources.tabWebResearch')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -774,7 +886,7 @@ export function GeminiSourcesColumn({
         {activeTab === 'sources' ? (
           <div className="flex-1 flex flex-col min-h-0">
             {/* 顶栏控制：全选与搜索 */}
-            <div className="p-3 pb-2 border-b border-border/40 flex items-center justify-between gap-2">
+            <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="select-all-sources"
@@ -786,13 +898,13 @@ export function GeminiSourcesColumn({
                   htmlFor="select-all-sources"
                   className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground"
                 >
-                  {allIncluded ? '全不选' : '全选参与对话'}
+                  {allIncluded ? t('geminiSources.deselectAll') : t('geminiSources.selectAllForChat')}
                 </label>
               </div>
               <div className="relative flex-1 max-w-[150px]">
                 <Search className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
                 <Input
-                  placeholder="搜索资源..."
+                  placeholder={t('geminiSources.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-7 text-xs pl-7 pr-2"
@@ -805,13 +917,13 @@ export function GeminiSourcesColumn({
               {isLoading || treeLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  <span className="text-xs">加载资源目录中...</span>
+                  <span className="text-xs">{t('geminiSources.loadingTree')}</span>
                 </div>
               ) : fullSources.length === 0 && groupTree.length === 0 ? (
                 <div className="text-center py-10 px-4">
                   <Folder className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
                   <p className="text-xs text-muted-foreground">
-                    暂无知识资源，可点击右上角添加或通过网络导源探索
+                    {t('geminiSources.empty')}
                   </p>
                 </div>
               ) : (
@@ -865,7 +977,7 @@ export function GeminiSourcesColumn({
                           </div>
 
                           <span className="text-xs font-semibold text-muted-foreground truncate flex-1">
-                            未归档资源 (Ungrouped)
+                            {t('geminiSources.ungrouped')}
                           </span>
 
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground">
@@ -892,26 +1004,33 @@ export function GeminiSourcesColumn({
                 <div className="flex items-center gap-1.5">
                   <Database className="h-3.5 w-3.5 text-primary" />
                   <span className="text-xs font-semibold text-foreground">
-                    知识库全局资源概览
+                    {t('sources.overview.title')}
                   </span>
                 </div>
                 <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal text-muted-foreground">
-                  全库 {totalLibraryCount} 篇
+                  {t('sources.overview.totalBadge', { count: totalLibraryCount })}
                 </Badge>
               </div>
+
+              {/* 未嵌入来源补嵌入口（compact 变体；确认后才触发 rebuild，绝不自动） */}
+              <EmbedMissingPanel variant="compact" />
 
               {/* 数据透视指标 */}
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="p-1.5 rounded-md bg-background/80 border border-border/50">
-                  <div className="text-[10px] text-muted-foreground">本笔记本已关联</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t('sources.overview.linkedLabel')}
+                  </div>
                   <div className="text-xs font-semibold text-foreground mt-0.5">
-                    {fullSources.length} 篇
+                    {t('sources.overview.count', { count: fullSources.length })}
                   </div>
                 </div>
                 <div className="p-1.5 rounded-md bg-background/80 border border-border/50">
-                  <div className="text-[10px] text-muted-foreground">待引入文献</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t('sources.overview.pendingLabel')}
+                  </div>
                   <div className="text-xs font-semibold text-primary mt-0.5 flex items-center justify-center gap-1">
-                    <span>{unlinkedCount} 篇</span>
+                    <span>{t('sources.overview.count', { count: unlinkedCount })}</span>
                     {unlinkedCount > 0 && (
                       <span className="flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                     )}
@@ -928,18 +1047,18 @@ export function GeminiSourcesColumn({
                   onClick={() => setAddExistingOpen(true)}
                 >
                   <Link2 className="h-3.5 w-3.5" />
-                  <span>一键引入全库文献 ({unlinkedCount})</span>
+                  <span>{t('sources.overview.importAll', { count: unlinkedCount })}</span>
                 </Button>
               ) : (
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground/70 py-0.5 px-1">
-                  <span>全库文献已全部关联至本笔记本</span>
+                  <span>{t('sources.overview.allLinked')}</span>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
                     onClick={() => setAddExistingOpen(true)}
                   >
-                    查看全库
+                    {t('sources.overview.viewAll')}
                   </Button>
                 </div>
               )}
@@ -952,7 +1071,7 @@ export function GeminiSourcesColumn({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  智能网络导源 (Web Research)
+                  {t('geminiSources.webResearchTitle')}
                 </span>
                 <div className="flex rounded-md border p-0.5 bg-muted/40">
                   <button
@@ -964,7 +1083,7 @@ export function GeminiSourcesColumn({
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Fast 快速
+                    {t('geminiSources.fastMode')}
                   </button>
                   <button
                     type="button"
@@ -975,14 +1094,14 @@ export function GeminiSourcesColumn({
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    Deep 深度
+                    {t('geminiSources.deepMode')}
                   </button>
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 {researchMode === 'fast'
-                  ? '秒级响应：提取关键词并发检索，清洗正文后一键勾选沉淀为 Sources。'
-                  : '深度智能体：长链路自主规划、多跳检索与交叉验证，输出结构化报告并导入来源。'}
+                  ? t('geminiSources.fastModeDesc')
+                  : t('geminiSources.deepModeDesc')}
               </p>
             </div>
 
@@ -991,8 +1110,8 @@ export function GeminiSourcesColumn({
                 <Input
                   placeholder={
                     researchMode === 'fast'
-                      ? '输入探索关键词或课题...'
-                      : '输入深度研究主题（如：SurrealDB 2.0 事务机制）...'
+                      ? t('geminiSources.fastPlaceholder')
+                      : t('geminiSources.deepPlaceholder')
                   }
                   value={researchPrompt}
                   onChange={(e) => setResearchPrompt(e.target.value)}
@@ -1020,7 +1139,7 @@ export function GeminiSourcesColumn({
               <div className="space-y-3 pt-2 border-t border-border/50">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-foreground">
-                    已搜寻到的优质来源 ({researchResults.length})
+                    {t('geminiSources.foundSources', { count: researchResults.length })}
                   </span>
                   <Button
                     size="sm"
@@ -1031,12 +1150,12 @@ export function GeminiSourcesColumn({
                     {isAddingSources ? (
                       <>
                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        入库中...
+                        {t('geminiSources.importing')}
                       </>
                     ) : (
                       <>
                         <CheckCircle2 className="h-3 w-3 mr-1" />
-                        批量加入笔记本
+                        {t('geminiSources.bulkAdd')}
                       </>
                     )}
                   </Button>
@@ -1117,7 +1236,7 @@ export function GeminiSourcesColumn({
         onConfirm={async (name: string) => {
           try {
             if (!resolvedViewId) {
-              toast.error('未找到可用视图')
+              toast.error(t('geminiSources.noViewError'))
               return
             }
             await createGroup.mutateAsync({
@@ -1125,10 +1244,10 @@ export function GeminiSourcesColumn({
               viewId: resolvedViewId,
             })
             refetchTree()
-            toast.success('文件夹创建成功')
+            toast.success(t('geminiSources.folderCreated'))
             setNewFolderOpen(false)
           } catch {
-            toast.error('创建文件夹失败')
+            toast.error(t('geminiSources.folderCreateFailed'))
           }
         }}
       />
@@ -1141,14 +1260,18 @@ export function GeminiSourcesColumn({
         onOpenChange={(open) => !open && setRowAction(null)}
       />
 
-      {/* 移动到文件夹对话框 */}
+      {/* 移动/复制到文件夹对话框（copy 与 classic sources 页同一 GroupPicker 能力） */}
       <GroupPickerDialog
-        open={rowAction?.kind === 'move'}
+        open={rowAction?.kind === 'move' || rowAction?.kind === 'copy'}
         onOpenChange={(open) => !open && setRowAction(null)}
         hideRootOption
-        title={t('sources.grouping.moveToGroupTitle')}
+        title={
+          rowAction?.kind === 'copy'
+            ? t('sources.grouping.copyToGroupTitle')
+            : t('sources.grouping.moveToGroupTitle')
+        }
         description={
-          rowAction?.kind === 'move' && resolvedView
+          (rowAction?.kind === 'move' || rowAction?.kind === 'copy') && resolvedView
             ? `${
                 rowAction.source.title || t('sources.untitledSource')
               } · ${t('sources.grouping.moveTargetViewHint', {
@@ -1157,8 +1280,18 @@ export function GeminiSourcesColumn({
             : undefined
         }
         groups={viewGroups ?? []}
-        confirmText={t('sources.grouping.moveHere')}
-        onConfirm={handleMoveConfirm}
+        confirmText={
+          rowAction?.kind === 'copy'
+            ? t('sources.grouping.copyHere')
+            : t('sources.grouping.moveHere')
+        }
+        onConfirm={(targetGroupId: string | null) => {
+          if (rowAction?.kind === 'copy') {
+            handleCopyConfirm(targetGroupId)
+          } else {
+            handleMoveConfirm(targetGroupId)
+          }
+        }}
       />
 
       {/* 从笔记本移除确认 */}

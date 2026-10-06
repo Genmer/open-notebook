@@ -9,7 +9,10 @@ import { CreateNoteRequest, UpdateNoteRequest } from '@/lib/types/api'
 export function useNotes(notebookId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.notes(notebookId),
-    queryFn: () => notesApi.list({ notebook_id: notebookId }),
+    // The notebook list endpoint omits note content by default; the notebook
+    // views render previews and read-only note dialogs straight from this
+    // list, so always request it.
+    queryFn: () => notesApi.list({ notebook_id: notebookId, include_content: true }),
     enabled: !!notebookId,
   })
 }
@@ -58,7 +61,11 @@ export function useUpdateNote() {
     mutationFn: ({ id, data }: { id: string; data: UpdateNoteRequest }) =>
       notesApi.update(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notes() })
+      // Prefix invalidation: QUERY_KEYS.notes() evaluates to ['notes', undefined],
+      // which never matches notebook-scoped keys like ['notes', 'notebook:x'] —
+      // the card title would stay stale after a rename. ['notes'] covers every
+      // list + single-note cache (same approach as useDeleteNote below).
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.note(id) })
       toast({
         title: t('common.success'),

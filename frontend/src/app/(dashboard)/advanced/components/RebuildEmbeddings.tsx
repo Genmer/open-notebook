@@ -53,12 +53,20 @@ export function RebuildEmbeddings() {
         const statusData = await embeddingApi.getRebuildStatus(cmdId)
         setStatus(statusData)
 
-        // Stop polling if completed or failed
-        if (statusData.status === 'completed' || statusData.status === 'failed') {
+        // Stop polling on any terminal state; canceled jobs would otherwise poll forever.
+        if (
+          statusData.status === 'completed' ||
+          statusData.status === 'failed' ||
+          statusData.status === 'canceled'
+        ) {
           stopPolling()
         }
       } catch (error) {
         console.error('Failed to fetch rebuild status:', error)
+        // A 404 means the command record is gone for good — stop retrying.
+        if ((error as { response?: { status?: number } })?.response?.status === 404) {
+          stopPolling()
+        }
       }
     }, 5000) // Poll every 5 seconds
 
@@ -99,7 +107,8 @@ export function RebuildEmbeddings() {
   }
 
   const isAnyTypeSelected = includeSources || includeNotes || includeInsights
-  const isRebuildActive = commandId && status && (status.status === 'queued' || status.status === 'running')
+  const isRebuildActive =
+    !!commandId && !!status && ['new', 'queued', 'running'].includes(status.status)
 
   const progressData = status?.progress
   const stats = status?.stats
@@ -226,15 +235,21 @@ export function RebuildEmbeddings() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {status.status === 'queued' && <Clock className="h-5 w-5 text-warn" />}
+                {(status.status === 'new' || status.status === 'queued') && (
+                  <Clock className="h-5 w-5 text-warn" />
+                )}
                 {status.status === 'running' && <Loader2 className="h-5 w-5 text-teal animate-spin" />}
                 {status.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-fern" />}
-                {status.status === 'failed' && <XCircle className="h-5 w-5 text-destructive" />}
+                {(status.status === 'failed' || status.status === 'canceled') && (
+                  <XCircle className="h-5 w-5 text-destructive" />
+                )}
                 <div className="flex flex-col">
                   <span className="font-medium">
-                    {status.status === 'queued' && t('advanced.rebuild.queued')}
+                    {(status.status === 'new' || status.status === 'queued') &&
+                      t('advanced.rebuild.queued')}
                     {status.status === 'running' && t('advanced.rebuild.running')}
                     {status.status === 'completed' && t('advanced.rebuild.completed')}
+                    {status.status === 'canceled' && t('tasks.status.canceled')}
                     {status.status === 'failed' && t('advanced.rebuild.failed')}
                   </span>
                   {status.status === 'running' && (
@@ -244,7 +259,7 @@ export function RebuildEmbeddings() {
                   )}
                 </div>
               </div>
-              {(status.status === 'completed' || status.status === 'failed') && (
+              {['completed', 'failed', 'canceled'].includes(status.status) && (
                 <Button variant="outline" size="sm" onClick={handleReset}>
                   {t('advanced.rebuild.startNew')}
                 </Button>

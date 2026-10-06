@@ -32,6 +32,7 @@ TASK_TYPE_BY_COMMAND = {
     "generate_podcast": "podcast",
     "generate_artifact": "artifact",
     "classify_sources": "classification",
+    "analyze_source_section": "section_analysis",
 }
 
 VALID_STATUSES = {"new", "queued", "running", "completed", "failed", "canceled"}
@@ -122,6 +123,13 @@ def _get_pipeline_stages(command_name: str, task_type: str) -> List[Dict[str, st
             {"id": "transform", "title": "结构转换", "desc": "执行规则过滤与数据清洗"},
             {"id": "insights", "title": "生成洞察", "desc": "多模态分析并提炼核心洞察"},
             {"id": "index", "title": "建立索引", "desc": "生成向量切片并写入索引"},
+        ]
+    if command_name == "analyze_source_section" or task_type == "section_analysis":
+        return [
+            {"id": "fetching", "title": "读取章节", "desc": "加载来源与章节上下文"},
+            {"id": "prompting", "title": "组装提示", "desc": "按章节规约构建推理提示词"},
+            {"id": "streaming", "title": "模型推理", "desc": "流式生成章节分析内容"},
+            {"id": "done", "title": "结果沉淀", "desc": "固化分析结果到任务产物"},
         ]
     if task_type == "insight" or "transformation" in command_name:
         return [
@@ -394,6 +402,50 @@ async def _enrich_progress(
             "stage": "完成" if is_completed else "内容解析",
             "percent": 100 if is_completed else 30,
             "message": "来源解析完成" if is_completed else "正在提取并处理来源内容...",
+        }
+
+    if name == "analyze_source_section":
+        if is_completed:
+            return {
+                "kind": "section_analysis",
+                "stage": "完成",
+                "percent": 100,
+                "message": "章节分析已完成",
+            }
+        if status in ("failed", "canceled"):
+            return {
+                "kind": "section_analysis",
+                "stage": "异常终止" if status == "failed" else "已取消",
+                "percent": 100,
+                "message": row.get("error_message") or f"章节分析已{status}",
+            }
+        progress_data = None
+        try:
+            # Command ids are "command:xyz"; the state key reuses only the
+            # key part (mirrors commands.source_commands._section_state_rid).
+            command_ref = row.get("id") or ""
+            state_key = str(ensure_record_id(command_ref).id)
+            state_rows = await repo_query(
+                "SELECT progress FROM $rid",
+                {"rid": ensure_record_id(f"section_analysis_state:{state_key}")},
+            )
+            if state_rows and state_rows[0].get("progress"):
+                progress_data = state_rows[0]["progress"]
+        except Exception as e:
+            logger.warning(f"Could not read section analysis state: {e}")
+        if progress_data:
+            return {
+                "kind": "section_analysis",
+                "stage": progress_data.get("stage") or "模型推理",
+                "percent": int(progress_data.get("percent") or 0),
+                "message": progress_data.get("message") or "正在生成章节分析...",
+                "stream_tail": progress_data.get("stream_tail"),
+            }
+        return {
+            "kind": "section_analysis",
+            "stage": "读取章节",
+            "percent": 10,
+            "message": "正在加载章节上下文...",
         }
 
     if name in ("run_transformation", "create_insight"):
@@ -676,8 +728,15 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
     )
 
     # Token telemetry calculation
-    is_model = task_type in ("insight", "podcast", "artifact", "classification") or any(
-        k in command_name for k in ("podcast", "artifact", "transformation", "insight", "classify")
+    is_model = task_type in (
+        "insight",
+        "podcast",
+        "artifact",
+        "classification",
+        "section_analysis",
+    ) or any(
+        k in command_name
+        for k in ("podcast", "artifact", "transformation", "insight", "classify", "analyze_section")
     )
     if is_model:
         usage_rows = []
@@ -789,6 +848,19 @@ async def get_live_progress(job_id: str) -> Dict[str, Any]:
                 stream_text = f"工件生成失败: {error_msg or '执行异常'}"
             else:
                 stream_text = f"[{current_stage_title}] 正在分析上下文并流式推理结构化研究工件... (已耗时: {stopwatch})"
+
+    elif command_name == "analyze_source_section" or task_type == "section_analysis":
+        tail = progress.get("stream_tail")
+        if tail:
+            # Show the freshest generated tail so the terminal window reads
+            # like a live model stream.
+            stream_text = str(tail)[-500:]
+        elif status == "completed":
+            stream_text = "章节分析已完成，结果已沉淀到任务产物。"
+        elif status == "failed":
+            stream_text = f"章节分析失败: {error_msg or '执行异常'}"
+        else:
+            stream_text = f"[{current_stage_title}] 正在流式生成章节分析内容... (已耗时: {stopwatch})"
 
     elif task_type == "embedding" or "embed" in command_name:
         if status == "completed":

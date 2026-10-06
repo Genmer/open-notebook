@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { BookOpen, Sparkles, MessageSquare } from 'lucide-react'
 import type { NotebookResponse, SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { ContextSelections, ContextMode } from '@/lib/types/notebook-context'
-import type { SourceBulkAction } from '@/lib/utils/source-context'
+import type { BulkContextHandler } from '@/lib/utils/source-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 
 export interface GeminiNotebookViewProps {
@@ -27,7 +27,7 @@ export interface GeminiNotebookViewProps {
   setSourceGrouping?: (filters: NotebookSourceFilters) => void
   contextSelections: ContextSelections
   handleSourceContextModeChange: (sourceId: string, mode: ContextMode) => void
-  handleBulkSourceContext: (action: SourceBulkAction) => void
+  handleBulkSourceContext: BulkContextHandler
   setContextPickerOpen: (open: boolean) => void
 }
 
@@ -100,6 +100,13 @@ export function GeminiNotebookView({
                 onOpenContextPicker={() => setContextPickerOpen(true)}
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
+                sourceGrouping={sourceGrouping}
+                refetchSources={refetchSources}
+                onSourceContextModeChange={handleSourceContextModeChange}
+                onBulkSourceContext={handleBulkSourceContext}
+                onGroupingChange={setSourceGrouping}
+                notes={notes}
+                notesLoading={notesLoading}
               />
             )}
             {mobileActiveTab === 'studio' && (
@@ -109,19 +116,21 @@ export function GeminiNotebookView({
                 isLoading={notesLoading}
                 sources={sources}
                 contextSelections={contextSelections}
+                sourceGrouping={sourceGrouping}
               />
             )}
           </div>
         </>
       )}
 
-      {/* 桌面端：NotebookLM 经典现代三栏布局（左栏加宽；右栏可收起） */}
+      {/* 桌面端：NotebookLM 经典现代三栏布局（左栏加宽；右栏可收起）。
+          列宽走 globals.css 的静态类（.notebook-workspace-grid*），不用
+          Tailwind 任意值响应式工具类——见那里的注释。 */}
       <div
         className={cn(
           'hidden lg:grid h-full min-h-0 gap-5 transition-all duration-150',
-          notesCollapsed
-            ? 'grid-cols-[380px_minmax(0,1fr)_48px] xl:grid-cols-[420px_minmax(0,1fr)_48px]'
-            : 'grid-cols-[380px_minmax(0,1fr)_340px] xl:grid-cols-[420px_minmax(0,1fr)_360px]'
+          'notebook-workspace-grid',
+          notesCollapsed && 'notebook-workspace-grid--studio-collapsed'
         )}
       >
         {/* 左栏：来源与网络导源 (Sources & Web Research) */}
@@ -148,6 +157,13 @@ export function GeminiNotebookView({
             onOpenContextPicker={() => setContextPickerOpen(true)}
             sources={sources ?? []}
             sourcesLoading={sourcesLoading}
+            sourceGrouping={sourceGrouping}
+            refetchSources={refetchSources}
+            onSourceContextModeChange={handleSourceContextModeChange}
+            onBulkSourceContext={handleBulkSourceContext}
+            onGroupingChange={setSourceGrouping}
+            notes={notes}
+            notesLoading={notesLoading}
           />
         </div>
 
@@ -165,6 +181,7 @@ export function GeminiNotebookView({
               isLoading={notesLoading}
               sources={sources}
               contextSelections={contextSelections}
+              sourceGrouping={sourceGrouping}
             />
           </CollapsibleColumn>
         </div>

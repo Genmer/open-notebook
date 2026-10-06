@@ -218,7 +218,7 @@ export function SourceViewTabs({
       )}
 
       <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
               {dialog?.kind === 'rename'

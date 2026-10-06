@@ -1,11 +1,12 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { sourcesApi } from '@/lib/api/sources'
 import { QUERY_KEYS } from '@/lib/api/query-client'
-import { useSource, useSourceStatus, useUpdateSource, useDeleteSource, hasActiveInsightJobs, isActiveInsightJobStatus } from '@/lib/hooks/use-sources'
+import { useSource, useSourceStatus, useUpdateSource, useDeleteSource } from '@/lib/hooks/use-sources'
 import { useInsightJobWatcher, type ActiveInsightJob } from '@/lib/hooks/use-insight-jobs'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
@@ -61,6 +62,8 @@ import {
   Database,
   MessageSquare,
   Loader2,
+  FileText,
+  RotateCcw,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
@@ -71,11 +74,19 @@ import { NotebookAssociations } from '@/components/sources/NotebookAssociations'
 import { SourceEmbeddingProgress } from '@/components/sources/SourceEmbeddingProgress'
 import { SourceProcessingSteps } from '@/components/sources/SourceProcessingSteps'
 
+// pdf.js is browser-only and heavy: load the viewer lazily, client-side only
+// (same pattern as markdown-editor.tsx).
+const PdfSourceViewer = dynamic(() => import('@/components/sources/PdfSourceViewer'), {
+  ssr: false,
+})
+
 interface SourceDetailContentProps {
   sourceId: string
   showChatButton?: boolean
   onChatClick?: () => void
   onClose?: () => void
+  /** Notebook context (from the ?nb= modal param) for the PDF viewer save flow. */
+  notebookId?: string
 }
 
 const safeExternalHref = (url: string | null | undefined): string | null => {
@@ -101,7 +112,8 @@ function SourceDetailContentInner({
   sourceId,
   showChatButton = false,
   onChatClick,
-  onClose
+  onClose,
+  notebookId
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
@@ -117,6 +129,8 @@ function SourceDetailContentInner({
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
   const [deletingInsight, setDeletingInsight] = useState(false)
+  // In-app original-file (PDF) viewer, opened from the Content tab.
+  const [fileViewOpen, setFileViewOpen] = useState(false)
   // Insight completion catch-up compares against the count before the job ran.
   const insightsCountRef = useRef(0)
 
@@ -203,7 +217,6 @@ function SourceDetailContentInner({
       const response = await insightsApi.create(sourceId, {
         transformation_id: selectedTransformation
       })
-
       // Show toast for async operation
       toast.success(t('sources.insightGenerationStarted'))
       setSelectedTransformation('')
@@ -367,6 +380,13 @@ function SourceDetailContentInner({
   }
 
   const externalHref = useMemo(() => safeExternalHref(source?.asset?.url), [source?.asset?.url])
+
+  // Same gating as the download item (dropdown): needs an uploaded file that
+  // is a PDF and still available on disk.
+  const isPdfFile = useMemo(
+    () => !!source?.asset?.file_path && /\.pdf$/i.test(source.asset.file_path),
+    [source?.asset?.file_path]
+  )
 
   const handleCopyUrl = useCallback(() => {
     if (source?.asset?.url) {
@@ -540,6 +560,43 @@ function SourceDetailContentInner({
 
           <TabsContent value="content" className="mt-5">
             <section>
+              {isPdfFile && (
+                <div className="mb-4 flex justify-end border-b border-border pb-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setFileViewOpen((v) => !v)}
+                    disabled={fileAvailable === false}
+                    data-testid="open-pdf-viewer"
+                  >
+                    {fileViewOpen ? (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    ) : (
+                      <FileText className="h-3.5 w-3.5" />
+                    )}
+                    {fileViewOpen
+                      ? t('sources.pdfViewer.restore')
+                      : t('sources.pdfViewer.open')}
+                  </Button>
+                </div>
+              )}
+              {fileViewOpen && isPdfFile ? (
+                /* Source-file view replaces the parsed text in place; the
+                   toggle above restores it. */
+                <PdfSourceViewer
+                  inline
+                  open
+                  onOpenChange={setFileViewOpen}
+                  sourceId={source.id}
+                  filePath={source.asset?.file_path ?? null}
+                  /* Direct context first; on the bare detail route (no prop)
+                     fall back to the source's first notebook so fullscreen
+                     reading still gets its side panels. */
+                  notebookId={notebookId ?? source.notebooks?.[0]}
+                />
+              ) : (
+                <>
               {externalHref && !isYouTubeUrl && (
                 <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
                   <LinkIcon className="h-3.5 w-3.5 shrink-0" />
@@ -582,6 +639,8 @@ function SourceDetailContentInner({
               <MarkdownRenderer>
                 {source.full_text || t('sources.noContent')}
               </MarkdownRenderer>
+                </>
+              )}
             </section>
           </TabsContent>
 
@@ -794,7 +853,7 @@ function SourceDetailContentInner({
                       </Badge>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:max-w-3xl">
                     <div>
                       <p className="text-xs font-medium text-muted-foreground">{t('common.created_label')}</p>
                       <p className="text-sm">
@@ -854,6 +913,9 @@ function SourceDetailContentInner({
           }
         }}
       />
+
+      {/* Source-file PDF viewing now lives inline in the content tab (the
+          "show source file" toggle swaps it with the parsed text). */}
 
       <AlertDialog open={!!insightToDelete} onOpenChange={() => setInsightToDelete(null)}>
         <AlertDialogContent>

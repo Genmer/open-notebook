@@ -78,7 +78,6 @@ export const ruRU = {
     no: "Нет",
     saving: "Сохранение...",
     description: "Описание",
-    saveToNote: "Сохранить в заметку",
     copyToClipboard: "Копировать в буфер обмена",
     close: "Закрыть",
     insights: "Инсайты",
@@ -223,6 +222,7 @@ export const ruRU = {
     language: "Переключить язык",
     theme: "Тема",
     ask: "Запрос",
+    agents: "Агенты",
   },
   notebooks: {
     title: "Блокноты",
@@ -270,6 +270,25 @@ export const ruRU = {
     recentlyViewedNotebook: "Блокнот",
     recentlyViewedSource: "Источник",
     lastViewed: "Просмотрено {{time}}",
+    saveNote: {
+      typeLabel: "Сохранить как",
+      modeSource: "Сохранить как источник",
+      modeNote: "Сохранить как заметку",
+      title: "Сохранить в блокнот",
+      description: "Дайте название этому содержимому и выберите, сохранить его как источник или как заметку.",
+      nameLabel: "Название",
+      namePlaceholder: "Введите название",
+      submit: "Сохранить"
+    },
+    saveAsSource: {
+      title: "Сохранить как источник",
+      action: "Сохранить как источник",
+      description: "Создаёт текстовый источник из содержимого этой заметки в текущем блокноте.",
+      nameLabel: "Название источника",
+      namePlaceholder: "Введите название источника",
+      noEmbedHint: "Источник добавляется без эмбеддингов и по умолчанию включается в контекст чата блокнота (можно изменить в выборе контекста чата); если нужен векторный поиск, запустите эмбеддинг позже из списка источников.",
+      submit: "Добавить в блокнот",
+    },
   },
   sources: {
     newSource: "Новый источник",
@@ -302,7 +321,6 @@ export const ruRU = {
     loadingMore: "Загрузка...",
     noSourcesYet: "Пока нет источников",
     allSourcesDescShort: "Просмотр всех ваших источников.",
-    cannotSaveNoteNoNotebook: "Невозможно сохранить заметку: ID блокнота недоступен",
     createFirstSource: "Добавьте первый источник, чтобы начать создание базы знаний.",
     deleteSourceConfirm: "Вы уверены, что хотите удалить этот источник?",
     deleteConfirm: "Вы уверены, что хотите удалить это?",
@@ -467,14 +485,21 @@ export const ruRU = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "Анализирует техническую или научную статью",
+    transformationDescKeyInsights: "Извлекает важные выводы и практические пункты",
+    transformationDescDenseSummary: "Создаёт подробный глубокий конспект содержания",
+    transformationDescReflectionQuestions: "Генерирует рефлексивные вопросы по документу для дальнейшего изучения",
+    transformationDescTableOfContents: "Описывает различные темы документа",
+    transformationDescSimpleSummary: "Создаёт краткий конспект содержания",
     embedMissing: {
+      columnCta: "{{count}} источников не встроено — встроить сейчас",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const ruRU = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "Не встроено",
+      failed: "Ошибка встраивания",
+    },
+    overview: {
+      title: "Обзор базы знаний",
+      totalBadge: "{{count}} в библиотеке",
+      linkedLabel: "Привязано к этой записной книжке",
+      pendingLabel: "Непривязанные источники",
+      count: "{{count}}",
+      importAll: "Импортировать {{count}} из библиотеки",
+      allLinked: "Все источники библиотеки привязаны к этой записной книжке",
+      viewAll: "Открыть библиотеку",
+    },
+    pdfViewer: {
+      restore: "Восстановить",
+      open: "Открыть исходный файл",
+      title: "Просмотр исходного файла",
+      outline: "Оглавление",
+      noOutline: "У этого документа нет оглавления",
+      parsingToc: "Анализ оглавления…",
+      page: "Страница {{page}} из {{total}}",
+      loading: "Загрузка документа…",
+      loadFailed: "Не удалось загрузить документ",
+      zoomIn: "Увеличить",
+      zoomOut: "Уменьшить",
+      prevPage: "Предыдущая страница",
+      nextPage: "Следующая страница",
+      close: "Закрыть",
+      notPdf: "Этот файл не является PDF и не может быть просмотрен",
+      enterFullscreen: "Читать на весь экран",
+      exitFullscreen: "Выйти из полноэкранного режима",
+    },
+    fileView: {
+      analyzeSection: "Проанализировать раздел с помощью ИИ",
+      analyzing: "Анализ…",
+      analysisTitle: "ИИ-анализ «{{title}}»",
+      analysisTruncated: "Текст раздела был усечён перед анализом",
+      analysisFailed: "ИИ-анализ не удался, попробуйте снова",
+      saveAnalysis: "Сохранить как заметку",
+    },
+    copy: "Копировать",
+    copied: "Скопировано",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const ruRU = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "На этой странице нет текстового слоя (отсканированная страница). Выделение текста недоступно; аннотации рамочным выделением появятся в будущем обновлении.",
+      orphanedHint: "Исходный файл изменился; повторная привязка будет доступна в будущем обновлении.",
+      colors: {
+        gold: "Главное",
+        fern: "Усвоено",
+        plum: "Вопрос",
+        slate: "Ссылка",
+        clay: "Ошибки",
+      },
+      toolbar: {
+        colorAria: "Отметить как {{name}}",
+        line: "Стиль линии",
+        wavy: "Волнистое подчёркивание",
+        straight: "Прямое подчёркивание",
+        comment: "Заметка",
+        copy: "Копировать",
+        copied: "Скопировано",
+      },
+      hover: {
+        edit: "Редактировать заметку",
+        delete: "Удалить аннотацию",
+        deleted: "Аннотация удалена",
+        undo: "Отменить",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "Страница {{page}}",
+      },
+      toast: {
+        createFailed: "Не удалось создать аннотацию",
+        updateFailed: "Не удалось обновить аннотацию",
+        deleteFailed: "Не удалось удалить аннотацию",
+        restoreFailed: "Не удалось восстановить аннотацию",
+        crossPage: "Выделение охватывает несколько страниц. Добавляйте аннотации по одной странице.",
+        tooLong: "Выделение слишком длинное. Разбейте его на части.",
+      },
+      deleteConfirm: {
+        count: "При удалении также будут удалены {{count}} аннотаций.",
+      },
+    },
   },
   chat: {
     sessions: "Сессии",
@@ -647,6 +754,34 @@ export const ruRU = {
     contextPickerCounts: "Выдержки {{insights}} · Полностью {{full}} · Заметки {{notes}}",
     enterFullscreen: "Включить полноэкранный режим",
     exitFullscreen: "Выйти из полноэкранного режима",
+    participantConfig: "Участник диалога",
+    participantDesc: "Выберите персону агента или одну модель; они взаимоисключающие — выбор одного очищает другой.",
+    participantPlaceholder: "Выберите участника",
+    groupDefault: "Ассистент по умолчанию",
+    groupAgents: "Агенты",
+    groupModels: "Модели",
+    participantAgentHint: "После применения последующие ответы используют персону и параметры этого агента.",
+    participantModelHint: "После применения последующие ответы фиксируются на этой модели.",
+    agentMissing: "Агент удалён — используется ассистент по умолчанию",
+    answeredBy: "Отвечает {{name}}",
+    parallelSend: "Параллельный вопрос",
+    parallelPickTitle: "Выберите участников параллельного опроса",
+    parallelPickCount: "выбрано {{count}}/{{max}}",
+    parallelPickHint: "Отметьте несколько и спросите разом",
+    parallelMaxReached: "Достигнут лимит в 5",
+    parallelConfirm: "Спросить параллельно",
+    parallelProgress: "Выполняется: {{done}}/{{total}} готово",
+    parallelWaiting: "Ожидание ответа…",
+    parallelFailed: "Параллельный вопрос не удался",
+    streamFailed: "Не удалось создать ответ",
+    streamBusy: "В этом сеансе уже создаётся ответ; подождите",
+    synthesisPickLabel: "Обобщить и объединить:",
+    synthesisDefaultPicker: "Системная модель по умолчанию",
+    synthesisRun: "Обобщить",
+    synthesisResultTitle: "Итоговый ответ",
+    synthesisFailed: "Обобщение не удалось",
+    parallelEmptyHint: "Сначала введите вопрос, затем запустите параллельные ответы",
+    parallelTriggerCount: "Параллельно · {{count}}",
   },
   searchPage: {
     askAndSearch: "Запрос и поиск",
@@ -1266,6 +1401,7 @@ export const ruRU = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Q&A",
+    typeSourceSectionAnalysis: "ИИ-анализ раздела",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const ruRU = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Инспектор задач в реальном времени",
+
+
+
+
+
+
+        completed: "Завершено",
+
+
+
+
+
+
+        failed: "Сбой выполнения",
+
+
+
+
+
+
+        canceled: "Отменено",
+
+
+
+
+
+
+        running: "Генерация…",
+
+
+
+
+
+
+        elapsed: "Прошло",
+
+
+
+
+
+
+        stageFallback: "Выполнение",
+
+
+
+
+
+
+        processing: "Обработка",
+
+
+
+
+
+
+        taskId: "ID задачи",
+
+
+
+
+
+
+        openTaskCenter: "Открыть центр задач",
+
+
+
+
+
+
+        stageFlow: "Поток этапов",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Входной контекст",
+
+
+
+
+
+
+        modelOutput: "Вывод модели",
+
+
+
+
+
+
+        tokenRate: "Скорость токенов",
+
+
+
+
+
+
+        processedChunks: "Обработанные фрагменты",
+
+
+
+
+
+
+        chunksDesc: "Векторные фрагменты",
+
+
+
+
+
+
+        execStatus: "Статус",
+
+
+
+
+
+
+        workerNode: "Фоновый Worker",
+
+
+
+
+
+
+        timeStats: "Время выполнения",
+
+
+
+
+
+
+        stopwatchDesc: "Секундомер в реальном времени",
+
+
+
+
+
+
+        terminalTitle: "live-терминал ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Приостановить прокрутку",
+
+
+
+
+
+
+        autoScroll: "Автопрокрутка",
+
+
+
+
+
+
+        copyLogs: "Копировать журнал",
+
+
+
+
+
+
+        clearOutput: "Очистить вывод",
+
+
+
+
+
+
+        logsCopied: "Журнал терминала скопирован в буфер обмена",
+
+
+
+
+
+
+        logsCleared: "Вывод терминала очищен",
+
+
+
+
+
+
+        errorDetails: "Подробности ошибки",
+
+
+
+
+
+
+        cancelTask: "Отменить задачу",
+
+
+
+
+
+
+        closeDrawer: "Закрыть панель",
+
+
+
+
+
+
+        footerReady: "Двусторонний прослушиватель потока журналов готов",
+
+
+
+
+
+
+        doneCollapse: "Готово и свернуть",
+
+
+
+
+
+
+        fallbackStream1: "Поток токенов проходит через граф контекста…",
+
+
+
+
+
+
+        fallbackStream2: "Синтез ключевых концептуальных утверждений и цитатных якорей…",
+
+
+
+
+
+
+        fallbackStream3: "Проверка контракта JSON-схемы и заголовков Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Асинхронная запись вывода воркера в хранилище данных…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "В очереди",
+
+
+
+
+
+
+          queueDesc: "Планирование воркера и выделение ресурсов",
+
+
+
+
+
+
+          prepare: "Подготовка",
+
+
+
+
+
+
+          prepareDesc: "Загрузка контекста и зависимостей",
+
+
+
+
+
+
+          execute: "Выполнение",
+
+
+
+
+
+
+          executeDesc: "Фоновый процесс вычисляет",
+
+
+
+
+
+
+          finalize: "Завершение",
+
+
+
+
+
+
+          finalizeDesc: "Сохранение состояния и результатов",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const ruRU = {
       cancel: "Отменить задачу",
       cancelSuccess: "Задача отменена",
       cancelFailed: "Не удалось отменить задачу. Попробуйте ещё раз.",
+      viewLiveProgress: "Открыть живой прогресс",
+      viewDetails: "Подробнее",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const ruRU = {
     readOnlyView: "Просмотр только для чтения",
     enterFullscreen: "Включить полноэкранный режим",
     exitFullscreen: "Выйти из полноэкранного режима",
+    editNote: "Редактировать заметку",
+    sourcesPanelTitle: "Источники",
+    notesPanelTitle: "Заметки",
+    openSourcesPanel: "Открыть панель источников",
+    openNotesPanel: "Открыть панель заметок",
+    closePanel: "Закрыть панель",
+    panelEmptySources: "В этой записной книжке нет источников",
+    panelEmptyNotes: "В этой записной книжке нет заметок",
+  },
+  geminiSources: {
+    newFolder: "Новая папка",
+    addExisting: "Добавить существующие",
+    tabHierarchical: "Ресурсы ({{count}})",
+    tabWebResearch: "Веб-поиск",
+    selectAllForChat: "Выбрать всё для чата",
+    deselectAll: "Снять всё",
+    searchPlaceholder: "Поиск ресурсов...",
+    loadingTree: "Загрузка ресурсов...",
+    empty: "Ресурсов пока нет — добавьте сверху или найдите через веб-поиск",
+    ungrouped: "Без папки",
+    folderBadgeMixed: "{{local}} в этом блокноте · {{total}} в библиотеке ({{missing}} не добавлены)",
+    folderBadgeLocal: "{{count}} в этом блокноте",
+    folderEmptyInNotebook: "В этой папке пока нет ресурсов в этом блокноте",
+    folderTotalCount: "Всего источников в папке: {{count}}",
+    addNewResource: "Добавить новый ресурс",
+    webResearchTitle: "Веб-поиск",
+    fastMode: "Быстрый",
+    deepMode: "Глубокий",
+    fastModeDesc: "Ответ за секунды: извлекает ключевые слова, ищет параллельно, чистит текст — отмечайте страницы, чтобы сохранить как источники.",
+    deepModeDesc: "Глубокий агент: автономное планирование, многошаговый поиск и перекрёстная проверка — импортирует структурированный отчёт как источники.",
+    fastPlaceholder: "Введите ключевое слово или тему...",
+    deepPlaceholder: "Введите тему глубокого исследования...",
+    foundSources: "Найденные качественные источники ({{count}})",
+    importing: "Импорт...",
+    bulkAdd: "Добавить всё в блокнот",
+    researchFastDone: "Поиск завершён — качественные источники получены",
+    researchDeepDone: "Глубокое исследование завершено — структурированные источники готовы",
+    researchFailed: "Веб-поиск не удался, попробуйте позже",
+    selectAtLeastOne: "Выберите хотя бы одну страницу для добавления",
+    savedPages: "Добавлено страниц как источников: {{count}}",
+    addPagesFailed: "Не удалось добавить страницы как источники",
+    mockTitleInsights: "{{topic}}: обзор архитектуры и отраслевых практик",
+    mockSnippetInsights: "Глубокий обзор {{topic}}: ключевые механизмы, важные метрики и опыт промышленного развёртывания.",
+    mockTitleSpec: "{{topic}}: официальный whitepaper и лучшие практики",
+    mockSnippetSpec: "Систематический разбор проектных решений, моделей данных и типичных ловушек производительности {{topic}}.",
+    mockTitleBenchmark: "Сравнение: {{topic}} против популярных open-source-решений",
+    mockSnippetBenchmark: "Выводы по реальной пропускной способности и длительной параллельной нагрузке: ключевые отличия и рекомендации по сценариям.",
+    noViewError: "Нет доступного представления",
+    folderCreated: "Папка создана",
+    folderCreateFailed: "Не удалось создать папку",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "заметок: {{count}}",
+    newNote: "Новая заметка",
+    toolbox: "Инструменты",
+    openTasks: "Открыть задачи",
+    notesStream: "Карточки заметок ({{count}})",
+    saveHint: "Сохранить из чата в один клик",
+    loadingNotes: "Загрузка заметок...",
+    emptyNotes: "Заметок пока нет",
+    emptyNotesHint: "Сохраните заметку из чата или выделите ключевой текст, чтобы добавить его сюда.",
+    noContent: "Нет содержимого",
+    generateFailed: "Не удалось сгенерировать артефакт",
+    generateDone: "{{tool}} сгенерирован и сохранён как заметка",
+    jobProgressTitle: "{{tool}} · ход выполнения",
+    jobProgressHint: "Задача выполняется в фоне — следите за статусом или откройте центр задач",
+    instructionLabel: "Инструкция и акцент (необязательно)",
+    instructionPlaceholder: "Пользовательская инструкция или акцент для ИИ...",
+    contextHint: "Генерирует из {{count}} выбранных источников и связанных заметок, сохраняя результат как заметку.",
+    runInBackground: "Продолжить в фоне",
+    submitting: "Отправка...",
+    generateAndSave: "Сгенерировать и сохранить как заметку",
+    tagPodcast: "Подкаст",
+    tagArtifact: "Артефакт",
+    tools: {
+      audioOverview: {
+        desc: "Подкаст с двумя ведущими (реальный синтез речи)",
+      },
+      studyGuide: {
+        desc: "Ключевые понятия, тестовые вопросы и план систематического повторения",
+        instruction: "Составь систематическое учебное пособие с разбором ключевых терминов, сводкой главных тезисов и вопросами для самопроверки (тестовыми и открытыми).",
+      },
+      briefingDoc: {
+        desc: "Экспресс-обзор с ключевыми аргументами, стратегическими выводами и заключениями",
+        instruction: "Составь профессиональный экспресс-обзор с резюме контекста, ключевыми фактами, оценкой рисков и рекомендациями по дальнейшим шагам.",
+      },
+      faq: {
+        desc: "Самые важные вопросы и ответы с подробными разъяснениями из ваших источников",
+        instruction: "Просмотри все материалы и собери самые частые ключевые вопросы с развёрнутыми ответами.",
+      },
+      flashcards: {
+        desc: "Ключевые знания в виде карточек вопрос/ответ",
+        instruction: "Дистиллируй ключевые понятия и выводы в карточки для запоминания.",
+      },
+    },
+  },
+  agents: {
+    title: "Агенты",
+    desc: "Предопределённые роли чата: системный промпт плюс необязательные переопределения модели и сэмплирования, выбираются в чатах блокнота.",
+    create: "Новый агент",
+    edit: "Изменить агента",
+    delete: "Удалить",
+    empty: "Агентов пока нет — создайте первый в правом верхнем углу",
+    disabled: "Отключён",
+    inUse: "используют {{count}} сессий",
+    createSuccess: "Агент создан",
+    updateSuccess: "Агент обновлён",
+    deleteSuccess: "Агент удалён",
+    deleteConfirmTitle: "Удалить агента",
+    deleteConfirmDesc: "Удалить «{{name}}»? Привязанные {{count}} сессий вернутся к ассистенту по умолчанию; история сохранится.",
+    loadFailed: "Не удалось загрузить агента",
+    editorDesc: "Определите персону, модель по умолчанию и параметры сэмплирования.",
+    nameLabel: "Название",
+    namePlaceholder: "напр. научный ассистент",
+    descriptionLabel: "Описание",
+    descriptionPlaceholder: "Одна строка о назначении этой персоны (необязательно)",
+    promptLabel: "Системный промпт",
+    promptPlaceholder: "Опишите идентичность, тон и стиль ответов персоны...",
+    promptHint: "Вставляется в начало системного промпта чата; правила цитирования продолжают действовать.",
+    modelLabel: "Привязанная модель",
+    modelPlaceholder: "Как в чате по умолчанию",
+    modelHint: "Оставьте пустым, чтобы использовать модель из чата или системную по умолчанию.",
+    temperatureField: "Температура",
+    maxTokensField: "Макс. токенов",
+    enabledLabel: "Включён",
+    enabledHint: "Отключённые агенты исчезают из выбора в чате; привязанные сессии возвращаются к ассистенту по умолчанию.",
+    validationRequired: "Название и системный промпт обязательны",
+    validationTemperature: "Температура должна быть от 0 до 2",
+    validationMaxTokens: "Макс. токенов должно быть положительным целым числом",
+    temperatureLabel: "темп. {{value}}",
+    temperatureHelp: "Температура управляет степенью случайности ответов по шкале от 0 до 2. Низкие значения делают вывод более стабильным и точным — подходят для фактических задач вроде вопросов-ответов и исследовательских сводок. Высокие значения делают его более разнообразным и творческим — лучше для творческого письма и мозгового штурма. Оставьте пустым, чтобы использовать значение чата по умолчанию.",
+    maxTokensLabel: "лимит {{value}} токенов",
+    templateLabel: "Начать с шаблона",
+    templatePickerDesc: "Выберите готового агента по отрасли. При выборе имя, промпт и параметры сэмплирования заполнятся автоматически — потом всё можно изменить.",
+    templateBlankName: "С нуля",
+    templateBlankDesc: "Пропустить шаблоны и заполнить имя и системный промпт самостоятельно.",
+    templateUse: "Использовать этот шаблон",
+    templateCat: {
+      software: "Разработка ПО",
+      ruankao: "Подготовка к экзамену Ruankao",
+      llm: "LLM",
+      business: "Бизнес",
+      education: "Образование",
+      creative: "Творчество",
+      general: "Общие",
+    },
+    polishPrompt: "Улучшить промпт",
+    polishing: "Улучшение…",
+    polishFailed: "Не удалось улучшить промпт",
   },
 } satisfies TranslationShape;

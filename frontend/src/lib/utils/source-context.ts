@@ -19,6 +19,32 @@ export type SourceContextDefault = 'include' | 'insights' | 'full' | 'exclude'
 /** The subset of actions surfaced as explicit bulk menu items. */
 export type SourceBulkAction = Exclude<SourceContextDefault, 'include'>
 
+/** A source carried through bulk-context calls (paginated or context-tree). */
+export interface BulkContextItem {
+  id: string
+  insights_count: number
+}
+
+/**
+ * Bulk context handler. `items` lets the caller widen the batch beyond the
+ * paginated listing (e.g. the Gemini column passes its context-tree-merged
+ * full source list so "select all" also covers sources pagination has not
+ * loaded); omitted, the handler falls back to its own loaded list.
+ */
+export type BulkContextHandler = (
+  action: SourceBulkAction,
+  items?: BulkContextItem[],
+) => void
+
+/**
+ * chat_context_pref folder sentinel for the unscoped whole-notebook view.
+ * A real source_group record id can never equal it (backend ids are hashed),
+ * so the existing (notebook, folder, source) endpoints can persist "all"
+ * selections without schema changes and without colliding with the ungrouped
+ * bucket (folder IS NONE) or any concrete folder.
+ */
+export const ALL_SCOPE_PREF_FOLDER = 'source_group:__all__'
+
 interface SourceLike {
   id: string
   insights_count: number

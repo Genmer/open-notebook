@@ -374,12 +374,12 @@ function TaskRow({
                 title={
                   task.status === 'running'
                     ? t('tasks.viewLiveProgress', { defaultValue: '查看实时进展' })
-                    : '查看执行详情'
+                    : t('tasks.viewDetails', { defaultValue: '执行详情' })
                 }
                 aria-label={
                   task.status === 'running'
                     ? t('tasks.viewLiveProgress', { defaultValue: '查看实时进展' })
-                    : '查看执行详情'
+                    : t('tasks.viewDetails', { defaultValue: '执行详情' })
                 }
               >
                 <Terminal
@@ -392,7 +392,7 @@ function TaskRow({
                 <span>
                   {task.status === 'running'
                     ? t('tasks.viewLiveProgress', { defaultValue: '查看实时进展' })
-                    : '执行详情'}
+                    : t('tasks.viewDetails', { defaultValue: '执行详情' })}
                 </span>
               </Button>
             )}

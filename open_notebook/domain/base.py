@@ -314,9 +314,17 @@ class RecordModel(BaseModel):
             object.__setattr__(self, "_db_loaded", True)
 
     @classmethod
-    async def get_instance(cls) -> "RecordModel":
-        """Get or create the singleton instance and load from DB"""
+    async def get_instance(cls, force_reload: bool = False) -> "RecordModel":
+        """Get or create the singleton instance and load from DB.
+
+        force_reload re-reads the record even when the process-level singleton
+        already loaded it once — without it, long-lived processes (the surreal-
+        commands worker) keep serving the values captured on first load and
+        never see settings saved to the DB afterwards.
+        """
         instance = cls()
+        if force_reload:
+            object.__setattr__(instance, "_db_loaded", False)
         await instance._load_from_db()
         return instance
 

@@ -48,4 +48,5 @@ export const QUERY_KEYS = {
   tasks: (params?: Record<string, unknown>) => ['tasks', params ?? {}] as const,
   dataTransferExport: ['data-transfer', 'export'] as const,
   dataTransferImport: ['data-transfer', 'import'] as const,
+  agents: ['agents'] as const,
 }

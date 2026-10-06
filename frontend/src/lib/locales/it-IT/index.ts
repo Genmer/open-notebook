@@ -78,7 +78,6 @@ export const itIT = {
     no: "No",
     saving: "Salvataggio...",
     description: "Descrizione",
-    saveToNote: "Salva come nota",
     copyToClipboard: "Copia negli appunti",
     close: "Chiudi",
     insights: "Approfondimenti",
@@ -223,6 +222,7 @@ export const itIT = {
     language: "Cambia lingua",
     theme: "Tema",
     ask: "Chiedi",
+    agents: "Agenti",
   },
   notebooks: {
     title: "Quaderni",
@@ -270,6 +270,25 @@ export const itIT = {
     recentlyViewedNotebook: "Quaderno",
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
+    saveNote: {
+      typeLabel: "Salva come",
+      modeSource: "Salva come fonte",
+      modeNote: "Salva come nota",
+      title: "Salva nel quaderno",
+      description: "Dai un nome a questo contenuto e scegli se salvarlo come fonte o come nota.",
+      nameLabel: "Nome",
+      namePlaceholder: "Inserisci un nome",
+      submit: "Salva"
+    },
+    saveAsSource: {
+      title: "Salva come fonte",
+      action: "Salva come fonte",
+      description: "Crea una fonte di testo dal contenuto di questa nota in questo quaderno.",
+      nameLabel: "Nome della fonte",
+      namePlaceholder: "Inserisci un nome per la fonte",
+      noEmbedHint: "Verrà aggiunta senza embedding e inclusa per impostazione predefinita nel contesto della chat del quaderno (regolabile nel selettore del contesto); se ti serve la ricerca vettoriale, avvia l'embedding più tardi dall'elenco delle fonti.",
+      submit: "Aggiungi al quaderno",
+    },
   },
   sources: {
     newSource: "Nuova fonte",
@@ -302,7 +321,6 @@ export const itIT = {
     loadingMore: "Caricamento...",
     noSourcesYet: "Ancora nessuna fonte",
     allSourcesDescShort: "Visualizza tutte le tue fonti qui.",
-    cannotSaveNoteNoNotebook: "Impossibile salvare la nota: ID quaderno non disponibile",
     createFirstSource: "Aggiungi la tua prima fonte per iniziare a costruire la tua base di conoscenza.",
     deleteSourceConfirm: "Sei sicuro di voler eliminare questa fonte?",
     deleteConfirm: "Sei sicuro di voler eliminare questo elemento?",
@@ -467,14 +485,21 @@ export const itIT = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "Analizza un articolo tecnico o scientifico",
+    transformationDescKeyInsights: "Estrae intuizioni importanti ed elementi azionabili",
+    transformationDescDenseSummary: "Crea un riassunto ricco e approfondito del contenuto",
+    transformationDescReflectionQuestions: "Genera domande di riflessione dal documento per esplorarlo ulteriormente",
+    transformationDescTableOfContents: "Descrive i diversi argomenti del documento",
+    transformationDescSimpleSummary: "Genera un breve riassunto del contenuto",
     embedMissing: {
+      columnCta: "{{count}} fonti non incorporate — incorpora ora",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const itIT = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "Non incorporata",
+      failed: "Incorporamento non riuscito",
+    },
+    overview: {
+      title: "Panoramica della base di conoscenza",
+      totalBadge: "{{count}} nella libreria",
+      linkedLabel: "Collegate a questo notebook",
+      pendingLabel: "Fonti da collegare",
+      count: "{{count}}",
+      importAll: "Importa {{count}} dalla libreria",
+      allLinked: "Tutte le fonti della libreria sono collegate a questo notebook",
+      viewAll: "Vedi libreria",
+    },
+    pdfViewer: {
+      restore: "Ripristina",
+      open: "Visualizza file originale",
+      title: "Anteprima del file originale",
+      outline: "Sommario",
+      noOutline: "Questo documento non ha un sommario",
+      parsingToc: "Analisi dell'indice…",
+      page: "Pagina {{page}} di {{total}}",
+      loading: "Caricamento del documento…",
+      loadFailed: "Caricamento del documento non riuscito",
+      zoomIn: "Zoom avanti",
+      zoomOut: "Zoom indietro",
+      prevPage: "Pagina precedente",
+      nextPage: "Pagina successiva",
+      close: "Chiudi",
+      notPdf: "Questo file non è un PDF e non può essere visualizzato",
+      enterFullscreen: "Leggi a schermo intero",
+      exitFullscreen: "Esci da schermo intero",
+    },
+    fileView: {
+      analyzeSection: "Analizza sezione con IA",
+      analyzing: "Analisi in corso…",
+      analysisTitle: "Analisi IA di \"{{title}}\"",
+      analysisTruncated: "Il testo della sezione è stato troncato prima dell'analisi",
+      analysisFailed: "Analisi IA non riuscita, riprova",
+      saveAnalysis: "Salva come nota",
+    },
+    copy: "Copia",
+    copied: "Copiato",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const itIT = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "Questa pagina non ha un livello di testo (pagina scansionata). L'evidenziazione del testo non è disponibile; le annotazioni tramite selezione a riquadro arriveranno in un futuro aggiornamento.",
+      orphanedHint: "Il file sorgente è cambiato; il riancoraggio sarà disponibile in un futuro aggiornamento.",
+      colors: {
+        gold: "Punto chiave",
+        fern: "Padroneggiato",
+        plum: "Dubbio",
+        slate: "Riferimento",
+        clay: "Errori",
+      },
+      toolbar: {
+        colorAria: "Contrassegna come {{name}}",
+        line: "Stile linea",
+        wavy: "Sottolineatura ondulata",
+        straight: "Sottolineatura dritta",
+        comment: "Nota",
+        copy: "Copia",
+        copied: "Copiato",
+      },
+      hover: {
+        edit: "Modifica nota",
+        delete: "Elimina annotazione",
+        deleted: "Annotazione eliminata",
+        undo: "Annulla",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "Pagina {{page}}",
+      },
+      toast: {
+        createFailed: "Impossibile creare l'annotazione",
+        updateFailed: "Impossibile aggiornare l'annotazione",
+        deleteFailed: "Impossibile eliminare l'annotazione",
+        restoreFailed: "Impossibile ripristinare l'annotazione",
+        crossPage: "La selezione si estende su più pagine. Annota una pagina alla volta.",
+        tooLong: "La selezione è troppo lunga. Suddividila in parti più piccole.",
+      },
+      deleteConfirm: {
+        count: "L'eliminazione rimuoverà anche {{count}} annotazione/i.",
+      },
+    },
   },
   chat: {
     sessions: "Sessioni",
@@ -647,6 +754,34 @@ export const itIT = {
     contextPickerCounts: "Insight {{insights}} · Completo {{full}} · Note {{notes}}",
     enterFullscreen: "Attiva schermo intero",
     exitFullscreen: "Esci da schermo intero",
+    participantConfig: "Partecipante alla conversazione",
+    participantDesc: "Scegli una persona agente o un modello; sono mutualmente esclusivi: scegliere uno cancella l'altro.",
+    participantPlaceholder: "Seleziona partecipante",
+    groupDefault: "Assistente predefinito",
+    groupAgents: "Agenti",
+    groupModels: "Modelli",
+    participantAgentHint: "Dopo l'applicazione, le risposte successive usano la persona e i parametri di questo agente.",
+    participantModelHint: "Dopo l'applicazione, le risposte successive sono bloccate su questo modello.",
+    agentMissing: "Agente eliminato — si usa l'assistente predefinito",
+    answeredBy: "Risposta di {{name}}",
+    parallelSend: "Domanda parallela",
+    parallelPickTitle: "Scegli i partecipanti paralleli",
+    parallelPickCount: "{{count}}/{{max}} scelti",
+    parallelPickHint: "Selezionane più d'uno e chiedi insieme",
+    parallelMaxReached: "Limite di 5 raggiunto",
+    parallelConfirm: "Chiedi in parallelo",
+    parallelProgress: "In corso: {{done}}/{{total}} completati",
+    parallelWaiting: "In attesa della risposta…",
+    parallelFailed: "Domanda parallela non riuscita",
+    streamFailed: "Generazione della risposta non riuscita",
+    streamBusy: "Questa sessione sta già generando una risposta; attendi",
+    synthesisPickLabel: "Sintetizza e unisci:",
+    synthesisDefaultPicker: "Modello predefinito di sistema",
+    synthesisRun: "Sintetizza",
+    synthesisResultTitle: "Risposta sintetizzata",
+    synthesisFailed: "Sintesi non riuscita",
+    parallelEmptyHint: "Scrivi prima una domanda, poi avvia le risposte parallele",
+    parallelTriggerCount: "Parallelo · {{count}}",
   },
   searchPage: {
     askAndSearch: "Chiedi e cerca",
@@ -1266,6 +1401,7 @@ export const itIT = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Q&A",
+    typeSourceSectionAnalysis: "Analisi IA della sezione",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const itIT = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "Ispettore attività in tempo reale",
+
+
+
+
+
+
+        completed: "Completato",
+
+
+
+
+
+
+        failed: "Esecuzione non riuscita",
+
+
+
+
+
+
+        canceled: "Annullato",
+
+
+
+
+
+
+        running: "Generazione…",
+
+
+
+
+
+
+        elapsed: "Trascorso",
+
+
+
+
+
+
+        stageFallback: "Esecuzione",
+
+
+
+
+
+
+        processing: "Elaborazione",
+
+
+
+
+
+
+        taskId: "ID attività",
+
+
+
+
+
+
+        openTaskCenter: "Apri gestione attività",
+
+
+
+
+
+
+        stageFlow: "Flusso di fasi",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "Input di contesto",
+
+
+
+
+
+
+        modelOutput: "Output del modello",
+
+
+
+
+
+
+        tokenRate: "Velocità token",
+
+
+
+
+
+
+        processedChunks: "Chunk elaborati",
+
+
+
+
+
+
+        chunksDesc: "Chunk vettoriali",
+
+
+
+
+
+
+        execStatus: "Stato",
+
+
+
+
+
+
+        workerNode: "Worker in background",
+
+
+
+
+
+
+        timeStats: "Tempo trascorso",
+
+
+
+
+
+
+        stopwatchDesc: "Cronometro in tempo reale",
+
+
+
+
+
+
+        terminalTitle: "terminale live ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "Metti in pausa lo scorrimento",
+
+
+
+
+
+
+        autoScroll: "Scorrimento automatico",
+
+
+
+
+
+
+        copyLogs: "Copia log",
+
+
+
+
+
+
+        clearOutput: "Svuota output",
+
+
+
+
+
+
+        logsCopied: "Log del terminale copiati negli appunti",
+
+
+
+
+
+
+        logsCleared: "Output del terminale svuotato",
+
+
+
+
+
+
+        errorDetails: "Dettagli errore",
+
+
+
+
+
+
+        cancelTask: "Annulla attività",
+
+
+
+
+
+
+        closeDrawer: "Chiudi pannello",
+
+
+
+
+
+
+        footerReady: "Ascolto bidirezionale del flusso di log pronto",
+
+
+
+
+
+
+        doneCollapse: "Completa e comprimi",
+
+
+
+
+
+
+        fallbackStream1: "Flusso di token attraverso il grafo di contesto…",
+
+
+
+
+
+
+        fallbackStream2: "Sintesi delle asserzioni concettuali chiave e ancore di citazione…",
+
+
+
+
+
+
+        fallbackStream3: "Validazione del contratto di schema JSON e delle intestazioni Markdown…",
+
+
+
+
+
+
+        fallbackStream4: "Scrittura dell'output asincrono del worker nell'archivio dati…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "In coda",
+
+
+
+
+
+
+          queueDesc: "Pianificazione del worker e allocazione risorse",
+
+
+
+
+
+
+          prepare: "Preparazione",
+
+
+
+
+
+
+          prepareDesc: "Caricamento contesto e dipendenze",
+
+
+
+
+
+
+          execute: "Esecuzione",
+
+
+
+
+
+
+          executeDesc: "Processo in background in calcolo",
+
+
+
+
+
+
+          finalize: "Finalizzazione",
+
+
+
+
+
+
+          finalizeDesc: "Persistenza dello stato e dei risultati",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const itIT = {
       cancel: "Annulla attività",
       cancelSuccess: "Attività annullata",
       cancelFailed: "Impossibile annullare l'attività. Riprova.",
+      viewLiveProgress: "Visualizza avanzamento in tempo reale",
+      viewDetails: "Dettagli",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const itIT = {
     readOnlyView: "Visualizzazione di sola lettura",
     enterFullscreen: "Attiva schermo intero",
     exitFullscreen: "Esci da schermo intero",
+    editNote: "Modifica nota",
+    sourcesPanelTitle: "Fonti",
+    notesPanelTitle: "Note",
+    openSourcesPanel: "Apri il pannello delle fonti",
+    openNotesPanel: "Apri il pannello delle note",
+    closePanel: "Chiudi il pannello",
+    panelEmptySources: "Nessuna fonte in questo taccuino",
+    panelEmptyNotes: "Nessuna nota in questo taccuino",
+  },
+  geminiSources: {
+    newFolder: "Nuova cartella",
+    addExisting: "Aggiungi esistenti",
+    tabHierarchical: "Risorse ({{count}})",
+    tabWebResearch: "Ricerca web",
+    selectAllForChat: "Seleziona tutto per la chat",
+    deselectAll: "Deseleziona tutto",
+    searchPlaceholder: "Cerca risorse...",
+    loadingTree: "Caricamento risorse...",
+    empty: "Nessuna risorsa: aggiungine sopra o esplora con la ricerca web",
+    ungrouped: "Non raggruppati",
+    folderBadgeMixed: "{{local}} in questo notebook · {{total}} nella libreria ({{missing}} non aggiunti)",
+    folderBadgeLocal: "{{count}} in questo notebook",
+    folderEmptyInNotebook: "Questa cartella non ha ancora risorse in questo notebook",
+    folderTotalCount: "Fonti totali nella cartella: {{count}}",
+    addNewResource: "Aggiungi nuova risorsa",
+    webResearchTitle: "Ricerca web",
+    fastMode: "Veloce",
+    deepMode: "Profondo",
+    fastModeDesc: "Risposta in secondi: estrae parole chiave, cerca in parallelo e pulisce il testo — seleziona pagine per salvarle come fonti.",
+    deepModeDesc: "Agente profondo: pianifica in autonomia, recupera multi-hop e valida incrociando, importando un report strutturato come fonti.",
+    fastPlaceholder: "Inserisci una parola chiave o un argomento...",
+    deepPlaceholder: "Inserisci un argomento di ricerca approfondita...",
+    foundSources: "Fonti di qualità trovate ({{count}})",
+    importing: "Importazione...",
+    bulkAdd: "Aggiungi tutto al notebook",
+    researchFastDone: "Ricerca completata — fonti di qualità recuperate",
+    researchDeepDone: "Ricerca approfondita completata — fonti strutturate pronte",
+    researchFailed: "Ricerca web non riuscita, riprova più tardi",
+    selectAtLeastOne: "Seleziona almeno una pagina da aggiungere",
+    savedPages: "{{count}} pagine aggiunte come fonti",
+    addPagesFailed: "Impossibile aggiungere le pagine come fonti",
+    mockTitleInsights: "{{topic}}: architettura principale e pratiche del settore",
+    mockSnippetInsights: "Analisi approfondita di {{topic}}: meccanismi centrali, metriche chiave ed esperienze di deployment in produzione.",
+    mockTitleSpec: "{{topic}}: whitepaper ufficiale e best practice",
+    mockSnippetSpec: "Rassegna sistematica delle decisioni di progettazione, dei modelli dati e delle insidie di prestazione comuni di {{topic}}.",
+    mockTitleBenchmark: "Confronto: {{topic}} rispetto alle alternative open source",
+    mockSnippetBenchmark: "Conclusioni su throughput reale e carico concorrente prolungato: differenze chiave e consigli per scenario.",
+    noViewError: "Nessuna vista disponibile",
+    folderCreated: "Cartella creata",
+    folderCreateFailed: "Impossibile creare la cartella",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "{{count}} note",
+    newNote: "Nuova nota",
+    toolbox: "Cassetta degli attrezzi",
+    openTasks: "Apri attività",
+    notesStream: "Schede note ({{count}})",
+    saveHint: "Cattura dalla chat in un clic",
+    loadingNotes: "Caricamento note...",
+    emptyNotes: "Ancora nessuna nota",
+    emptyNotesHint: "Salva una nota dalla chat o seleziona testo chiave per catturarlo qui.",
+    noContent: "Nessun contenuto",
+    generateFailed: "Impossibile generare l'artefatto",
+    generateDone: "{{tool}} generato e salvato come nota",
+    jobProgressTitle: "{{tool}} · avanzamento",
+    jobProgressHint: "L'attività è in esecuzione in background — controlla lo stato o apri la gestione attività",
+    instructionLabel: "Istruzione e focus (facoltativo)",
+    instructionPlaceholder: "Istruzione personalizzata o focus per l'IA...",
+    contextHint: "Genera dalle {{count}} fonti selezionate e note correlate, salvando il risultato come nota.",
+    runInBackground: "Continua in background",
+    submitting: "Invio...",
+    generateAndSave: "Genera e salva come nota",
+    tagPodcast: "Podcast",
+    tagArtifact: "Artefatto",
+    tools: {
+      audioOverview: {
+        desc: "Podcast di approfondimento con due conduttori (sintesi vocale reale)",
+      },
+      studyGuide: {
+        desc: "Concetti chiave, quiz Q&A e schema di ripasso sistematico",
+        instruction: "Prepara una guida di studio sistematica con analisi dei termini chiave, sintesi dei punti essenziali e domande a scelta multipla e aperte di autoverifica.",
+      },
+      briefingDoc: {
+        desc: "Briefing executive con argomentazioni chiave, implicazioni strategiche e conclusioni",
+        instruction: "Redigi un briefing executive professionale con sintesi del contesto, fatti di supporto chiave, valutazione dei rischi e prossime azioni consigliate.",
+      },
+      faq: {
+        desc: "Le domande frequenti più importanti con risposte dettagliate dalle tue fonti",
+        instruction: "Esamina tutti i materiali e raccogli le domande essenziali più frequenti con risposte approfondite.",
+      },
+      flashcards: {
+        desc: "Conoscenze chiave come coppie domanda/risposta stile flashcard",
+        instruction: "Distilla concetti e conclusioni chiave in flashcard memorizzabili.",
+      },
+    },
+  },
+  agents: {
+    title: "Agenti",
+    desc: "Persona della chat predefinite: prompt di sistema più modello e parametri di campionamento opzionali, selezionabili nelle chat del notebook.",
+    create: "Nuovo agente",
+    edit: "Modifica agente",
+    delete: "Elimina",
+    empty: "Ancora nessun agente: crea il primo in alto a destra",
+    disabled: "Disattivato",
+    inUse: "{{count}} sessioni in uso",
+    createSuccess: "Agente creato",
+    updateSuccess: "Agente aggiornato",
+    deleteSuccess: "Agente eliminato",
+    deleteConfirmTitle: "Elimina agente",
+    deleteConfirmDesc: "Eliminare \"{{name}}\"? Le {{count}} sessioni associate torneranno all'assistente predefinito; la cronologia resta.",
+    loadFailed: "Impossibile caricare l'agente",
+    editorDesc: "Definisci la persona, il modello predefinito e i parametri di campionamento.",
+    nameLabel: "Nome",
+    namePlaceholder: "es. assistente di ricerca",
+    descriptionLabel: "Descrizione",
+    descriptionPlaceholder: "Una riga su cosa fa questa persona (facoltativo)",
+    promptLabel: "Prompt di sistema",
+    promptPlaceholder: "Descrivi identità, tono e stile di risposta della persona...",
+    promptHint: "Viene inserito in testa al prompt di sistema della chat; le regole di citazione restano valide.",
+    modelLabel: "Modello associato",
+    modelPlaceholder: "Segui il predefinito della chat",
+    modelHint: "Lascia vuoto per usare il modello scelto nella chat o quello predefinito.",
+    temperatureField: "Temperatura",
+    maxTokensField: "Token massimi",
+    enabledLabel: "Attivo",
+    enabledHint: "Gli agenti disattivati spariscono dal selettore; le sessioni associate tornano all'assistente predefinito.",
+    validationRequired: "Nome e prompt di sistema sono obbligatori",
+    validationTemperature: "La temperatura deve essere tra 0 e 2",
+    validationMaxTokens: "I token massimi devono essere un intero positivo",
+    temperatureLabel: "temp {{value}}",
+    temperatureHelp: "La temperatura controlla il grado di casualità delle risposte, su una scala da 0 a 2. Valori bassi rendono l'output più stabile e preciso — adatti a compiti fattuali come domande e risposte o riassunti di ricerca. Valori alti lo rendono più vario e creativo — ideali per la scrittura creativa e il brainstorming. Lascia vuoto per seguire l'impostazione predefinita della chat.",
+    maxTokensLabel: "limite {{value}} token",
+    templateLabel: "Inizia da un modello",
+    templatePickerDesc: "Scegli un agente predefinito per settore. La selezione compila nome, prompt e parametri di campionamento — tutto resta modificabile in seguito.",
+    templateBlankName: "Inizia da zero",
+    templateBlankDesc: "Salta i modelli e compila tu nome e prompt di sistema.",
+    templateUse: "Usa questo modello",
+    templateCat: {
+      software: "Software",
+      ruankao: "Preparazione all'esame Ruankao",
+      llm: "LLM",
+      business: "Business",
+      education: "Istruzione",
+      creative: "Creativo",
+      general: "Generale",
+    },
+    polishPrompt: "Rifinisci il prompt",
+    polishing: "Rifinitura…",
+    polishFailed: "Rifinitura del prompt non riuscita",
   },
 } satisfies TranslationShape;

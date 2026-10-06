@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useSourceViews, useViewGroups } from '@/lib/hooks/use-source-views'
 import { FILE_TYPE_VIEW_ID } from '@/lib/stores/source-view-store'
+import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { flattenGroupTree } from '@/lib/utils/group-tree'
 import { displayViewName } from '@/lib/utils/view-display'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -19,6 +20,17 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 export interface FolderTargetValue {
   viewId: string
   groupId: string
+}
+
+// 按来源页/笔记本当前的分组浏览范围推导默认文件夹：只有具体文件夹（非 'all' /
+// 'ungrouped' 虚拟值、非 file_type 虚拟视图）才预选，其余落到「不放入文件夹」。
+// sourceGrouping 缺省（如 Gemini 视图未开分组）即视为「无文件夹」。
+export function defaultFolderTarget(sourceGrouping?: NotebookSourceFilters): FolderTargetValue | null {
+  const viewId = sourceGrouping?.viewId
+  const group = sourceGrouping?.group
+  if (!viewId || viewId === FILE_TYPE_VIEW_ID) return null
+  if (!group || group === 'all' || group === 'ungrouped') return null
+  return { viewId, groupId: group }
 }
 
 interface FolderTargetSectionProps {
@@ -194,9 +206,10 @@ function FolderOption({
         onChange={onSelect}
       />
       <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="flex-1 truncate">{label}</span>
+      {/* 行保持全宽命中；仅名字限宽，长名截断后 count 紧跟内容 */}
+      <span className="truncate max-w-[14rem]">{label}</span>
       {typeof count === 'number' && count > 0 && (
-        <span className="shrink-0 text-xs text-muted-foreground">{count}</span>
+        <span className="ml-1 shrink-0 text-xs text-muted-foreground">{count}</span>
       )}
     </label>
   )

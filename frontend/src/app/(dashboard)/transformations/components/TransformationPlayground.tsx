@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Play, Loader2 } from 'lucide-react'
 import { Transformation } from '@/lib/types/transformations'
 import { useExecuteTransformation } from '@/lib/hooks/use-transformations'
+import { displayTransformationTitle } from '@/lib/utils/transformation-display'
 import { ModelSelector } from '@/components/common/ModelSelector'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import ReactMarkdown from 'react-markdown'
@@ -58,7 +59,7 @@ export function TransformationPlayground({ transformations, selectedTransformati
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:max-w-3xl">
             <div>
               <Label htmlFor="transformation">{t('navigation.transformation')}</Label>
               <Select name="transformation" value={selectedId} onValueChange={setSelectedId}>
@@ -68,7 +69,7 @@ export function TransformationPlayground({ transformations, selectedTransformati
                 <SelectContent>
                   {transformations?.map((transformation) => (
                     <SelectItem key={transformation.id} value={transformation.id}>
-                      {transformation.name}
+                      {displayTransformationTitle(transformation.title, t) ?? transformation.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

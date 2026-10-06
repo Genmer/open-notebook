@@ -78,7 +78,6 @@ export const jaJP = {
     no: "いいえ",
     saving: "保存中...",
     description: "説明",
-    saveToNote: "ノートに保存",
     copyToClipboard: "クリップボードにコピー",
     close: "閉じる",
     insights: "インサイト",
@@ -223,6 +222,7 @@ export const jaJP = {
     language: "言語を切り替え",
     theme: "テーマ",
     ask: "質問",
+    agents: "エージェント",
   },
   notebooks: {
     title: "ノートブック",
@@ -270,6 +270,25 @@ export const jaJP = {
     recentlyViewedNotebook: "ノートブック",
     recentlyViewedSource: "ソース",
     lastViewed: "{{time}}に表示",
+    saveNote: {
+      typeLabel: "保存の種類",
+      modeSource: "ソースとして保存",
+      modeNote: "ノートとして保存",
+      title: "ノートブックに保存",
+      description: "このコンテンツに名前を付け、ソースとして保存するかノートとして保存するかを選択してください。",
+      nameLabel: "名前",
+      namePlaceholder: "名前を入力",
+      submit: "保存"
+    },
+    saveAsSource: {
+      title: "ソースとして保存",
+      action: "ソースとして保存",
+      description: "このノートの内容をテキストソースとして作成し、現在のノートブックに追加します。",
+      nameLabel: "ソース名",
+      namePlaceholder: "ソース名を入力",
+      noEmbedHint: "埋め込みなしで追加され、既定でノートブックの対話コンテキストに含まれます（対話コンテキスト選択で調整できます）。ベクトル検索が必要な場合は、後でソース一覧から埋め込みを実行してください。",
+      submit: "ノートブックに追加",
+    },
   },
   sources: {
     newSource: "新規ソース",
@@ -302,7 +321,6 @@ export const jaJP = {
     loadingMore: "さらに読み込み中...",
     noSourcesYet: "ソースがまだありません",
     allSourcesDescShort: "すべてのソースを表示します。",
-    cannotSaveNoteNoNotebook: "ノートを保存できません：ノートブックIDが利用できません",
     createFirstSource: "最初のソースを追加してナレッジベースの構築を始めましょう。",
     deleteSourceConfirm: "このソースを削除しますか？",
     deleteConfirm: "削除しますか？",
@@ -467,14 +485,21 @@ export const jaJP = {
     transformationTitleSimpleSummary: "Simple Summary",
     transformationTitleTableOfContents: "Table of Contents",
     transformationTitleKeyInsights: "Key Insights",
+    transformationDescPaperAnalysis: "技術論文・学術論文を分析します",
+    transformationDescKeyInsights: "重要な洞察と実行可能な項目を抽出します",
+    transformationDescDenseSummary: "内容の充実した深い要約を作成します",
+    transformationDescReflectionQuestions: "ドキュメントから、さらに探究するための省察の問いを生成します",
+    transformationDescTableOfContents: "ドキュメントが扱うさまざまなトピックを説明します",
+    transformationDescSimpleSummary: "内容の短い要約を生成します",
     embedMissing: {
+      columnCta: "未埋め込み {{count}} 件 — 今すぐ埋め込む",
       button: "Embed All Pending",
       confirmTitle: "Embed all pending sources?",
       confirmDescription: "{{count}} source(s) are waiting to be embedded. The job runs in the background and cannot be interrupted or canceled once started.",
       confirmCta: "Start embedding",
       startedToast: "Embedding started for all pending sources",
       progressTitle: "Embedding progress",
-      errorHint: "Embeddings are failing. Check that an embedding model is configured in Models.",
+      errorHint: "Embeddings are failing. Check the embedding model and its API key in Models, then retry.",
       badge: {
         notEmbedded: "not embedded",
         queued: "queued",
@@ -483,6 +508,49 @@ export const jaJP = {
         failed: "failed",
       },
     },
+    embedStateDot: {
+      unembedded: "未埋め込み",
+      failed: "埋め込みに失敗しました",
+    },
+    overview: {
+      title: "ナレッジベースの概要",
+      totalBadge: "ライブラリ全体 {{count}} 件",
+      linkedLabel: "このノートブックにリンク済み",
+      pendingLabel: "未リンクのソース",
+      count: "{{count}} 件",
+      importAll: "ライブラリから {{count}} 件を取り込む",
+      allLinked: "ライブラリのすべてのソースがこのノートブックにリンクされています",
+      viewAll: "ライブラリを表示",
+    },
+    pdfViewer: {
+      restore: "元に戻す",
+      open: "元ファイルを表示",
+      title: "元ファイルのプレビュー",
+      outline: "目次",
+      noOutline: "この文書には目次がありません",
+      parsingToc: "目次を解析しています…",
+      page: "{{total}} ページ中 {{page}} ページ目",
+      loading: "文書を読み込み中…",
+      loadFailed: "文書の読み込みに失敗しました",
+      zoomIn: "拡大",
+      zoomOut: "縮小",
+      prevPage: "前のページ",
+      nextPage: "次のページ",
+      close: "閉じる",
+      notPdf: "このファイルは PDF ではないためプレビューできません",
+      enterFullscreen: "全画面で読む",
+      exitFullscreen: "全画面を終了",
+    },
+    fileView: {
+      analyzeSection: "AIでこの章を解析",
+      analyzing: "解析中…",
+      analysisTitle: "「{{title}}」のAI解析",
+      analysisTruncated: "章のテキストが長すぎるため切り詰めて解析しました",
+      analysisFailed: "AI解析に失敗しました。再試行してください",
+      saveAnalysis: "ノートとして保存",
+    },
+    copy: "コピー",
+    copied: "コピーしました",
     grouping: {
       aiContentViewName: "By content",
       aiTitleViewName: "By filename",
@@ -603,6 +671,45 @@ export const jaJP = {
         failed: "AI classification failed",
       },
     },
+    annotations: {
+      scanNotice: "このページにはテキスト層がありません（スキャンページ）。テキストのハイライトは利用できません。枠選択による注釈は今後のアップデートで対応予定です。",
+      orphanedHint: "ソースファイルが変更されたため、再アンカーは今後のアップデートで利用可能になります。",
+      colors: {
+        gold: "重要ポイント",
+        fern: "理解済み",
+        plum: "疑問",
+        slate: "参考",
+        clay: "要注意",
+      },
+      toolbar: {
+        colorAria: "{{name}}としてマーク",
+        line: "線のスタイル",
+        wavy: "波線の下線",
+        straight: "直線の下線",
+        comment: "メモ",
+        copy: "コピー",
+        copied: "コピーしました",
+      },
+      hover: {
+        edit: "メモを編集",
+        delete: "注釈を削除",
+        deleted: "注釈を削除しました",
+        undo: "元に戻す",
+        colorLabel: "{{name}} · {{time}}",
+        pageMeta: "{{page}} ページ",
+      },
+      toast: {
+        createFailed: "注釈を作成できませんでした",
+        updateFailed: "注釈を更新できませんでした",
+        deleteFailed: "注釈を削除できませんでした",
+        restoreFailed: "注釈を復元できませんでした",
+        crossPage: "選択範囲が複数ページにまたがっています。ページごとに分けて注釈してください。",
+        tooLong: "選択範囲が長すぎます。分割して注釈してください。",
+      },
+      deleteConfirm: {
+        count: "削除すると、{{count}} 件の注釈も削除されます。",
+      },
+    },
   },
   chat: {
     sessions: "セッション",
@@ -647,6 +754,34 @@ export const jaJP = {
     contextPickerCounts: "インサイト {{insights}} · 全文 {{full}} · ノート {{notes}}",
     enterFullscreen: "全画面表示",
     exitFullscreen: "全画面解除",
+    participantConfig: "対話の参加者",
+    participantDesc: "エージェントのペルソナか単一モデルを選択します。両方は排他で、一方を選ぶともう一方は解除されます。",
+    participantPlaceholder: "参加者を選択",
+    groupDefault: "既定のアシスタント",
+    groupAgents: "エージェント",
+    groupModels: "モデル",
+    participantAgentHint: "適用後の回答には、このエージェントのペルソナとサンプリング設定が使われます。",
+    participantModelHint: "適用後の回答はこのモデルに固定されます。",
+    agentMissing: "エージェントが削除されたため、既定のアシスタントを使用しています",
+    answeredBy: "{{name}} による回答",
+    parallelSend: "並列質問",
+    parallelPickTitle: "並列参加者を選択",
+    parallelPickCount: "{{count}}/{{max}} 選択中",
+    parallelPickHint: "複数選んで同時に質問できます",
+    parallelMaxReached: "上限の5件に達しました",
+    parallelConfirm: "並列で質問",
+    parallelProgress: "実行中：{{done}}/{{total}} 完了",
+    parallelWaiting: "回答を待っています…",
+    parallelFailed: "並列質問に失敗しました",
+    streamFailed: "返信の生成に失敗しました",
+    streamBusy: "このセッションでは返信を生成中です。しばらくお待ちください",
+    synthesisPickLabel: "統合してまとめる：",
+    synthesisDefaultPicker: "システム既定のモデル",
+    synthesisRun: "まとめを生成",
+    synthesisResultTitle: "統合された回答",
+    synthesisFailed: "まとめの生成に失敗しました",
+    parallelEmptyHint: "質問を入力してから並列回答を開始してください",
+    parallelTriggerCount: "並列回答 · {{count}}",
   },
   searchPage: {
     askAndSearch: "質問と検索",
@@ -1266,6 +1401,7 @@ export const jaJP = {
     typeSourceChat: "Source chat",
     typePrompt: "Prompt",
     typeQaExplain: "Q&A",
+    typeSourceSectionAnalysis: "セクションAI解析",
     loadMore: "Load more",
     recordsShown: "{{shown}} of {{total}} records shown",
     emptyTitle: "No usage recorded yet",
@@ -1296,6 +1432,356 @@ export const jaJP = {
 
 
     tasks: {
+
+
+
+
+
+
+      inspector: {
+
+
+
+
+
+
+        title: "ライブタスクインスペクター",
+
+
+
+
+
+
+        completed: "完了",
+
+
+
+
+
+
+        failed: "実行失敗",
+
+
+
+
+
+
+        canceled: "キャンセル済み",
+
+
+
+
+
+
+        running: "生成中…",
+
+
+
+
+
+
+        elapsed: "経過時間",
+
+
+
+
+
+
+        stageFallback: "タスク実行",
+
+
+
+
+
+
+        processing: "処理中",
+
+
+
+
+
+
+        taskId: "ジョブ ID",
+
+
+
+
+
+
+        openTaskCenter: "タスク管理を開く",
+
+
+
+
+
+
+        stageFlow: "ステージ実行フロー",
+
+
+
+
+
+
+        promptTokens: "Prompt Tokens",
+
+
+
+
+
+
+        outputTokens: "Output Tokens",
+
+
+
+
+
+
+        contextInput: "コンテキスト入力",
+
+
+
+
+
+
+        modelOutput: "モデル推論出力",
+
+
+
+
+
+
+        tokenRate: "推論速度",
+
+
+
+
+
+
+        processedChunks: "処理済みチャンク",
+
+
+
+
+
+
+        chunksDesc: "ベクトル処理チャンク数",
+
+
+
+
+
+
+        execStatus: "実行状態",
+
+
+
+
+
+
+        workerNode: "バックグラウンド Worker ノード",
+
+
+
+
+
+
+        timeStats: "所要時間",
+
+
+
+
+
+
+        stopwatchDesc: "ストップウォッチ追跡",
+
+
+
+
+
+
+        terminalTitle: "ライブターミナル ~ {{name}}",
+
+
+
+
+
+
+        pauseScroll: "自動スクロール停止",
+
+
+
+
+
+
+        autoScroll: "自動スクロール",
+
+
+
+
+
+
+        copyLogs: "ログをコピー",
+
+
+
+
+
+
+        clearOutput: "出力をクリア",
+
+
+
+
+
+
+        logsCopied: "ターミナルログをクリップボードにコピーしました",
+
+
+
+
+
+
+        logsCleared: "ターミナルログをクリアしました",
+
+
+
+
+
+
+        errorDetails: "実行エラー詳細",
+
+
+
+
+
+
+        cancelTask: "タスクをキャンセル",
+
+
+
+
+
+
+        closeDrawer: "パネルを閉じる",
+
+
+
+
+
+
+        footerReady: "ライブログストリームの双方向リスニング準備完了",
+
+
+
+
+
+
+        doneCollapse: "完了して閉じる",
+
+
+
+
+
+
+        fallbackStream1: "トークンストリームがコンテキストグラフを流れています…",
+
+
+
+
+
+
+        fallbackStream2: "主要な概念的主張と引用アンカーを統合しています…",
+
+
+
+
+
+
+        fallbackStream3: "JSON スキーマ契約と Markdown 見出しを検証しています…",
+
+
+
+
+
+
+        fallbackStream4: "非同期ワーカーの出力をデータベースに書き戻しています…",
+
+
+
+
+
+
+        stages: {
+
+
+
+
+
+
+          queue: "キュー待機",
+
+
+
+
+
+
+          queueDesc: "Worker ノードのスケジュールとリソース割り当て",
+
+
+
+
+
+
+          prepare: "環境準備",
+
+
+
+
+
+
+          prepareDesc: "コンテキストと依存パラメータの読み込み",
+
+
+
+
+
+
+          execute: "タスク実行",
+
+
+
+
+
+
+          executeDesc: "バックグラウンドプロセスが継続計算中",
+
+
+
+
+
+
+          finalize: "成果物の保存",
+
+
+
+
+
+
+          finalizeDesc: "状態と実行結果の永続化",
+
+
+
+
+
+
+        },
+
+
+
+
+
+
+      },
       title: "Task Center",
       description: "Every background operation in one place: insights, embeddings, imports and more.",
       refresh: "Refresh",
@@ -1306,6 +1792,8 @@ export const jaJP = {
       cancel: "タスクをキャンセル",
       cancelSuccess: "タスクをキャンセルしました",
       cancelFailed: "タスクのキャンセルに失敗しました。やり直してください。",
+      viewLiveProgress: "ライブ進捗を見る",
+      viewDetails: "実行詳細",
       filter: {
         all: "All",
         active: "In progress",
@@ -1591,5 +2079,155 @@ export const jaJP = {
     readOnlyView: "閲覧専用ビュー",
     enterFullscreen: "全画面表示",
     exitFullscreen: "全画面解除",
+    editNote: "ノートを編集",
+    sourcesPanelTitle: "ソース",
+    notesPanelTitle: "ノート",
+    openSourcesPanel: "ソースサイドバーを開く",
+    openNotesPanel: "ノートサイドバーを開く",
+    closePanel: "サイドバーを閉じる",
+    panelEmptySources: "このノートブックにはソースがありません",
+    panelEmptyNotes: "このノートブックにはノートがありません",
+  },
+  geminiSources: {
+    newFolder: "新規フォルダー",
+    addExisting: "既存を追加",
+    tabHierarchical: "リソース ({{count}})",
+    tabWebResearch: "ウェブリサーチ",
+    selectAllForChat: "すべて会話に含める",
+    deselectAll: "すべて解除",
+    searchPlaceholder: "リソースを検索...",
+    loadingTree: "リソースを読み込み中...",
+    empty: "リソースがありません。右上から追加するかウェブリサーチで探せます",
+    ungrouped: "未分類",
+    folderBadgeMixed: "このノートブックに {{local}} 件 · ライブラリ全体で {{total}} 件（未追加 {{missing}} 件）",
+    folderBadgeLocal: "このノートブックに {{count}} 件",
+    folderEmptyInNotebook: "このフォルダーにはこのノートブックのリソースがありません",
+    folderTotalCount: "フォルダー内のソース総数: {{count}}",
+    addNewResource: "新規リソースを追加",
+    webResearchTitle: "ウェブリサーチ",
+    fastMode: "高速",
+    deepMode: "深掘り",
+    fastModeDesc: "数秒で応答：キーワードを抽出して並列検索し、本文を整形してソースとして保存できます。",
+    deepModeDesc: "ディープエージェント：自律的に計画し、多段階の検索と相互検証を行い、構造化レポートをソースとして取り込みます。",
+    fastPlaceholder: "キーワードやテーマを入力...",
+    deepPlaceholder: "深掘り調査のテーマを入力...",
+    foundSources: "見つかった良質なソース ({{count}})",
+    importing: "取り込み中...",
+    bulkAdd: "まとめてノートブックに追加",
+    researchFastDone: "リサーチ完了 — 良質なソースを取得しました",
+    researchDeepDone: "深掘りリサーチ完了 — 構造化ソースができました",
+    researchFailed: "ウェブ検索に失敗しました。後ほどお試しください",
+    selectAtLeastOne: "追加するページを1つ以上選択してください",
+    savedPages: "{{count}} 件のページをソースとしてノートブックに追加しました",
+    addPagesFailed: "ページのソース追加に失敗しました",
+    mockTitleInsights: "{{topic}} の核心アーキテクチャと業界事例の総覧",
+    mockSnippetInsights: "{{topic}} の詳細調査：核心メカニズム、主要パフォーマンス指標、本番運用の知見を体系的に解説。",
+    mockTitleSpec: "{{topic}} 公式ホワイトペーパーとベストプラクティス",
+    mockSnippetSpec: "{{topic}} の設計判断、データモデル定義、よくあるパフォーマンスの落とし穴を整理。",
+    mockTitleBenchmark: "総合評価：{{topic}} と主要オープンソース方案の比較",
+    mockSnippetBenchmark: "実際のスループットと長時間の並行負荷に基づく結論。核心的な違いと場面別の選定推奨を提示。",
+    noViewError: "利用可能なビューがありません",
+    folderCreated: "フォルダーを作成しました",
+    folderCreateFailed: "フォルダーの作成に失敗しました",
+  },
+  geminiStudio: {
+    title: "Studio",
+    notesCount: "ノート {{count}} 件",
+    newNote: "新規ノート",
+    toolbox: "ツールボックス",
+    openTasks: "タスク管理を開く",
+    notesStream: "ノートカード ({{count}})",
+    saveHint: "チャットからワンクリックで保存",
+    loadingNotes: "ノートを読み込み中...",
+    emptyNotes: "ノートはまだありません",
+    emptyNotesHint: "チャットで「ノートに保存」を選ぶか、重要な文を選択してここに保存できます。",
+    noContent: "内容なし",
+    generateFailed: "アーティファクトの生成に失敗しました",
+    generateDone: "{{tool}} の生成が完了し、ノートとして保存しました",
+    jobProgressTitle: "{{tool}} · 生成進捗",
+    jobProgressHint: "タスクはバックグラウンドで実行中です。状況を確認するかタスク管理へ移動できます",
+    instructionLabel: "指示と重点（任意）",
+    instructionPlaceholder: "AI へのカスタム指示や重点を入力...",
+    contextHint: "選択中の {{count}} 件のソースと関連ノートから生成し、完了後にノートとして保存します。",
+    runInBackground: "バックグラウンドで続行",
+    submitting: "送信中...",
+    generateAndSave: "生成してノートに保存",
+    tagPodcast: "ポッドキャスト",
+    tagArtifact: "アーティファクト",
+    tools: {
+      audioOverview: {
+        desc: "二人のホストによる掘り下げ音声ポッドキャスト（実際の音声合成）",
+      },
+      studyGuide: {
+        desc: "主要概念、クイズ形式のQ&A、体系的な復習アウトライン",
+        instruction: "体系的な学習ガイドを作成してください：主要用語の解説、要点のまとめ、自己テスト用の選択問題と記述問題を含めてください。",
+      },
+      briefingDoc: {
+        desc: "エグゼクティブブリーフィング：主要論拠、戦略的示唆、結論",
+        instruction: "専門性の高いエグゼクティブ向けブリーフィングを作成してください：背景要約、主要な裏付け事実、リスク評価、次のアクション提案を含めてください。",
+      },
+      faq: {
+        desc: "ソースから最重要のFAQと詳細な回答を抽出",
+        instruction: "資料を全面的に確認し、読者が最も関心を持つ核心的な質問と十分な回答をまとめてください。",
+      },
+      flashcards: {
+        desc: "核心知識をQ&Aペアのフラッシュカードに",
+        instruction: "主要概念と重要な結論を抽出し、暗記と自己テストに便利なQ&Aカードセットを作成してください。",
+      },
+    },
+  },
+  agents: {
+    title: "エージェント",
+    desc: "事前定義された対話ペルソナ：システムプロンプトと任意のモデル・サンプリング設定を組み合わせ、ノートブックのチャットで選択できます。",
+    create: "新規エージェント",
+    edit: "エージェントを編集",
+    delete: "削除",
+    empty: "エージェントがありません。右上から最初の1つを作成できます",
+    disabled: "無効",
+    inUse: "{{count}} 件のセッションで使用中",
+    createSuccess: "エージェントを作成しました",
+    updateSuccess: "エージェントを更新しました",
+    deleteSuccess: "エージェントを削除しました",
+    deleteConfirmTitle: "エージェントの削除",
+    deleteConfirmDesc: "「{{name}}」を削除しますか？紐づく {{count}} 件のセッションは既定のアシスタントへフォールバックし、履歴は保持されます。",
+    loadFailed: "エージェントの読み込みに失敗しました",
+    editorDesc: "ペルソナ、既定のモデル、サンプリング設定を定義します。",
+    nameLabel: "名前",
+    namePlaceholder: "例：リサーチアシスタント",
+    descriptionLabel: "説明",
+    descriptionPlaceholder: "このペルソナの用途を一行で（任意）",
+    promptLabel: "システムプロンプト",
+    promptPlaceholder: "ペルソナの身份、口調、回答スタイルを記述...",
+    promptHint: "チャットのシステムプロンプト冒頭に挿入されます。引用ルールはそのまま適用されます。",
+    modelLabel: "バインドモデル",
+    modelPlaceholder: "チャットの既定に従う",
+    modelHint: "空欄の場合はチャットで選択したモデルまたはシステム既定を使用します。",
+    temperatureField: "温度",
+    maxTokensField: "最大トークン数",
+    enabledLabel: "有効",
+    enabledHint: "無効化するとチャットの選択肢から消え、紐づくセッションは既定のアシスタントへ戻ります。",
+    validationRequired: "名前とシステムプロンプトは必須です",
+    validationTemperature: "温度は 0〜2 の範囲で指定してください",
+    validationMaxTokens: "最大トークン数は正の整数で指定してください",
+    temperatureLabel: "温度 {{value}}",
+    temperatureHelp: "温度は回答のランダム性を制御します（0〜2）。値が低いほど出力は安定して正確になり、事実ベースの質問応答や調査のまとめに向きます。値が高いほど出力は多様で創造的になり、創作やブレインストーミングに向きます。空欄の場合はチャットの既定設定に従います。",
+    maxTokensLabel: "上限 {{value}} トークン",
+    templateLabel: "テンプレートから始める",
+    templatePickerDesc: "業界別にプリセットエージェントを選択できます。選ぶと名前・プロンプト・サンプリング設定が自動で入力され、後から自由に編集できます。",
+    templateBlankName: "空白から始める",
+    templateBlankDesc: "テンプレートを使わず、名前とシステムプロンプトを自分で入力します。",
+    templateUse: "このテンプレートを使用",
+    templateCat: {
+      software: "ソフトウェア",
+      ruankao: "軟考試験対策",
+      llm: "LLM",
+      business: "ビジネス",
+      education: "教育",
+      creative: "クリエイティブ",
+      general: "汎用",
+    },
+    polishPrompt: "プロンプトを磨く",
+    polishing: "磨いています…",
+    polishFailed: "プロンプトの研磨に失敗しました",
   },
 } satisfies TranslationShape;

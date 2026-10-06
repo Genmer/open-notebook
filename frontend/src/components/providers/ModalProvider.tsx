@@ -17,7 +17,7 @@ import { SourceDialog } from '@/components/sources/SourceDialog'
  * - insight: Source insight modal
  */
 export function ModalProvider() {
-  const { modalType, modalId, closeModal } = useModalManager()
+  const { modalType, modalId, closeModal, notebookId } = useModalManager()
 
   return (
     <>
@@ -28,6 +28,9 @@ export function ModalProvider() {
           if (!open) closeModal()
         }}
         sourceId={modalId}
+        // Notebook context carried by the ?nb= param (set by openModal's
+        // third argument); undefined keeps classic two-arg behavior.
+        notebookId={notebookId}
       />
 
       {/* Note Modal */}

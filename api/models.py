@@ -291,6 +291,85 @@ class NoteResponse(BaseModel):
     command_id: Optional[str] = None
 
 
+# Source annotation API models (PDR-003)
+class PdfQuadPayload(BaseModel):
+    x1: float = Field(..., description="Left edge in PDF user space (y up)")
+    y1: float = Field(..., description="Bottom edge in PDF user space")
+    x2: float = Field(..., description="Right edge in PDF user space")
+    y2: float = Field(..., description="Top edge in PDF user space")
+
+
+class PdfAnchorPayload(BaseModel):
+    page: int = Field(..., ge=1, description="1-based page number")
+    quads: List[PdfQuadPayload] = Field(
+        ..., min_length=1, description="Rectangle set covering the selection"
+    )
+
+
+class TextAnchorPayload(BaseModel):
+    quote: str = Field(..., min_length=1, description="Selected text")
+    prefix: str = Field("", description="Text immediately before the quote")
+    suffix: str = Field("", description="Text immediately after the quote")
+    start_offset: int = Field(0, ge=0)
+    end_offset: int = Field(0, ge=0)
+    section_title: Optional[str] = None
+
+
+class SourceAnnotationCreate(BaseModel):
+    source_id: str = Field(..., description="Source the annotation belongs to")
+    color: str = Field(..., description="Semantic color token (gold/fern/plum/slate/clay)")
+    line_style: str = Field("wavy", description="wavy | straight")
+    body: Optional[str] = Field(None, description="Annotation text (optional)")
+    display_position: Optional[str] = Field(
+        None,
+        description=(
+            "Body presentation slot; MVP always persists NULL regardless of "
+            "the value sent (PDR-003 ruling 9)"
+        ),
+    )
+    quote: Optional[str] = Field(None, description="Redundant quote for overviews")
+    text_anchor: Optional[TextAnchorPayload] = None
+    pdf_anchor: Optional[PdfAnchorPayload] = None
+
+
+class SourceAnnotationUpdate(BaseModel):
+    color: Optional[str] = None
+    line_style: Optional[str] = None
+    body: Optional[str] = None
+    display_position: Optional[str] = None
+    quote: Optional[str] = None
+    text_anchor: Optional[TextAnchorPayload] = None
+    pdf_anchor: Optional[PdfAnchorPayload] = None
+
+
+class SourceAnnotationResponse(BaseModel):
+    id: str
+    source: str
+    color: str
+    line_style: str
+    body: Optional[str] = None
+    display_position: Optional[str] = None
+    quote: Optional[str] = None
+    text_anchor: Optional[Dict[str, object]] = None
+    pdf_anchor: Optional[Dict[str, object]] = None
+    page: Optional[int] = None
+    start_offset: Optional[int] = None
+    created: str
+    updated: str
+
+
+class AnnotationSettingsPayload(BaseModel):
+    color_names: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Custom semantic names per color token (i18n defaults apply elsewhere)",
+    )
+
+
+class AnnotationSettingsResponse(BaseModel):
+    id: str
+    color_names: Dict[str, str]
+
+
 # Embedding API models
 class EmbedRequest(BaseModel):
     item_id: str = Field(..., description="ID of the item to embed")
@@ -659,6 +738,41 @@ class CreateSourceInsightRequest(BaseModel):
     model_id: Optional[str] = Field(
         None, description="Model ID (uses default if not provided)"
     )
+
+
+class SourceSectionAnalysisRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    section_title: str = Field(
+        ..., max_length=300, description="Title of the section to analyze"
+    )
+    section_text: str = Field(..., description="Extracted text of the section")
+    page_start: Optional[int] = Field(None, description="1-based first page of the section")
+    page_end: Optional[int] = Field(None, description="1-based last page of the section")
+    locale: str = Field(
+        "en-US", description="UI locale for the answer language"
+    )
+
+
+class SourceSectionAnalysisResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    analysis_markdown: str = Field(..., description="Section analysis as markdown")
+    model_name: Optional[str] = Field(None, description="Name of the model used")
+    provider: Optional[str] = Field(None, description="Provider of the model used")
+    truncated: bool = Field(
+        False, description="True when the section text was truncated before analysis"
+    )
+
+
+class SourceSectionAnalysisSubmitResponse(BaseModel):
+    """Async handshake for POST /sources/{id}/sections/analyze: the analysis
+    itself lands in the command job result (GET /commands/jobs/{job_id})."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    job_id: str = Field(..., description="Submitted command job id")
+    status: str = Field("submitted", description="Submission status")
 
 
 # Source status response
@@ -1338,6 +1452,10 @@ class ContextTreeSource(BaseModel):
     id: str
     title: Optional[str] = None
     insights_count: int = 0
+    # Derived from the source_embedding table (source has no embedded column);
+    # drives the row-level embed-state dot in the Gemini sources column.
+    embedded: bool = False
+    embedding_status: Optional[str] = None
 
 
 class ContextTreeGroup(BaseModel):
@@ -1377,3 +1495,66 @@ class WebSearchResponse(BaseModel):
     mode: str
     results: List[WebSearchItem]
 
+
+
+# Agents API models (PDR-004)
+class AgentCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: str = Field(..., max_length=100, description="Unique agent name")
+    system_prompt: str = Field(..., description="Persona injected into the chat system prompt")
+    description: Optional[str] = Field(None, max_length=500)
+    model: Optional[str] = Field(None, description="Model record id, e.g. 'model:abc'")
+    temperature: Optional[float] = Field(None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(None, gt=0)
+    enabled: bool = True
+    sort_order: int = Field(0, ge=0)
+
+
+class AgentUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: Optional[str] = Field(None, max_length=100)
+    system_prompt: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=500)
+    model: Optional[str] = Field(None, description="Null clears the model binding")
+    temperature: Optional[float] = Field(None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(None, gt=0)
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = Field(None, ge=0)
+
+
+class AgentResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    id: str
+    name: str
+    system_prompt: str
+    description: Optional[str] = None
+    model_id: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    enabled: bool
+    sort_order: int
+    in_use_session_count: int = 0
+    created: str
+    updated: str
+
+
+class PolishPromptRequest(BaseModel):
+    draft: str = Field(
+        ...,
+        min_length=1,
+        max_length=8000,
+        description="Raw system prompt draft, possibly just a one-line idea",
+    )
+    name: Optional[str] = Field(
+        None, max_length=100, description="Optional intended agent name for context"
+    )
+    description: Optional[str] = Field(
+        None, max_length=500, description="Optional intended agent description for context"
+    )
+
+
+class PolishPromptResponse(BaseModel):
+    polished: str = Field(..., description="Polished, ready-to-use system prompt")

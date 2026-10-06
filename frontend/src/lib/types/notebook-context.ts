@@ -12,6 +12,9 @@ export interface ContextTreeSource {
   id: string
   title: string | null
   insights_count: number
+  /** Derived from the source_embedding table (source table has no bool column). */
+  embedded: boolean
+  embedding_status: string | null
 }
 
 /** One folder (source group) of a view. */
