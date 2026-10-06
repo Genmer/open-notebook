@@ -137,6 +137,25 @@ describe('ImportCard', () => {
     )
   })
 
+  it('renders the chunked-upload byte progress while a large package uploads', () => {
+    mockUseImportStatus.mockReturnValue({ data: { status: 'none' as const } })
+    mockUploadImport.mockReturnValue({
+      mutate: uploadSpy,
+      isPending: true,
+      uploadProgress: { loaded: 50 * 1024 * 1024, total: 100 * 1024 * 1024 },
+    })
+    mockExecuteImport.mockReturnValue({ mutate: executeSpy, isPending: false })
+    render(<ImportCard />)
+
+    // Progress bar at the halfway point of the confirmed bytes.
+    const indicator = document.querySelector('[data-slot="progress-indicator"]')
+    expect(indicator).not.toBeNull()
+    expect(indicator?.getAttribute('style')).toContain('translateX(-50%)')
+    expect(screen.getByTestId('upload-progress-label')).toHaveTextContent(
+      'dataManagement.import.uploadingPercent'
+    )
+  })
+
   it('renders progress with the current stage highlighted and the x/y message', () => {
     mockStatus({
       status: 'running',

@@ -127,6 +127,71 @@ export interface ImportExecuteInput {
   decisions: ImportDecisionInput[]
 }
 
+export interface ChunkSession {
+  upload_id: string
+  filename: string
+  total_size: number
+  chunk_size: number
+  total_chunks: number
+  uploaded_chunks: number[]
+}
+
+export interface ChunkedUploadProgress {
+  /** Bytes the server has confirmed, including parts resumed from disk. */
+  loaded: number
+  total: number
+}
+
+// Above this size the upload switches to the chunked/resumable path; below it
+// a single request is simpler and just as reliable.
+export const CHUNKED_UPLOAD_THRESHOLD = 32 * 1024 * 1024
+const CHUNK_SIZE = 8 * 1024 * 1024
+const CHUNK_CONCURRENCY = 3
+const CHUNK_RETRIES = 3
+
+// Marks 4xx rejections: resending identical bytes cannot heal them, so the
+// retry loop must rethrow instead of swallowing them into backoff.
+class NonRetryableChunkError extends Error {}
+
+async function putChunk(
+  apiUrl: string,
+  headers: Record<string, string>,
+  uploadId: string,
+  index: number,
+  blob: Blob,
+  signal?: AbortSignal
+): Promise<void> {
+  const digestBuffer = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  const sha256 = Array.from(new Uint8Array(digestBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+  let lastError: unknown = null
+  for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt++) {
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/data-transfer/import/chunk-session/${uploadId}/chunks/${index}`,
+        {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-Chunk-Sha256': sha256 },
+          body: blob,
+          signal,
+        }
+      )
+      if (response.ok) return
+      // 4xx other than 429 will not heal by resending the same bytes.
+      if (response.status < 500 && response.status !== 429) {
+        throw new NonRetryableChunkError(`Chunk ${index} rejected: HTTP ${response.status}`)
+      }
+      lastError = new Error(`Chunk ${index} retryable: HTTP ${response.status}`)
+    } catch (error) {
+      if (signal?.aborted || error instanceof NonRetryableChunkError) throw error
+      lastError = error
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt))
+  }
+  throw lastError instanceof Error ? lastError : new Error('chunk upload failed')
+}
+
 export const dataTransferApi = {
   startExport: async (input: ExportStartInput): Promise<DataTransferStartResponse> => {
     const response = await apiClient.post<DataTransferStartResponse>(
@@ -227,6 +292,64 @@ export const dataTransferApi = {
       }
     )
     return response.data
+  },
+
+  // Chunked + resumable upload for large packages. The client_key (name+size+
+  // mtime) lets a retry after a network drop or page refresh continue from the
+  // parts already on the server instead of starting from zero.
+  uploadImportChunked: async (
+    file: File,
+    onProgress?: (progress: ChunkedUploadProgress) => void,
+    signal?: AbortSignal
+  ): Promise<ImportScanResponse> => {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+    const clientKey = `${file.name}:${file.size}:${file.lastModified}`
+    const sessionResponse = await apiClient.post<ChunkSession>(
+      '/data-transfer/import/chunk-session',
+      {
+        filename: file.name,
+        total_size: file.size,
+        chunk_size: CHUNK_SIZE,
+        total_chunks: totalChunks,
+        client_key: clientKey,
+      },
+      { signal }
+    )
+    const session = sessionResponse.data
+    const uploaded = new Set(session.uploaded_chunks)
+    const bytesOf = (index: number): number =>
+      Math.min(CHUNK_SIZE, file.size - index * CHUNK_SIZE)
+    const report = () => {
+      let loaded = 0
+      for (const index of uploaded) loaded += bytesOf(index)
+      onProgress?.({ loaded, total: file.size })
+    }
+    report()
+
+    const token = getAuthToken()
+    const apiUrl = await getApiUrl()
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {}
+
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < totalChunks) {
+        const index = cursor++
+        if (uploaded.has(index)) continue
+        await putChunk(apiUrl, headers, session.upload_id, index, file.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE), signal)
+        uploaded.add(index)
+        report()
+      }
+    }
+    await Promise.all(Array.from({ length: CHUNK_CONCURRENCY }, () => worker()))
+
+    const completeResponse = await apiClient.post<ImportScanResponse>(
+      `/data-transfer/import/chunk-session/${session.upload_id}/complete`,
+      {},
+      { signal }
+    )
+    return completeResponse.data
   },
 
   executeImport: async (input: ImportExecuteInput): Promise<DataTransferStartResponse> => {

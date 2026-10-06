@@ -6,6 +6,8 @@ is covered by tests/test_max_body_size_middleware.py and is not retested here.
 """
 
 import io
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -268,6 +270,185 @@ class TestExportEstimate:
         )
 
         assert response.status_code == 422
+
+
+class TestChunkedImport:
+    """Chunk-session lifecycle: create → PUT parts → complete → scan."""
+
+    CHUNK = 256
+
+    def _package(self, tmp_path) -> str:
+        import zipfile
+
+        path = str(tmp_path / "pkg.zip")
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "format_version": 2,
+                        "app_version": "0.0.0",
+                        "package_type": "models",
+                        "counts": {},
+                    }
+                ),
+            )
+            zf.writestr("data/credential.ndjson", "")
+            zf.writestr("data/model.ndjson", "")
+        return path
+
+    def _create(self, client, payload):
+        return client.post("/api/data-transfer/import/chunk-session", json=payload)
+
+    @pytest.fixture
+    def folders(self, tmp_path, monkeypatch):
+        imports = tmp_path / "imports"
+        imports.mkdir()
+        monkeypatch.setattr(svc, "IMPORTS_FOLDER", str(imports))
+        monkeypatch.setattr(svc, "CHUNK_SESSIONS_FOLDER", str(imports / "chunk_sessions"))
+        # Tiny chunks so a minimal package still spans multiple parts.
+        monkeypatch.setattr(svc, "MIN_CHUNK_SIZE", 64)
+        return imports
+
+    @pytest.mark.asyncio
+    async def test_create_validates_package_contract(self, client, folders):
+        for payload in (
+            {"filename": "x.tar", "total_size": 10, "chunk_size": self.CHUNK, "total_chunks": 1},
+            {"filename": "x.zip", "total_size": 0, "chunk_size": self.CHUNK, "total_chunks": 0},
+            {"filename": "x.zip", "total_size": self.CHUNK + 1, "chunk_size": self.CHUNK, "total_chunks": 1},
+            {"filename": "x.zip", "total_size": self.CHUNK, "chunk_size": 32, "total_chunks": self.CHUNK // 32},
+        ):
+            response = self._create(client, payload)
+            assert response.status_code == 400, payload
+
+    @pytest.mark.asyncio
+    async def test_chunk_roundtrip_resume_and_complete(self, client, folders, tmp_path):
+        import hashlib
+
+        package = Path(self._package(tmp_path)).read_bytes()
+        total = len(package)
+        chunks = (total + self.CHUNK - 1) // self.CHUNK
+        created = self._create(
+            client,
+            {
+                "filename": "pkg.zip",
+                "total_size": total,
+                "chunk_size": self.CHUNK,
+                "total_chunks": chunks,
+                "client_key": "pkg.zip:123:456",
+            },
+        )
+        assert created.status_code == 200
+        session = created.json()
+        assert session["uploaded_chunks"] == []
+
+        # Part 0 up (sha256 verified), part 1 rejected on a bad digest.
+        digest = hashlib.sha256(package[: self.CHUNK]).hexdigest()
+        ok = client.put(
+            f"/api/data-transfer/import/chunk-session/{session['upload_id']}/chunks/0",
+            content=package[: self.CHUNK],
+            headers={"X-Chunk-Sha256": digest, "Content-Type": "application/octet-stream"},
+        )
+        assert ok.status_code == 200
+        bad = client.put(
+            f"/api/data-transfer/import/chunk-session/{session['upload_id']}/chunks/1",
+            content=package[self.CHUNK : 2 * self.CHUNK] or package[self.CHUNK :],
+            headers={"X-Chunk-Sha256": "0" * 64, "Content-Type": "application/octet-stream"},
+        )
+        assert bad.status_code == 400
+
+        # Complete refuses with a missing part.
+        early = client.post(
+            f"/api/data-transfer/import/chunk-session/{session['upload_id']}/complete",
+            json={},
+        )
+        assert early.status_code == 400
+        assert "missing" in early.json()["detail"]
+
+        # GET reports the landed part; a same-key create resumes the session.
+        status = client.get(
+            f"/api/data-transfer/import/chunk-session/{session['upload_id']}"
+        )
+        assert status.json()["uploaded_chunks"] == [0]
+        resumed = self._create(
+            client,
+            {
+                "filename": "pkg.zip",
+                "total_size": total,
+                "chunk_size": self.CHUNK,
+                "total_chunks": chunks,
+                "client_key": "pkg.zip:123:456",
+            },
+        )
+        assert resumed.json()["upload_id"] == session["upload_id"]
+        assert resumed.json()["uploaded_chunks"] == [0]
+
+        # Remaining parts up, then complete returns the scan and installs the
+        # pending zip.
+        for index in range(1, chunks):
+            blob = package[index * self.CHUNK : (index + 1) * self.CHUNK]
+            response = client.put(
+                f"/api/data-transfer/import/chunk-session/{session['upload_id']}/chunks/{index}",
+                content=blob,
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            assert response.status_code == 200, index
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "record_fingerprint", new=AsyncMock()),
+        ):
+            completed = client.post(
+                f"/api/data-transfer/import/chunk-session/{session['upload_id']}/complete",
+                json={"sha256": hashlib.sha256(package).hexdigest()},
+            )
+        assert completed.status_code == 200
+        body = completed.json()
+        assert body["package_type"] == "models"
+        assert (folders / "pending_scan.zip").read_bytes() == package
+        # Session folder is dropped after a successful merge.
+        assert not (folders / "chunk_sessions" / session["upload_id"]).exists()
+
+    @pytest.mark.asyncio
+    async def test_complete_rejects_wrong_package_hash(self, client, folders, tmp_path):
+        package = Path(self._package(tmp_path)).read_bytes()
+        chunks = (len(package) + self.CHUNK - 1) // self.CHUNK
+        created = self._create(
+            client,
+            {
+                "filename": "pkg.zip",
+                "total_size": len(package),
+                "chunk_size": self.CHUNK,
+                "total_chunks": chunks,
+            },
+        )
+        upload_id = created.json()["upload_id"]
+        for index in range(chunks):
+            client.put(
+                f"/api/data-transfer/import/chunk-session/{upload_id}/chunks/{index}",
+                content=package[index * self.CHUNK : (index + 1) * self.CHUNK],
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        completed = client.post(
+            f"/api/data-transfer/import/chunk-session/{upload_id}/complete",
+            json={"sha256": "f" * 64},
+        )
+        assert completed.status_code == 400
+        assert "integrity" in completed.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_unknown_session_is_404_and_delete_cleans(self, client, folders):
+        missing = client.get("/api/data-transfer/import/chunk-session/deadbeef")
+        assert missing.status_code == 404
+
+        created = self._create(
+            client,
+            {"filename": "x.zip", "total_size": self.CHUNK, "chunk_size": self.CHUNK, "total_chunks": 1},
+        )
+        upload_id = created.json()["upload_id"]
+        gone = client.delete(f"/api/data-transfer/import/chunk-session/{upload_id}")
+        assert gone.json()["deleted"] is True
+        after = client.get(f"/api/data-transfer/import/chunk-session/{upload_id}")
+        assert after.status_code == 404
 
 
 class TestExportStatus:

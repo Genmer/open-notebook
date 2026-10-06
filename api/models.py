@@ -1349,6 +1349,37 @@ class ImportScanConflictItem(BaseModel):
     default_action: Literal["skip", "overwrite"] = "skip"
 
 
+class ChunkSessionCreateRequest(BaseModel):
+    """Start (or resume) a chunked import upload for one zip package."""
+
+    filename: str
+    total_size: int
+    chunk_size: int
+    total_chunks: int
+    # Stable per file (name+size+mtime client-side); the same key resumes its
+    # unfinished session instead of starting from zero.
+    client_key: Optional[str] = None
+
+
+class ChunkSessionResponse(BaseModel):
+    upload_id: str
+    filename: str
+    total_size: int
+    chunk_size: int
+    total_chunks: int
+    uploaded_chunks: List[int] = []
+
+
+class ChunkUploadResponse(BaseModel):
+    received: int
+    size: int
+
+
+class ChunkCompleteRequest(BaseModel):
+    # Optional whole-package integrity check (hex sha256 of the merged zip).
+    sha256: Optional[str] = None
+
+
 class ImportScanResponse(BaseModel):
     scan_id: str
     package_type: Literal["full", "models"]

@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { isAxiosError } from 'axios'
 import {
+  CHUNKED_UPLOAD_THRESHOLD,
   dataTransferApi,
+  type ChunkedUploadProgress,
   type ExportScope,
   type ExportStartInput,
   type ExportStatusResponse,
@@ -126,9 +129,18 @@ export function useUploadImportPackage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { t } = useTranslation()
+  // Byte-level progress for the chunked path only (the single-request path
+  // has no streaming progress with axios).
+  const [uploadProgress, setUploadProgress] = useState<ChunkedUploadProgress | null>(
+    null
+  )
 
-  return useMutation({
-    mutationFn: (file: File) => dataTransferApi.uploadImport(file),
+  const mutation = useMutation({
+    mutationFn: (file: File) =>
+      file.size > CHUNKED_UPLOAD_THRESHOLD
+        ? dataTransferApi.uploadImportChunked(file, setUploadProgress)
+        : dataTransferApi.uploadImport(file),
+    onSettled: () => setUploadProgress(null),
     onSuccess: () => {
       // No success toast: the scan result drives the next UI step (conflict
       // dialog or automatic execute).
@@ -146,6 +158,8 @@ export function useUploadImportPackage() {
       })
     },
   })
+
+  return { ...mutation, uploadProgress }
 }
 
 export function useDeleteExportPackage() {

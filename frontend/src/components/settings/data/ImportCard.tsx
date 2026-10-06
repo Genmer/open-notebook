@@ -164,7 +164,7 @@ function displayWarnings(
 export function ImportCard() {
   const { t } = useTranslation()
   const { data } = useImportStatus()
-  const uploadImport = useUploadImportPackage()
+  const { uploadProgress, ...uploadImport } = useUploadImportPackage()
   const executeImport = useExecuteImport()
 
   const [file, setFile] = useState<File | null>(null)
@@ -370,6 +370,29 @@ export function ImportCard() {
                 </p>
               )}
             </div>
+            {uploadImport.isPending && uploadProgress && (
+              <div className="space-y-1">
+                <Progress
+                  value={
+                    uploadProgress.total > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            (uploadProgress.loaded / uploadProgress.total) * 100
+                          )
+                        )
+                      : 100
+                  }
+                  className="h-1.5"
+                />
+                <p className="text-xs text-muted-foreground" data-testid="upload-progress-label">
+                  {t('dataManagement.import.uploadingPercent', {
+                    loaded: formatBytes(uploadProgress.loaded),
+                    total: formatBytes(uploadProgress.total),
+                  })}
+                </p>
+              </div>
+            )}
             <p className={cn('text-xs', tooLarge ? 'text-destructive' : 'text-muted-foreground')}>
               {t('dataManagement.import.limitHint')}
             </p>

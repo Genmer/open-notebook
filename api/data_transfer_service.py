@@ -5,7 +5,9 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
+import time
 import uuid
 import zipfile
 from contextlib import suppress
@@ -34,7 +36,7 @@ from commands.data_transfer_commands import (
 )
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query, repo_upsert
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.utils.encryption import decrypt_value, get_fernet
 
 EXPORTS_FOLDER = os.path.join(DATA_FOLDER, "exports")
@@ -51,6 +53,218 @@ def pending_zip_path() -> str:
 
 def pending_sidecar_path() -> str:
     return os.path.join(IMPORTS_FOLDER, PENDING_SCAN_SIDECAR_NAME)
+
+
+# --- Chunked import uploads -------------------------------------------------
+#
+# Packages beyond a few dozen MB get fragile on flaky links as one request:
+# any hiccup restarts from zero and the 1 GB middleware ceiling still applies
+# per request. The chunked path splits the file client-side, PUTs 8 MB parts
+# idempotently, and resumes from whatever parts already sit on disk.
+
+CHUNK_SESSIONS_FOLDER = os.path.join(IMPORTS_FOLDER, "chunk_sessions")
+DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
+MIN_CHUNK_SIZE = 512 * 1024
+MAX_CHUNK_SIZE = 64 * 1024 * 1024
+MAX_TOTAL_CHUNKS = 20_000
+# Stale resume sessions older than this are purged whenever a new one starts.
+CHUNK_SESSION_MAX_AGE_S = 24 * 3600
+_UPLOAD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _chunk_session_dir(upload_id: str) -> str:
+    if not _UPLOAD_ID_RE.match(upload_id):
+        raise InvalidInputError("Invalid upload id")
+    return os.path.join(CHUNK_SESSIONS_FOLDER, upload_id)
+
+
+def _chunk_session_meta_path(upload_id: str) -> str:
+    return os.path.join(_chunk_session_dir(upload_id), "session.json")
+
+
+def _read_chunk_session(upload_id: str) -> Dict[str, Any]:
+    meta_path = _chunk_session_meta_path(upload_id)
+    if not os.path.isfile(meta_path):
+        raise NotFoundError(f"Unknown chunk upload session {upload_id}")
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    # Disk is the truth for resume: list the parts that actually landed.
+    parts_dir = _chunk_session_dir(upload_id)
+    uploaded = set()
+    with suppress(OSError):
+        for name in os.listdir(parts_dir):
+            match = re.fullmatch(r"(\d+)\.part", name)
+            if match:
+                uploaded.add(int(match.group(1)))
+    meta["uploaded_chunks"] = sorted(uploaded)
+    return meta
+
+
+def _purge_stale_chunk_sessions() -> None:
+    """Best-effort cleanup of abandoned resume sessions."""
+    now = time.time()
+    with suppress(OSError):
+        for name in os.listdir(CHUNK_SESSIONS_FOLDER):
+            path = os.path.join(CHUNK_SESSIONS_FOLDER, name)
+            try:
+                if now - os.path.getmtime(path) > CHUNK_SESSION_MAX_AGE_S:
+                    shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                continue
+
+
+def create_chunk_session(
+    filename: str,
+    total_size: int,
+    chunk_size: int,
+    total_chunks: int,
+    client_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Start (or resume) a chunked upload; same client_key reuses its session."""
+    _ensure_folders()
+    if not filename.lower().endswith(".zip"):
+        raise InvalidInputError("Import package must be a .zip file")
+    if total_size <= 0:
+        raise InvalidInputError("Import package is empty")
+    if not MIN_CHUNK_SIZE <= chunk_size <= MAX_CHUNK_SIZE:
+        raise InvalidInputError(
+            f"chunk_size must be between {MIN_CHUNK_SIZE} and {MAX_CHUNK_SIZE} bytes"
+        )
+    if total_chunks != (total_size + chunk_size - 1) // chunk_size:
+        raise InvalidInputError("total_chunks does not match total_size/chunk_size")
+    if total_chunks > MAX_TOTAL_CHUNKS:
+        raise InvalidInputError(
+            f"Too many chunks (>{MAX_TOTAL_CHUNKS}); raise chunk_size"
+        )
+
+    os.makedirs(CHUNK_SESSIONS_FOLDER, exist_ok=True)
+    _purge_stale_chunk_sessions()
+
+    meta = {
+        "filename": os.path.basename(filename),
+        "total_size": total_size,
+        "chunk_size": chunk_size,
+        "total_chunks": total_chunks,
+        "client_key": client_key,
+        "created": time.time(),
+    }
+
+    # Resume: an unfinished session for the same client key continues where
+    # it stopped (page refresh, retried dialog, network drop).
+    if client_key:
+        with suppress(OSError):
+            for name in os.listdir(CHUNK_SESSIONS_FOLDER):
+                candidate = os.path.join(CHUNK_SESSIONS_FOLDER, name, "session.json")
+                if not os.path.isfile(candidate):
+                    continue
+                try:
+                    with open(candidate, encoding="utf-8") as f:
+                        existing = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                same_file = (
+                    existing.get("client_key") == client_key
+                    and existing.get("total_size") == total_size
+                    and existing.get("chunk_size") == chunk_size
+                )
+                merged = os.path.join(
+                    CHUNK_SESSIONS_FOLDER, name, PENDING_SCAN_ZIP_NAME
+                )
+                if same_file and not os.path.isfile(merged):
+                    return _read_chunk_session(name)
+
+    upload_id = uuid.uuid4().hex
+    session_dir = _chunk_session_dir(upload_id)
+    os.makedirs(session_dir, exist_ok=True)
+    meta["upload_id"] = upload_id
+    with open(_chunk_session_meta_path(upload_id), "w", encoding="utf-8") as f:
+        json.dump(meta, f)
+    meta["uploaded_chunks"] = []
+    return meta
+
+
+def save_import_chunk(
+    upload_id: str, index: int, data: bytes, sha256_hex: Optional[str]
+) -> Dict[str, Any]:
+    meta = _read_chunk_session(upload_id)
+    if not 0 <= index < meta["total_chunks"]:
+        raise InvalidInputError(f"Chunk index out of range: {index}")
+    if len(data) > meta["chunk_size"]:
+        raise InvalidInputError("Chunk larger than the declared chunk_size")
+    expected_last = meta["total_size"] - meta["chunk_size"] * (meta["total_chunks"] - 1)
+    if index == meta["total_chunks"] - 1 and len(data) != expected_last:
+        raise InvalidInputError(
+            "Final chunk size mismatch: the file changed while uploading?"
+        )
+    if sha256_hex:
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != sha256_hex.lower():
+            raise InvalidInputError(
+                f"Chunk {index} failed integrity check; please resend it"
+            )
+    part_path = os.path.join(_chunk_session_dir(upload_id), f"{index:06d}.part")
+    tmp_path = f"{part_path}.tmp"
+    with open(tmp_path, "wb") as out:
+        out.write(data)
+    os.replace(tmp_path, part_path)
+    return {"received": index, "size": len(data)}
+
+
+def _merge_chunk_session(upload_id: str, meta: Dict[str, Any]) -> str:
+    session_dir = _chunk_session_dir(upload_id)
+    merged_tmp = os.path.join(session_dir, f".{PENDING_SCAN_ZIP_NAME}.tmp")
+    written = 0
+    with open(merged_tmp, "wb") as out:
+        for index in range(meta["total_chunks"]):
+            part_path = os.path.join(session_dir, f"{index:06d}.part")
+            with open(part_path, "rb") as part:
+                shutil.copyfileobj(part, out)
+                written += part.tell()
+    if written != meta["total_size"]:
+        os.unlink(merged_tmp)
+        raise InvalidInputError(
+            f"Merged size {written} != declared {meta['total_size']}"
+        )
+    return merged_tmp
+
+
+async def complete_chunk_session(
+    upload_id: str, sha256_hex: Optional[str] = None
+) -> ImportScanResponse:
+    """Merge all parts into the pending slot, scan it, drop the session."""
+    meta = _read_chunk_session(upload_id)
+    missing = [
+        index
+        for index in range(meta["total_chunks"])
+        if not os.path.isfile(
+            os.path.join(_chunk_session_dir(upload_id), f"{index:06d}.part")
+        )
+    ]
+    if missing:
+        raise InvalidInputError(
+            f"Cannot complete: {len(missing)} chunk(s) missing "
+            f"(first missing: {missing[0]})"
+        )
+    merged_tmp = await asyncio.to_thread(_merge_chunk_session, upload_id, meta)
+    if sha256_hex:
+        actual = await asyncio.to_thread(_file_sha256, merged_tmp)
+        if actual != sha256_hex.lower():
+            with suppress(OSError):
+                os.unlink(merged_tmp)
+            raise InvalidInputError("Package integrity check failed (sha256 mismatch)")
+    await asyncio.to_thread(
+        os.replace, merged_tmp, pending_zip_path()
+    )
+    shutil.rmtree(_chunk_session_dir(upload_id), ignore_errors=True)
+    return await scan_import_package(pending_zip_path())
+
+
+def delete_chunk_session(upload_id: str) -> bool:
+    session_dir = _chunk_session_dir(upload_id)
+    if not os.path.isdir(session_dir):
+        return False
+    shutil.rmtree(session_dir, ignore_errors=True)
+    return True
 
 
 # state.progress.stage fallbacks for when the command record is gone (the

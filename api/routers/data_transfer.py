@@ -1,14 +1,19 @@
 """Data export/import endpoints (/api/data-transfer/*)."""
 
+import asyncio
 import os
 from typing import List, Optional
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
 
 import api.data_transfer_service as data_transfer_service
 from api.models import (
+    ChunkCompleteRequest,
+    ChunkSessionCreateRequest,
+    ChunkSessionResponse,
+    ChunkUploadResponse,
     DataTransferStartResponse,
     ExportEstimateResponse,
     ExportStartRequest,
@@ -136,6 +141,123 @@ async def upload_import_package(file: UploadFile = File(...)):
         logger.error(f"Failed to scan import package: {e}")
         logger.exception(e)
         raise HTTPException(status_code=500, detail=f"Failed to scan package: {e}")
+
+
+@router.post(
+    "/data-transfer/import/chunk-session", response_model=ChunkSessionResponse
+)
+async def create_chunk_session(request: ChunkSessionCreateRequest):
+    """Start (or resume) a chunked upload; same client_key resumes in place."""
+    try:
+        meta = await asyncio.to_thread(
+            data_transfer_service.create_chunk_session,
+            request.filename,
+            request.total_size,
+            request.chunk_size,
+            request.total_chunks,
+            request.client_key,
+        )
+        return ChunkSessionResponse(
+            upload_id=meta["upload_id"],
+            filename=meta["filename"],
+            total_size=meta["total_size"],
+            chunk_size=meta["chunk_size"],
+            total_chunks=meta["total_chunks"],
+            uploaded_chunks=meta.get("uploaded_chunks", []),
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create chunk session: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {e}")
+
+
+@router.get(
+    "/data-transfer/import/chunk-session/{upload_id}",
+    response_model=ChunkSessionResponse,
+)
+async def get_chunk_session(upload_id: str):
+    try:
+        meta = await asyncio.to_thread(
+            data_transfer_service._read_chunk_session, upload_id
+        )
+        return ChunkSessionResponse(
+            upload_id=meta["upload_id"],
+            filename=meta["filename"],
+            total_size=meta["total_size"],
+            chunk_size=meta["chunk_size"],
+            total_chunks=meta["total_chunks"],
+            uploaded_chunks=meta.get("uploaded_chunks", []),
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to read chunk session: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to read session: {e}")
+
+
+@router.delete("/data-transfer/import/chunk-session/{upload_id}")
+async def delete_chunk_session(upload_id: str):
+    try:
+        deleted = await asyncio.to_thread(
+            data_transfer_service.delete_chunk_session, upload_id
+        )
+        return {"deleted": deleted}
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete chunk session: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {e}")
+
+
+@router.put(
+    "/data-transfer/import/chunk-session/{upload_id}/chunks/{index}",
+    response_model=ChunkUploadResponse,
+)
+async def upload_import_chunk(
+    upload_id: str,
+    index: int,
+    data: bytes = Body(..., media_type="application/octet-stream"),
+    x_chunk_sha256: Optional[str] = Header(None),
+):
+    """Upload one chunk (idempotent overwrite); integrity checked when the
+    X-Chunk-Sha256 header is provided."""
+    try:
+        result = await asyncio.to_thread(
+            data_transfer_service.save_import_chunk,
+            upload_id,
+            index,
+            data,
+            x_chunk_sha256,
+        )
+        return ChunkUploadResponse(**result)
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to save chunk {index}: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to save chunk: {e}")
+
+
+@router.post(
+    "/data-transfer/import/chunk-session/{upload_id}/complete",
+    response_model=ImportScanResponse,
+)
+async def complete_chunk_session(upload_id: str, request: ChunkCompleteRequest):
+    """Merge all chunks into the pending slot, scan it, drop the session."""
+    try:
+        return await data_transfer_service.complete_chunk_session(
+            upload_id, request.sha256
+        )
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to complete chunk session: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=f"Failed to complete upload: {e}")
 
 
 @router.post("/data-transfer/import/execute", response_model=DataTransferStartResponse)
