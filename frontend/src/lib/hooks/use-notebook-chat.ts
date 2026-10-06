@@ -41,6 +41,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
   // Pending agent binding (PDR-004); mutually exclusive with the model override
   const [pendingAgentOverride, setPendingAgentOverride] = useState<string | null>(null)
+  // Pending project env binding (软考项目环境); independent of both
+  const [pendingProjectEnv, setPendingProjectEnv] = useState<string | null>(null)
   // Parallel answers (PDR-004): live fan-out state shared with the composer
   const parallel = useParallelChat()
   // Single-run token streaming: the accumulating text lives in its own state
@@ -192,12 +194,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         title: defaultTitle,
         // Include pending model override when creating session
         model_override: pendingModelOverride ?? undefined,
-        agent: pendingAgentOverride ?? undefined
+        agent: pendingAgentOverride ?? undefined,
+        project_env: pendingProjectEnv ?? undefined
       })
       setCurrentSessionId(newSession.id)
       // Clear pending bindings now that they are applied to the session
       setPendingModelOverride(null)
       setPendingAgentOverride(null)
+      setPendingProjectEnv(null)
       queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
       })
@@ -207,7 +211,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
       return null
     }
-  }, [currentSessionId, notebookId, pendingModelOverride, pendingAgentOverride, queryClient, t])
+  }, [currentSessionId, notebookId, pendingModelOverride, pendingAgentOverride, pendingProjectEnv, queryClient, t])
 
   // Send message (token-streamed over SSE; /chat/execute stays as the
   // compatibility/rollback path on the backend). Signature unchanged.
@@ -358,11 +362,12 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setCurrentSessionId(sessionId)
   }, [])
 
-  // Create session
-  const createSession = useCallback((title?: string) => {
+  // Create session (optionally bound to a project env right away)
+  const createSession = useCallback((title?: string, projectEnv?: string) => {
     return createSessionMutation.mutate({
       notebook_id: notebookId,
-      title
+      title,
+      project_env: projectEnv
     })
   }, [createSessionMutation, notebookId])
 
@@ -410,6 +415,18 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   }, [currentSessionId, updateSessionMutation])
 
+  // Set project env binding (软考项目环境) - independent of agent/model.
+  const setProjectEnv = useCallback((env: string | null) => {
+    if (currentSessionId) {
+      updateSessionMutation.mutate({
+        sessionId: currentSessionId,
+        data: { project_env: env }
+      })
+    } else {
+      setPendingProjectEnv(env)
+    }
+  }, [currentSessionId, updateSessionMutation])
+
   // Update token/char counts when context selections change
   useEffect(() => {
     const updateContextCounts = async () => {
@@ -437,6 +454,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     charCount,
     pendingModelOverride,
     pendingAgentOverride,
+    pendingProjectEnv,
 
     // Actions
     createSession,
@@ -447,6 +465,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     stopStreaming,
     setModelOverride,
     setAgentOverride,
+    setProjectEnv,
     parallel,
     sendParallelMessage,
     synthesizeParallel,

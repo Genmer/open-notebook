@@ -35,6 +35,7 @@ import { GeminiStudioColumn } from '@/app/(dashboard)/notebooks/components/Gemin
 import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
+import { ChatProjectEnv } from '@/components/project-envs/ChatProjectEnv'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
@@ -70,6 +71,11 @@ interface ChatPanelProps {
   // the plain model selector for the agent/model participant picker.
   agent?: string | null
   onAgentChange?: (agent: string | null) => void
+  // Project environment binding (软考项目环境): rendered only when the change
+  // handler is provided — keeps legacy test renders provider-free.
+  projectEnv?: string | null
+  onProjectEnvChange?: (env: string | null) => void
+  onNewSessionWithEnv?: (env: string) => void
   // Parallel answers (PDR-004, notebook chat only): live fan-out state plus
   // send/synthesize handlers. Absent on source chats.
   parallelChat?: {
@@ -126,6 +132,9 @@ export function ChatPanel({
   onModelChange,
   agent,
   onAgentChange,
+  projectEnv,
+  onProjectEnvChange,
+  onNewSessionWithEnv,
   parallelChat,
   sessions = [],
   currentSessionId,
@@ -409,6 +418,16 @@ export function ChatPanel({
           />
         )}
 
+        {/* Project environment binding (软考项目环境) */}
+        {onProjectEnvChange && (
+          <ChatProjectEnv
+            envId={projectEnv ?? null}
+            onBind={onProjectEnvChange}
+            onNewSessionWithEnv={onNewSessionWithEnv}
+            disabled={isStreaming}
+          />
+        )}
+
         {/* Input Area */}
         <ChatComposer
           onSendMessage={onSendMessage}
@@ -416,6 +435,7 @@ export function ChatPanel({
           onAgentChange={onAgentChange}
           parallelChat={parallelChat}
           isStreaming={isStreaming}
+          onStopStreaming={onStopStreaming}
           modelOverride={modelOverride}
           onModelChange={onModelChange}
         />
@@ -591,6 +611,9 @@ function ChatFullscreenPanels({
 interface ChatComposerProps {
   onSendMessage: (message: string, modelOverride?: string) => void
   isStreaming: boolean
+  // While streaming, the send button becomes a clickable stop button that
+  // aborts the in-flight stream. Absent when the chat has no abortable request.
+  onStopStreaming?: () => void
   modelOverride?: string
   onModelChange?: (model?: string) => void
   agent?: string | null
@@ -604,6 +627,7 @@ interface ChatComposerProps {
 function ChatComposer({
   onSendMessage,
   isStreaming,
+  onStopStreaming,
   modelOverride,
   onModelChange,
   agent,
@@ -738,13 +762,19 @@ function ChatComposer({
           />
         )}
         <Button
-          onClick={handleSend}
-          disabled={!input.trim() || isStreaming}
+          onClick={isStreaming ? onStopStreaming : handleSend}
+          disabled={isStreaming ? !onStopStreaming : !input.trim()}
           size="icon"
           className="h-[40px] w-[40px] flex-shrink-0"
+          aria-label={isStreaming && onStopStreaming ? t('chat.streamStop') : undefined}
+          title={isStreaming && onStopStreaming ? t('chat.streamStop') : undefined}
         >
           {isStreaming ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            onStopStreaming ? (
+              <Square className="h-4 w-4" />
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )
           ) : (
             <Send className="h-4 w-4" />
           )}

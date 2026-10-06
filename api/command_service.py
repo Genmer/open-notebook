@@ -27,6 +27,7 @@ class CommandService:
                 import commands.classification_commands  # noqa: F401
                 import commands.data_transfer_commands  # noqa: F401
                 import commands.podcast_commands  # noqa: F401
+                import commands.project_env_commands  # noqa: F401
             except ImportError as import_err:
                 logger.error(f"Failed to import command modules: {import_err}")
                 raise ValueError("Command modules not available")

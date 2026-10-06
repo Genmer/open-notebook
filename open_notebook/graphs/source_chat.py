@@ -32,6 +32,8 @@ class SourceChatState(TypedDict):
     context: Optional[str]
     model_override: Optional[str]
     context_indicators: Optional[Dict[str, List[str]]]
+    # Verified project environment text resolved by the API layer (软考项目环境)
+    project_env_context: Optional[str]
 
 
 def _source_content_is_available(
@@ -142,6 +144,7 @@ def _call_model_with_source_context_inner(
         "insights": [insight.model_dump() for insight in insights] if insights else [],
         "context": formatted_context,
         "context_indicators": context_indicators,
+        "project_env_context": state.get("project_env_context"),
     }
 
     # Apply the source_chat prompt template

@@ -122,6 +122,9 @@ export function ChatColumn({
       onModelChange={(model) => chat.setModelOverride(model ?? null)}
       agent={chat.currentSession?.agent ?? chat.pendingAgentOverride ?? null}
       onAgentChange={(agentId) => chat.setAgentOverride(agentId ?? null)}
+      projectEnv={chat.currentSession?.project_env ?? chat.pendingProjectEnv ?? null}
+      onProjectEnvChange={(envId) => chat.setProjectEnv(envId)}
+      onNewSessionWithEnv={(envId) => chat.createSession(undefined, envId)}
       parallelChat={{
         phase: chat.parallel.phase,
         runs: chat.parallel.runs,

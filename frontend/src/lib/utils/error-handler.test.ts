@@ -57,3 +57,31 @@ describe('getApiErrorMessage', () => {
     expect(getApiErrorMessage('Something specific', t, 'common.error')).toBe('Something specific')
   })
 })
+
+describe('formatApiError structured detail objects', () => {
+  // FastAPI 422s from project-env endpoints carry {"detail": {"message": ...,
+  // "reason": ...}} — the message must surface instead of the English generic
+  // fallback, or users see "An unexpected error occurred" over Chinese guidance.
+  it('extracts detail.message from a structured axios-like error', () => {
+    const error = {
+      response: {
+        data: { detail: { message: '请先在 notebook 导入资料', reason: 'knowledge_base_empty' } },
+      },
+    }
+    expect(getApiErrorMessage(error, t, 'projectEnvs.mockGenerateFailed')).toBe(
+      '请先在 notebook 导入资料'
+    )
+  })
+
+  it('extracts detail.message from a bare structured error object', () => {
+    expect(getApiErrorMessage({ detail: { message: '结构化提示' } }, t)).toBe('结构化提示')
+  })
+
+  it('keeps the generic fallback for object details without a string message', () => {
+    // The hardcoded English fallback passes through unmapped — pre-existing
+    // behavior; the point here is it does NOT leak detail.reason.
+    expect(getApiErrorMessage({ response: { data: { detail: { reason: 'x' } } } }, t)).toBe(
+      'An unexpected error occurred'
+    )
+  })
+})

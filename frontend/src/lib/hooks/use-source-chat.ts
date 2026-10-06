@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { sourceChatApi } from '@/lib/api/source-chat'
+import { chatApi } from '@/lib/api/chat'
 import {
   SourceChatSession,
   SourceChatMessage,
@@ -21,6 +22,10 @@ export function useSourceChat(sourceId: string) {
   const [messages, setMessages] = useState<SourceChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [contextIndicators, setContextIndicators] = useState<SourceChatContextIndicator | null>(null)
+  // Pending project env binding (软考项目环境): the source-chat create
+  // endpoint has no project_env field, so it is applied right after the
+  // session auto-creates via the unified /chat/sessions PUT.
+  const [pendingProjectEnv, setPendingProjectEnv] = useState<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // Fetch sessions
@@ -114,6 +119,16 @@ export function useSourceChat(sourceId: string) {
         const newSession = await sourceChatApi.createSession(sourceId, { title: defaultTitle })
         sessionId = newSession.id
         setCurrentSessionId(sessionId)
+        if (pendingProjectEnv) {
+          // Best-effort backfill through the unified chat endpoint; a
+          // failure here must not block the message send.
+          try {
+            await chatApi.updateSession(sessionId, { project_env: pendingProjectEnv })
+          } catch (bindError) {
+            console.error('Failed to bind project env to new session:', bindError)
+          }
+          setPendingProjectEnv(null)
+        }
         queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
       } catch (err: unknown) {
         const error = err as { response?: { data?: { detail?: string } }, message?: string };
@@ -211,7 +226,7 @@ export function useSourceChat(sourceId: string) {
       // Refetch session to get persisted messages
       refetchCurrentSession()
     }
-  }, [sourceId, currentSessionId, refetchCurrentSession, queryClient, t])
+  }, [sourceId, currentSessionId, pendingProjectEnv, refetchCurrentSession, queryClient, t])
 
   // Cancel streaming
   const cancelStreaming = useCallback(() => {
@@ -242,6 +257,40 @@ export function useSourceChat(sourceId: string) {
     return deleteSessionMutation.mutate(sessionId)
   }, [deleteSessionMutation])
 
+  // Set project env binding: existing sessions go through the unified
+  // /chat/sessions PUT (the source-chat PUT has no project_env field).
+  const setProjectEnv = useCallback((env: string | null) => {
+    if (currentSessionId) {
+      chatApi
+        .updateSession(currentSessionId, { project_env: env })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
+          queryClient.invalidateQueries({ queryKey: ['sourceChatSession', sourceId, currentSessionId] })
+        })
+        .catch((err: unknown) => {
+          const error = err as { response?: { data?: { detail?: string } }, message?: string }
+          toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToUpdateSession'))
+        })
+    } else {
+      setPendingProjectEnv(env)
+    }
+  }, [currentSessionId, queryClient, sourceId, t])
+
+  // Create a fresh session already bound to a project env (switch-dialog
+  // "new session" option).
+  const createSessionWithProjectEnv = useCallback(async (envId: string) => {
+    try {
+      const newSession = await sourceChatApi.createSession(sourceId, {})
+      await chatApi.updateSession(newSession.id, { project_env: envId })
+      setCurrentSessionId(newSession.id)
+      setPendingProjectEnv(null)
+      queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string }
+      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
+    }
+  }, [sourceId, queryClient, t])
+
   return {
     // State
     sessions,
@@ -251,7 +300,8 @@ export function useSourceChat(sourceId: string) {
     isStreaming,
     contextIndicators,
     loadingSessions,
-    
+    pendingProjectEnv,
+
     // Actions
     createSession,
     updateSession,
@@ -259,6 +309,8 @@ export function useSourceChat(sourceId: string) {
     switchSession,
     sendMessage,
     cancelStreaming,
+    setProjectEnv,
+    createSessionWithProjectEnv,
     refetchSessions
   }
 }

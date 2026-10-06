@@ -266,6 +266,186 @@ export interface APIError {
   detail: string
 }
 
+// Project environment types (软考项目环境) — mirror of the backend
+// ProjectEnvResponse family in api/models.py.
+export type ProjectEnvSourceType = 'real' | 'mock'
+export type ProjectEnvStatus = 'pending' | 'verified' | 'needs_review' | 'failed'
+
+export interface ProjectEnvAiAssisted {
+  polish_count?: number
+  last_polished_at?: string
+}
+
+export interface ProjectEnvTimeAdjusted {
+  from: { period_start: string; period_end: string }
+  to: { period_start: string; period_end: string }
+  reason?: string
+}
+
+export interface ProjectEnvTimeWarning {
+  rule: string
+  severity: string
+  message: string
+  params?: Record<string, unknown>
+}
+
+export interface ProjectEnvVerificationProgress {
+  stage?: string
+  percent?: number
+  message?: string
+  error?: string | null
+  updated?: string
+}
+
+export interface ProjectEnv {
+  id: string
+  name: string
+  background: string
+  period_start: string
+  period_end: string
+  source_type: ProjectEnvSourceType
+  keywords: string[] | null
+  tech_background: string
+  tuning_process: string | null
+  problems_solutions: string | null
+  my_role: string | null
+  scale: string | null
+  status: ProjectEnvStatus | string
+  ai_assisted: ProjectEnvAiAssisted | null
+  time_adjusted: ProjectEnvTimeAdjusted | null
+  time_warnings: ProjectEnvTimeWarning[]
+  pending_claims_count: number
+  session_ref_count: number
+  verification_progress: ProjectEnvVerificationProgress | null
+  has_snapshot: boolean
+  active_job_id: string | null
+  created: string
+  updated: string
+}
+
+export interface CreateProjectEnvRequest {
+  name: string
+  background: string
+  period_start: string
+  period_end: string
+  source_type: ProjectEnvSourceType
+  keywords?: string[]
+  tech_background: string
+  tuning_process?: string | null
+  problems_solutions?: string | null
+  my_role?: string | null
+  scale?: string | null
+  background_ai_polished?: boolean
+}
+
+export interface UpdateProjectEnvRequest {
+  name?: string
+  background?: string
+  period_start?: string
+  period_end?: string
+  source_type?: ProjectEnvSourceType
+  keywords?: string[]
+  tech_background?: string
+  tuning_process?: string | null
+  problems_solutions?: string | null
+  my_role?: string | null
+  scale?: string | null
+}
+
+export interface MockGenerateRequest {
+  name?: string
+  keywords: string[]
+  period_start?: string
+  period_end?: string
+}
+
+export interface MockGenerateResponse {
+  id: string
+  job_id: string
+}
+
+export interface PolishBackgroundRequest {
+  background: string
+  name?: string
+  tech_background?: string
+}
+
+export interface PolishBackgroundResponse {
+  polished: string
+}
+
+export interface ProjectEnvLaneResult {
+  verdict: string
+  issues?: string[]
+}
+
+export type ProjectEnvLane = 'A' | 'B' | 'C'
+export type ProjectEnvLanes = Partial<Record<ProjectEnvLane, ProjectEnvLaneResult>>
+
+export interface ProjectEnvClaimRound {
+  round: number
+  action: string
+  lane_results?: ProjectEnvLanes
+  corrected_text?: string
+  verdict: string
+}
+
+export type ProjectEnvPointState =
+  | 'pending'
+  | 'passed'
+  | 'manual_review'
+  | 'dismissed'
+  | 'rewritten'
+  | 'exempt'
+  | 'error'
+
+export interface ProjectEnvClaimPoint {
+  point_id: string
+  quote: string
+  field: string
+  type?: string
+  state: ProjectEnvPointState | string
+  manual_reason?: string
+  lanes?: ProjectEnvLanes
+  rounds?: ProjectEnvClaimRound[]
+}
+
+export interface ProjectEnvVerificationSummary {
+  total?: number
+  passed?: number
+  failed?: number
+  manual?: number
+  uncovered?: number
+}
+
+export interface ProjectEnvVerificationStatus {
+  status: ProjectEnvStatus | string
+  job?: { id: string; status?: string; error_message?: string | null } | null
+  progress?: ProjectEnvVerificationProgress | null
+  summary?: ProjectEnvVerificationSummary | null
+  points: ProjectEnvClaimPoint[]
+  degraded?: Record<string, unknown> | null
+}
+
+export interface RewriteClaimRequest {
+  text: string
+}
+
+export interface RewriteClaimResponse {
+  passed: boolean
+  lanes: ProjectEnvLanes
+  env: ProjectEnv
+}
+
+export interface ReverifyResponse {
+  job_id: string
+}
+
+export interface ProjectEnvDeleteResponse {
+  success: boolean
+  affected_sessions: number
+}
+
 // Source Chat Types
 // Base session interface with common fields
 export interface BaseChatSession {
@@ -276,6 +456,7 @@ export interface BaseChatSession {
   message_count?: number
   model_override?: string | null
   agent?: string | null
+  project_env?: string | null
 }
 
 export interface SourceChatSession extends BaseChatSession {
@@ -356,12 +537,14 @@ export interface CreateNotebookChatSessionRequest {
   title?: string
   model_override?: string
   agent?: string
+  project_env?: string
 }
 
 export interface UpdateNotebookChatSessionRequest {
   title?: string
   model_override?: string | null
   agent?: string | null
+  project_env?: string | null
 }
 
 export interface SendNotebookChatMessageRequest {

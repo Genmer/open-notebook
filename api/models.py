@@ -1571,3 +1571,106 @@ class PolishPromptRequest(BaseModel):
 
 class PolishPromptResponse(BaseModel):
     polished: str = Field(..., description="Polished, ready-to-use system prompt")
+
+
+# Project environment API models (软考项目环境)
+class ProjectEnvCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    background: str = Field("", description="Project background narrative")
+    period_start: str = Field(..., description="Project start month, YYYY.MM")
+    period_end: str = Field(..., description="Project end month, YYYY.MM")
+    source_type: str = Field(..., description="'real' or 'mock'")
+    keywords: Optional[List[str]] = Field(None, description="Domain keywords")
+    tech_background: str = Field("", description="Technical background narrative")
+    tuning_process: Optional[str] = None
+    problems_solutions: Optional[str] = None
+    my_role: Optional[str] = None
+    scale: Optional[str] = None
+    background_ai_polished: bool = Field(
+        False, description="Background text came from the polish endpoint"
+    )
+
+
+class ProjectEnvUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    background: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    source_type: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    tech_background: Optional[str] = None
+    tuning_process: Optional[str] = None
+    problems_solutions: Optional[str] = None
+    my_role: Optional[str] = None
+    scale: Optional[str] = None
+
+
+class ProjectEnvResponse(BaseModel):
+    id: str
+    name: str
+    background: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    source_type: str
+    keywords: Optional[List[str]] = None
+    tech_background: str = ""
+    tuning_process: Optional[str] = None
+    problems_solutions: Optional[str] = None
+    my_role: Optional[str] = None
+    scale: Optional[str] = None
+    status: str
+    ai_assisted: Optional[Dict[str, Any]] = None
+    time_adjusted: Optional[Dict[str, Any]] = None
+    time_warnings: List[Dict[str, Any]] = Field(default_factory=list)
+    pending_claims_count: int = 0
+    session_ref_count: int = 0
+    verification_progress: Optional[Dict[str, Any]] = None
+    has_snapshot: bool = False
+    active_job_id: Optional[str] = None
+    created: str = ""
+    updated: str = ""
+
+
+class MockGenerateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=100)
+    keywords: List[str] = Field(..., min_length=2, max_length=8)
+    period_start: Optional[str] = Field(None, description="YYYY.MM, optional")
+    period_end: Optional[str] = Field(None, description="YYYY.MM, optional")
+
+
+class MockGenerateResponse(BaseModel):
+    id: str
+    job_id: str
+
+
+class PolishBackgroundRequest(BaseModel):
+    background: str = Field(..., min_length=1, max_length=8000)
+    name: Optional[str] = Field(None, max_length=100)
+    tech_background: Optional[str] = Field(None, max_length=4000)
+
+
+class PolishBackgroundResponse(BaseModel):
+    polished: str
+
+
+class VerificationStatusResponse(BaseModel):
+    status: str
+    job: Optional[Dict[str, Any]] = None
+    progress: Optional[Dict[str, Any]] = None
+    summary: Optional[Dict[str, Any]] = None
+    points: List[Dict[str, Any]] = Field(default_factory=list)
+    degraded: Optional[Dict[str, Any]] = None
+
+
+class ReverifyResponse(BaseModel):
+    job_id: str
+
+
+class RewriteClaimRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
+class RewriteClaimResponse(BaseModel):
+    passed: bool
+    lanes: Dict[str, Any]
+    env: ProjectEnvResponse

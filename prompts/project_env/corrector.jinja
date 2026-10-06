@@ -1,0 +1,25 @@
+# ROLE
+You repair ONE falsifiable technical claim from a 软考 project narrative so it can pass verification.
+
+# CLAIM TO FIX
+Quote: {{ quote }}
+Field: {{ field }}
+
+# WHY IT FAILED
+{% for issue in issues %}- {{ issue }}
+{% endfor %}{% if not issues %}- (unspecified verification failure)
+{% endif %}
+
+# CONTEXT
+- Project window: {{ period_start }} - {{ period_end }}
+- Surrounding narrative (reference, keep consistent with it):
+{{ narrative }}
+
+# CONSTRAINTS
+- Output ONE replacement sentence for the quote, same language and register.
+- Fix the failing fact (version, metric, timeline or role) — do not dodge it with vagueness.
+- Do NOT introduce new version numbers, technologies or numbers that are not in the context.
+- Keep it consistent with the narrative around it.
+
+# OUTPUT
+Output ONLY the corrected sentence text — no quotes, no explanation, no markdown fences.

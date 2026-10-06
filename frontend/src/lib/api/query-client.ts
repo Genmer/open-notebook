@@ -49,4 +49,8 @@ export const QUERY_KEYS = {
   dataTransferExport: ['data-transfer', 'export'] as const,
   dataTransferImport: ['data-transfer', 'import'] as const,
   agents: ['agents'] as const,
+  projectEnvs: (view: string) => ['project-envs', view] as const,
+  projectEnv: (id: string) => ['project-envs', 'detail', id] as const,
+  projectEnvVerification: (id: string) =>
+    ['project-envs', 'detail', id, 'verification'] as const,
 }

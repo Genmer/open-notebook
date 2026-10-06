@@ -47,6 +47,7 @@ RETRYABLE_COMMANDS: frozenset[str] = frozenset(
         "process_source",
         "rebuild_embeddings",
         "run_transformation",
+        "verify_project_env",
     }
 )
 # The import worker deletes the uploaded package on permanent failure, so a

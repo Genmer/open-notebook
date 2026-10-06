@@ -1,0 +1,34 @@
+-- Migration 35: project environments (软考论文写作项目环境).
+-- project_env holds a verified project setting injected into chat prompts;
+-- sessions reference it by id string in chat_session.project_env (same shape
+-- as chat_session.agent, migration 34). Deletion is hard: verification detail
+-- rows go with the project, dangling session bindings degrade at injection
+-- time. project_env_verification is the per-run detail log (SCHEMALESS).
+DEFINE TABLE IF NOT EXISTS project_env SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS background ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS period_start ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS period_end ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS source_type ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS keywords ON TABLE project_env FLEXIBLE TYPE option<array>;
+DEFINE FIELD IF NOT EXISTS tech_background ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS tuning_process ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS problems_solutions ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS my_role ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS scale ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE project_env TYPE string;
+DEFINE FIELD IF NOT EXISTS draft_content ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS verified_snapshot ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS pending_claims ON TABLE project_env FLEXIBLE TYPE option<array>;
+DEFINE FIELD IF NOT EXISTS time_adjusted ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS ai_assisted ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS verification_progress ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS verification_token ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS active_job_id ON TABLE project_env TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE project_env DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE project_env DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_pe_status ON TABLE project_env FIELDS status;
+DEFINE INDEX IF NOT EXISTS idx_pe_updated ON TABLE project_env FIELDS updated;
+DEFINE TABLE IF NOT EXISTS project_env_verification SCHEMALESS;
+DEFINE INDEX IF NOT EXISTS idx_pev_env ON TABLE project_env_verification FIELDS project_env;
+DEFINE FIELD IF NOT EXISTS project_env ON TABLE chat_session TYPE option<string>;

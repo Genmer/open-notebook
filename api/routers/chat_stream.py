@@ -36,6 +36,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.project_env_service import render_project_env_context
 from api.routers._chat_shared import (
     extract_chat_messages,
     get_session_or_404,
@@ -184,6 +185,10 @@ async def stream_chat(session_id: str, request: StreamChatRequest) -> StreamingR
     state_values["agent_name"] = agent.name if agent else None
     state_values["agent_temperature"] = agent.temperature if agent else None
     state_values["agent_max_tokens"] = agent.max_tokens if agent else None
+    env_context = await render_project_env_context(
+        getattr(session, "project_env", None)
+    )
+    state_values["project_env_context"] = env_context["text"] if env_context else None
     state_values["messages"].append(HumanMessage(content=request.message))
 
     config = RunnableConfig(

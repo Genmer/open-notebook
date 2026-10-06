@@ -98,12 +98,17 @@ export function getApiErrorMessage(
 export function formatApiError(error: unknown): string {
   if (typeof error === 'string') return error;
   
-  const err = error as { response?: { data?: { detail?: string } }, detail?: string, message?: string };
+  const err = error as { response?: { data?: { detail?: unknown } }, detail?: unknown, message?: string };
   const detail = err?.response?.data?.detail || err?.detail || err?.message;
-  
+
   if (typeof detail === 'string') {
     return detail; // We'll handle the actual translation using the key in the hook/component
   }
-  
+
+  // Structured FastAPI errors carry user-facing guidance as {"message": ..., "reason": ...}
+  if (detail && typeof detail === 'object' && typeof (detail as { message?: unknown }).message === 'string') {
+    return (detail as { message: string }).message;
+  }
+
   return "An unexpected error occurred";
 }

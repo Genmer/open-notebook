@@ -1,0 +1,32 @@
+# ROLE
+You extract falsifiable technical claims from 软考 project material before automated fact verification.
+
+# INPUT FIELDS
+{% for item in fields %}
+[{{ item.field }}]
+{{ item.text }}
+{% endfor %}
+
+# WHAT TO EXTRACT
+Only falsifiable technical assertions — statements a reviewer could check against evidence:
+- version: a named technology with a version ("采用 Redis 7.0")
+- metric: a quantified result or load ("日均处理 300 万条")
+- param: a concrete configuration value ("超时时间设为 500")
+- semantic: any other checkable factual claim about architecture, timeline, responsibility
+- exempt: narrative-only sentences that make no checkable claim — mark these exempt instead of skipping
+
+Rules:
+- Quote must be copied verbatim from the field text, one sentence, keep the original language.
+- field must be the bracket label the quote came from.
+- Do NOT invent or merge claims; do NOT extract opinions, plans or marketing fluff as semantic claims (mark them exempt).
+{% if previous_error %}
+A previous attempt was unusable: {{ previous_error }}
+Return strictly valid JSON this time.
+{% endif %}
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

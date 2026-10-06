@@ -691,7 +691,8 @@ describe('ChatPanel live stream window', () => {
     expect(win.textContent).not.toContain('A'.repeat(130))
   })
 
-  it('invokes onStopStreaming from the stop button', () => {
+  it('invokes onStopStreaming from the stop buttons', () => {
+    const onSendMessage = vi.fn()
     const onStopStreaming = vi.fn()
     render(
       <ChatPanel
@@ -699,13 +700,20 @@ describe('ChatPanel live stream window', () => {
         isStreaming={true}
         streamingMessage={{ content: 'partial' }}
         contextIndicators={null}
-        onSendMessage={vi.fn()}
+        onSendMessage={onSendMessage}
         onStopStreaming={onStopStreaming}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'chat.streamStop' }))
+    // Two streamStop buttons share the label: the streaming bar's small one
+    // and the composer's send-turned-stop button. Both must be clickable.
+    const stopButtons = screen.getAllByRole('button', { name: 'chat.streamStop' })
+    expect(stopButtons).toHaveLength(2)
+    stopButtons.forEach((button) => expect(button).not.toBeDisabled())
+    fireEvent.click(stopButtons[stopButtons.length - 1])
+
     expect(onStopStreaming).toHaveBeenCalledTimes(1)
+    expect(onSendMessage).not.toHaveBeenCalled()
   })
 
   it('renders no stop button when interruption is not supported', () => {

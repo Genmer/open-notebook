@@ -43,6 +43,7 @@ from api.routers import (
     notebooks,
     notes,
     podcasts,
+    project_envs,
     providers,
     search,
     settings,
@@ -406,6 +407,7 @@ async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
 
 # Include routers
 app.include_router(agents.router, prefix="/api", tags=["agents"])
+app.include_router(project_envs.router, prefix="/api", tags=["project-envs"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])

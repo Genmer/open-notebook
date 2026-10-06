@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.project_env_service import render_project_env_context
 from api.routers._chat_shared import (
     ChatMessage,
     SuccessResponse,
@@ -67,6 +68,9 @@ class SourceChatSessionResponse(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Model override for this session"
     )
+    project_env: Optional[str] = Field(
+        None, description="Project env binding for this session (软考项目环境)"
+    )
     created: str = Field(..., description="Creation timestamp")
     updated: str = Field(..., description="Last update timestamp")
     message_count: Optional[int] = Field(
@@ -117,6 +121,7 @@ async def create_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=session.model_override,
+            project_env=getattr(session, "project_env", None),
             created=str(session.created),
             updated=str(session.updated),
             message_count=0,
@@ -172,6 +177,7 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
                             title=session_data.get("title") or "Untitled Session",
                             source_id=source_id,
                             model_override=session_data.get("model_override"),
+                            project_env=session_data.get("project_env"),
                             created=str(session_data.get("created")),
                             updated=str(session_data.get("updated")),
                             message_count=msg_count,
@@ -242,6 +248,7 @@ async def get_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=getattr(session, "model_override", None),
+            project_env=getattr(session, "project_env", None),
             created=str(session.created),
             updated=str(session.updated),
             message_count=len(messages),
@@ -296,6 +303,7 @@ async def update_source_chat_session(
             title=session.title or "Untitled Session",
             source_id=source_id,
             model_override=getattr(session, "model_override", None),
+            project_env=getattr(session, "project_env", None),
             created=str(session.created),
             updated=str(session.updated),
             message_count=msg_count,
@@ -349,7 +357,11 @@ async def delete_source_chat_session(
 
 
 async def stream_source_chat_response(
-    session_id: str, source_id: str, message: str, model_override: Optional[str] = None
+    session_id: str,
+    source_id: str,
+    message: str,
+    model_override: Optional[str] = None,
+    project_env_context: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the source chat response as Server-Sent Events."""
     try:
@@ -365,6 +377,7 @@ async def stream_source_chat_response(
         state_values["messages"] = state_values.get("messages", [])
         state_values["source_id"] = source_id
         state_values["model_override"] = model_override
+        state_values["project_env_context"] = project_env_context
 
         # Add user message to state
         # Explicit id so a failed turn can remove it from the checkpoint.
@@ -453,6 +466,11 @@ async def send_message_to_source_chat(
             session, "model_override", None
         )
 
+        # Project env gate (软考): verified snapshot text or None
+        env_context = await render_project_env_context(
+            getattr(session, "project_env", None)
+        )
+
         # Update session timestamp
         await session.save()
 
@@ -463,6 +481,7 @@ async def send_message_to_source_chat(
                 source_id=full_source_id,
                 message=request.message,
                 model_override=model_override,
+                project_env_context=env_context["text"] if env_context else None,
             ),
             media_type="text/event-stream",
             headers={

@@ -33,6 +33,9 @@ class ThreadState(TypedDict):
     agent_name: Optional[str]
     agent_temperature: Optional[float]
     agent_max_tokens: Optional[int]
+    # Verified project environment text resolved by the API layer (软考项目环境);
+    # None leaves the prompt without the project-env block.
+    project_env_context: Optional[str]
 
 
 def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:

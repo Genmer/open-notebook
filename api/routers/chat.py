@@ -8,6 +8,10 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.project_env_service import (
+    render_project_env_context,
+    require_verified_project_env,
+)
 from api.routers._chat_shared import (
     ChatMessage,
     SuccessResponse,
@@ -42,6 +46,9 @@ class CreateSessionRequest(BaseModel):
     agent: Optional[str] = Field(
         None, description="Optional agent binding for this session (PDR-004)"
     )
+    project_env: Optional[str] = Field(
+        None, description="Optional verified project env binding (软考项目环境)"
+    )
 
 
 class UpdateSessionRequest(BaseModel):
@@ -51,6 +58,10 @@ class UpdateSessionRequest(BaseModel):
     )
     agent: Optional[str] = Field(
         None, description="Agent binding for this session; null clears it (PDR-004)"
+    )
+    project_env: Optional[str] = Field(
+        None,
+        description="Verified project env binding; null clears it (软考项目环境)",
     )
 
 
@@ -68,6 +79,9 @@ class ChatSessionResponse(BaseModel):
     )
     agent: Optional[str] = Field(
         None, description="Agent binding for this session (PDR-004)"
+    )
+    project_env: Optional[str] = Field(
+        None, description="Project env binding for this session (软考项目环境)"
     )
 
 
@@ -136,6 +150,7 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
                     message_count=msg_count,
                     model_override=getattr(session, "model_override", None),
                     agent=getattr(session, "agent", None),
+                    project_env=getattr(session, "project_env", None),
                 )
             )
 
@@ -168,7 +183,11 @@ async def create_session(request: CreateSessionRequest):
             or f"Chat Session {asyncio.get_event_loop().time():.0f}",
             model_override=request.model_override,
             agent=request.agent,
+            project_env=request.project_env,
         )
+        if request.project_env:
+            # only verified envs are bindable (decision ⑤)
+            await require_verified_project_env(request.project_env)
         await session.save()
 
         # Relate session to notebook
@@ -183,6 +202,7 @@ async def create_session(request: CreateSessionRequest):
             message_count=0,
             model_override=session.model_override,
             agent=session.agent,
+            project_env=session.project_env,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
@@ -242,6 +262,7 @@ async def get_session(session_id: str):
             messages=messages,
             model_override=getattr(session, "model_override", None),
             agent=getattr(session, "agent", None),
+            project_env=getattr(session, "project_env", None),
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -269,6 +290,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         # Agent/model are mutually exclusive session bindings (PDR-004):
         # setting one clears the other unless the same payload sets both
         # explicitly (explicit values win, enabling direct API migrations).
+        # project_env is independent of both (no mutual exclusion).
         if "agent" in update_data:
             session.agent = update_data["agent"]
             if "model_override" not in update_data:
@@ -277,6 +299,11 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             session.model_override = update_data["model_override"]
             if "agent" not in update_data:
                 session.agent = None
+        if "project_env" in update_data:
+            # explicit null clears; non-null must reference a verified env
+            if update_data["project_env"]:
+                await require_verified_project_env(update_data["project_env"])
+            session.project_env = update_data["project_env"]
 
         await session.save()
 
@@ -299,6 +326,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             message_count=msg_count,
             model_override=session.model_override,
             agent=session.agent,
+            project_env=session.project_env,
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -384,6 +412,13 @@ async def execute_chat(request: ExecuteChatRequest):
         state_values["agent_name"] = agent.name if agent else None
         state_values["agent_temperature"] = agent.temperature if agent else None
         state_values["agent_max_tokens"] = agent.max_tokens if agent else None
+        # Project env gate (软考): verified snapshot text or None
+        env_context = await render_project_env_context(
+            getattr(session, "project_env", None)
+        )
+        state_values["project_env_context"] = (
+            env_context["text"] if env_context else None
+        )
 
         # Add user message to state
         from langchain_core.messages import HumanMessage

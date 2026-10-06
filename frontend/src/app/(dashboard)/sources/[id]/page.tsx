@@ -65,6 +65,9 @@ export default function SourceDetailPage() {
                 chat.updateSession(chat.currentSessionId, { model_override: model })
               }
             }}
+            projectEnv={chat.currentSession?.project_env ?? chat.pendingProjectEnv ?? null}
+            onProjectEnvChange={(envId) => chat.setProjectEnv(envId)}
+            onNewSessionWithEnv={(envId) => chat.createSessionWithProjectEnv(envId)}
             sessions={chat.sessions}
             currentSessionId={chat.currentSessionId}
             onCreateSession={(title) => chat.createSession({ title })}

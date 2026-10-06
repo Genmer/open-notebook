@@ -1,0 +1,8 @@
+-- Migration 35 down: drop project environments, verification detail rows and
+-- the session binding. Reverse order of the up migration.
+REMOVE FIELD IF EXISTS project_env ON TABLE chat_session;
+REMOVE INDEX IF EXISTS idx_pev_env ON TABLE project_env_verification;
+REMOVE TABLE IF EXISTS project_env_verification;
+REMOVE INDEX IF EXISTS idx_pe_status ON TABLE project_env;
+REMOVE INDEX IF EXISTS idx_pe_updated ON TABLE project_env;
+REMOVE TABLE IF EXISTS project_env;

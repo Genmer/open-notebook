@@ -32,6 +32,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.project_env_service import render_project_env_context
 from api.routers._chat_shared import (
     extract_chat_messages,
     get_session_or_404,
@@ -97,6 +98,25 @@ def _parse_run_key(key: str) -> Tuple[str, Optional[str]]:
     )
 
 
+def build_render_state(
+    history: List[BaseMessage],
+    message: str,
+    notebook: Optional[Notebook],
+    context: Any,
+    agent: Optional[Agent],
+    project_env_context: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Render state for the chat/system template (pure, testable). Kept as a
+    function so every participant renders from one identical shape."""
+    return {
+        "messages": [*history, HumanMessage(content=message)],
+        "notebook": notebook,
+        "context": context,
+        "agent_instructions": agent.system_prompt if agent else None,
+        "project_env_context": project_env_context,
+    }
+
+
 async def _answer_once(
     notebook: Optional[Notebook],
     context: Any,
@@ -105,6 +125,7 @@ async def _answer_once(
     agent: Optional[Agent],
     model_id: Optional[str],
     group_id: str,
+    project_env_context: Optional[str] = None,
 ) -> Tuple[AIMessage, Any, AIMessage]:
     """Checkpoint-free single answer, mirroring call_model_with_messages.
 
@@ -113,12 +134,9 @@ async def _answer_once(
     content plus run metadata.
     """
     # The Prompter template reads the ThreadState shape; supply the agent fields.
-    render_state = {
-        "messages": [*history, HumanMessage(content=message)],
-        "notebook": notebook,
-        "context": context,
-        "agent_instructions": agent.system_prompt if agent else None,
-    }
+    render_state = build_render_state(
+        history, message, notebook, context, agent, project_env_context
+    )
     system_prompt = Prompter(prompt_template="chat/system").render(data=render_state)
     payload = [SystemMessage(content=system_prompt)] + render_state["messages"]
 
@@ -179,6 +197,7 @@ async def _orchestrate(
     message: str,
     participants: List[Dict[str, Any]],
     group_id: str,
+    project_env_context: Optional[str] = None,
 ) -> None:
     """Run all participants concurrently, archive once, then close the queue."""
     try:
@@ -212,6 +231,7 @@ async def _orchestrate(
                     p.get("agent"),
                     p.get("model_id"),
                     group_id,
+                    project_env_context,
                 )
                 await _record_usage(prov, raw, full_session_id, None)
                 await queue.put(
@@ -332,6 +352,10 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
     # hands the same dict to the system template, so answers stay comparable.
     context = request.context
     group_id = f"par_{uuid.uuid4().hex[:12]}"
+    env_context = await render_project_env_context(
+        getattr(session, "project_env", None)
+    )
+    project_env_context = env_context["text"] if env_context else None
 
     queue: asyncio.Queue = asyncio.Queue()
     asyncio.create_task(
@@ -345,6 +369,7 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
             message=request.message,
             participants=participants,
             group_id=group_id,
+            project_env_context=project_env_context,
         )
     )
 

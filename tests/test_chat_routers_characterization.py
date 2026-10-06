@@ -303,7 +303,7 @@ async def test_get_source_chat_session_happy_path_shapes(
     mock_source_get, mock_session_get, mock_repo, mock_graph, client
 ):
     mock_source_get.return_value = _source()
-    mock_session_get.return_value = _session()
+    mock_session_get.return_value = _session(project_env="project_env:e1")
     mock_repo.return_value = [{"in": "chat_session:abc", "out": "source:xyz"}]
     mock_graph.get_state.return_value = _graph_state(
         {
@@ -318,6 +318,7 @@ async def test_get_source_chat_session_happy_path_shapes(
     body = resp.json()
     assert body["id"] == "chat_session:abc"
     assert body["source_id"] == "xyz"
+    assert body["project_env"] == "project_env:e1"
     assert body["message_count"] == 2
     assert body["messages"][0] == {
         "id": "m1",
