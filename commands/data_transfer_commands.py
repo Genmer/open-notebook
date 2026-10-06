@@ -109,6 +109,9 @@ CONFIG_TABLES = ("content_settings", "default_prompts", "annotation_settings")
 # the CONFIG_TABLES entries, credential/model are regular keyed records.
 MODEL_CONFIG_TABLES = ("credential", "model", "default_models")
 SINGLETON_TABLES = CONFIG_TABLES + ("default_models",)
+# Fork rule: every new project-data table (user-owned domain data) MUST be
+# added to this export/import scope — see the README fork log. Known gap:
+# agent / project_env are not exported yet.
 ALL_TABLES = (
     DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES + MODEL_CONFIG_TABLES
 )

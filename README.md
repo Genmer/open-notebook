@@ -484,6 +484,9 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 4. **Studio 弹窗无缝复用**：生成任务提交后，弹窗就地转化为进度详情与实时监视视图，提供【后台运行】与【打开进度管理 ↗】无缝跳转。
 涉及：frontend/src/components/tasks/TaskLiveInspector.tsx、frontend/src/app/(dashboard)/tasks/page.tsx、frontend/src/lib/api/tasks.ts、GeminiStudioColumn.tsx、api/task_service.py、api/routers/commands.py 及全套单元测试。
 
+### 2026-10-06：数据导出导入范围维护约定（新表必须纳入）
+确立 fork 级约定：**今后所有新增的"项目数据相关"表（用户创建/编辑的领域数据，如智能体、项目环境这类）上线时必须同步加入数据导出/导入范围**——即 `commands/data_transfer_commands.py` 中的 `DATA_TABLES` / `EDGE_TABLES` 等清单，保证备份与跨机迁移不丢用户资产（聊天历史、任务记录、用量统计属刻意排除项，不受此约束）。当前已知缺口：`agent`（智能体）与 `project_env`（软考项目环境）两张表尚未纳入导出，属待办，本次仅在代码白名单处加注释立约，暂不扩表。
+
 ---
 
 ## 后续体验优化与新功能规划路线图 (Roadmap)
