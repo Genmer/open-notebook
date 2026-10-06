@@ -157,6 +157,7 @@ class TestTransformationGraph:
         from open_notebook.exceptions import InvalidInputError
 
         mock_source = MagicMock(spec=Source)
+        mock_source.id = "source:abc"
         mock_source.full_text = full_text
         mock_source.add_insight = AsyncMock()
 
@@ -168,7 +169,7 @@ class TestTransformationGraph:
         config: RunnableConfig = {"configurable": {"model_id": None}}
 
         with patch(
-            "open_notebook.graphs.transformation.provision_langchain_model",
+            "open_notebook.graphs.transformation.provision_langchain_model_with_info",
             new_callable=AsyncMock,
         ) as mock_provision:
             with pytest.raises(InvalidInputError, match="no text content"):

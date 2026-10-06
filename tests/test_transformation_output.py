@@ -19,14 +19,15 @@ def transformation_call():
     source = Source(id="source:test", full_text="Source content")
     transformation = SimpleNamespace(title="Summary", prompt="Summarize this")
     chain = AsyncMock()
+    prov = SimpleNamespace(langchain_model=chain)
     with (
         patch(
             "open_notebook.graphs.transformation.DefaultPrompts",
             return_value=SimpleNamespace(transformation_instructions=None),
         ),
         patch(
-            "open_notebook.graphs.transformation.provision_langchain_model",
-            new=AsyncMock(return_value=chain),
+            "open_notebook.graphs.transformation.provision_langchain_model_with_info",
+            new=AsyncMock(return_value=prov),
         ),
         patch.object(Source, "add_insight", new_callable=AsyncMock) as save,
     ):

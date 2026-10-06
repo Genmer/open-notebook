@@ -395,7 +395,6 @@ discover_deepseek_models = _make_openai_compat_discoverer("deepseek")
 discover_xai_models = _make_openai_compat_discoverer("xai")
 discover_dashscope_models = _make_openai_compat_discoverer("dashscope")
 discover_zhipu_models = _make_openai_compat_discoverer("zhipu")
-discover_minimax_models = _make_openai_compat_discoverer("minimax")
 discover_xiaomi_mimo_models = _make_openai_compat_discoverer("xiaomi_mimo")
 discover_xiaomi_mimo_token_plan_models = _make_openai_compat_discoverer(
     "xiaomi_mimo_token_plan"

@@ -101,9 +101,7 @@ async def iter_embedding_batches(
     if not texts:
         return
 
-    effective_batch_size = (
-        batch_size or get_embedding_params().embedding_batch_size
-    )
+    effective_batch_size = batch_size or get_embedding_params().embedding_batch_size
 
     # Lazy import to avoid circular dependency
     from open_notebook.ai.models import model_manager
@@ -182,7 +180,9 @@ async def iter_embedding_batches(
                         f"{len(batch)} texts): {e}"
                     ) from e
 
-        assert batch_embeddings is not None  # for type checkers; loop above guarantees it
+        assert (
+            batch_embeddings is not None
+        )  # for type checkers; loop above guarantees it
 
         await record_embedding_usage(model=embedding_model, texts=batch)
 
@@ -264,9 +264,7 @@ async def generate_embedding(
     # Long text - chunk and mean pool
     logger.debug(f"Text exceeds chunk size ({text_tokens} tokens), chunking...")
 
-    chunks = chunk_text(
-        text, content_type=content_type, file_path=file_path, params=p
-    )
+    chunks = chunk_text(text, content_type=content_type, file_path=file_path, params=p)
 
     if not chunks:
         raise ValueError("Text chunking produced no chunks")

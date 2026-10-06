@@ -31,6 +31,13 @@ def _sync_model_returning(content: str) -> MagicMock:
     return model
 
 
+def _provision_returning(content: str) -> AsyncMock:
+    """The fork's graphs provision via *_with_info, which wraps the model."""
+    prov = MagicMock()
+    prov.langchain_model = _sync_model_returning(content)
+    return AsyncMock(return_value=prov)
+
+
 # --- graph nodes -------------------------------------------------------------
 
 
@@ -40,8 +47,8 @@ def test_notebook_chat_node_rejects_empty_reply(reply):
 
     state = {"messages": [HumanMessage(content="hi")], "notebook": None}
     with patch(
-        "open_notebook.graphs.chat.provision_langchain_model",
-        new=AsyncMock(return_value=_sync_model_returning(reply)),
+        "open_notebook.graphs.chat.provision_langchain_model_with_info",
+        new=_provision_returning(reply),
     ):
         with pytest.raises(IncompleteGenerationError, match="empty response"):
             call_model_with_messages(state, {"configurable": {}})  # type: ignore[arg-type]
@@ -52,8 +59,8 @@ def test_notebook_chat_node_keeps_nonempty_reply():
 
     state = {"messages": [HumanMessage(content="hi")], "notebook": None}
     with patch(
-        "open_notebook.graphs.chat.provision_langchain_model",
-        new=AsyncMock(return_value=_sync_model_returning("<think>x</think>hello")),
+        "open_notebook.graphs.chat.provision_langchain_model_with_info",
+        new=_provision_returning("<think>x</think>hello"),
     ):
         result = call_model_with_messages(state, {"configurable": {}})  # type: ignore[arg-type]
     assert result["messages"].content == "hello"
@@ -70,8 +77,8 @@ def test_source_chat_node_rejects_empty_reply(reply):
             new=AsyncMock(return_value={"sources": [], "insights": []}),
         ),
         patch(
-            "open_notebook.graphs.source_chat.provision_langchain_model",
-            new=AsyncMock(return_value=_sync_model_returning(reply)),
+            "open_notebook.graphs.source_chat.provision_langchain_model_with_info",
+            new=_provision_returning(reply),
         ),
     ):
         with pytest.raises(IncompleteGenerationError, match="empty response"):
@@ -85,9 +92,11 @@ async def test_ask_final_answer_rejects_empty_reply(reply):
 
     model = MagicMock()
     model.ainvoke = AsyncMock(return_value=MagicMock(content=reply))
+    prov = MagicMock()
+    prov.langchain_model = model
     with patch(
-        "open_notebook.graphs.ask.provision_langchain_model",
-        new=AsyncMock(return_value=model),
+        "open_notebook.graphs.ask.provision_langchain_model_with_info",
+        new=AsyncMock(return_value=prov),
     ):
         with pytest.raises(IncompleteGenerationError, match="empty response"):
             await write_final_answer(

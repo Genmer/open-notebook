@@ -73,6 +73,9 @@ def no_encryption_key(monkeypatch):
     monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", raising=False)
     monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE", raising=False)
     monkeypatch.setattr(enc, "_ENCRYPTION_KEY", None)
+    # get_fernet() caches its instance; a stale one would outlive the deleted key
+    monkeypatch.setattr(enc, "_FERNET", None)
+    monkeypatch.setattr(enc, "_FERNET_LEGACY", None)
     return None
 
 
@@ -107,9 +110,7 @@ def _write_package(
         zf.writestr("manifest.json", json.dumps(manifest))
 
 
-def _repo_stub(
-    commands=None, credentials=(), models=()
-):
+def _repo_stub(commands=None, credentials=(), models=()):
     async def _query(sql, params=None):
         if sql.startswith("SELECT id FROM command"):
             return commands or []
@@ -156,7 +157,9 @@ class TestScanConflicts:
         }
 
         with patch.object(
-            svc, "repo_query", new=_repo_stub(credentials=[local_cred], models=[local_model])
+            svc,
+            "repo_query",
+            new=_repo_stub(credentials=[local_cred], models=[local_model]),
         ):
             scan = await svc.scan_import_package(str(package))
 
@@ -194,7 +197,9 @@ class TestScanConflicts:
         self, tmp_path, imports_folder, encryption_key
     ):
         package = tmp_path / "models.zip"
-        _write_package(package, credential_rows=[PKG_CREDENTIAL], model_rows=[PKG_MODEL])
+        _write_package(
+            package, credential_rows=[PKG_CREDENTIAL], model_rows=[PKG_MODEL]
+        )
         local_cred = {
             **PKG_CREDENTIAL,
             "api_key": encrypt_value(PKG_CREDENTIAL["api_key"]),
@@ -204,7 +209,9 @@ class TestScanConflicts:
         local_model = {**PKG_MODEL, "created": "2026-01-01T00:00:00Z"}
 
         with patch.object(
-            svc, "repo_query", new=_repo_stub(credentials=[local_cred], models=[local_model])
+            svc,
+            "repo_query",
+            new=_repo_stub(credentials=[local_cred], models=[local_model]),
         ):
             scan = await svc.scan_import_package(str(package))
 
@@ -224,10 +231,9 @@ class TestScanConflicts:
             "api_key": encrypt_value("sk-local-12345678"),
         }
 
-        with patch.object(
-            svc, "repo_query", new=_repo_stub(credentials=[local_cred])
-        ), patch.object(
-            svc, "decrypt_value", side_effect=ValueError("wrong key")
+        with (
+            patch.object(svc, "repo_query", new=_repo_stub(credentials=[local_cred])),
+            patch.object(svc, "decrypt_value", side_effect=ValueError("wrong key")),
         ):
             scan = await svc.scan_import_package(str(package))
 
@@ -260,9 +266,7 @@ class TestScanGuards:
         _write_package(package, credential_rows=[PKG_CREDENTIAL])
         payload = package.read_bytes()
 
-        with patch.object(
-            svc, "repo_query", new=_repo_stub()
-        ):
+        with patch.object(svc, "repo_query", new=_repo_stub()):
             response = client.post(
                 "/api/data-transfer/import",
                 files={"file": ("models.zip", payload, "application/zip")},
@@ -280,9 +284,7 @@ class TestScanGuards:
         keyless = {**PKG_CREDENTIAL, "api_key": None}
         _write_package(package, credential_rows=[keyless], model_rows=[PKG_MODEL])
 
-        with patch.object(
-            svc, "repo_query", new=_repo_stub()
-        ):
+        with patch.object(svc, "repo_query", new=_repo_stub()):
             response = client.post(
                 "/api/data-transfer/import",
                 files={"file": ("models.zip", package.read_bytes(), "application/zip")},
@@ -338,12 +340,10 @@ class TestExecute:
             ],
         )
 
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc.CommandService, "submit_command_job", new=submit
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(svc.CommandService, "submit_command_job", new=submit),
         ):
             command_id = await svc.execute_import(request)
 
@@ -418,14 +418,14 @@ class TestExecute:
         self, client, tmp_path, imports_folder
     ):
         _write_pending(imports_folder)
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc.CommandService,
-            "submit_command_job",
-            new=AsyncMock(return_value="command:i1"),
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(
+                svc.CommandService,
+                "submit_command_job",
+                new=AsyncMock(return_value="command:i1"),
+            ),
         ):
             response = client.post(
                 "/api/data-transfer/import/execute",
@@ -439,15 +439,15 @@ class TestExecute:
 class TestExportBody:
     @pytest.mark.asyncio
     async def test_export_body_passthrough(self, client):
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc,
-            "start_export",
-            new=AsyncMock(return_value="command:e1"),
-        ) as start:
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(
+                svc,
+                "start_export",
+                new=AsyncMock(return_value="command:e1"),
+            ) as start,
+        ):
             response = client.post(
                 "/api/data-transfer/export",
                 json={"scope": "models", "include_models": False},
@@ -459,15 +459,15 @@ class TestExportBody:
 
     @pytest.mark.asyncio
     async def test_export_without_body_defaults_full(self, client):
-        with patch.object(
-            svc, "repo_query", new=AsyncMock(return_value=[])
-        ), patch.object(
-            svc, "set_transfer_state", new=AsyncMock()
-        ), patch.object(
-            svc,
-            "start_export",
-            new=AsyncMock(return_value="command:e2"),
-        ) as start:
+        with (
+            patch.object(svc, "repo_query", new=AsyncMock(return_value=[])),
+            patch.object(svc, "set_transfer_state", new=AsyncMock()),
+            patch.object(
+                svc,
+                "start_export",
+                new=AsyncMock(return_value="command:e2"),
+            ) as start,
+        ):
             response = client.post("/api/data-transfer/export")
 
         assert response.status_code == 200

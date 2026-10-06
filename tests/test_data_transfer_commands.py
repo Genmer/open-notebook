@@ -66,13 +66,31 @@ def _source_row(file_path: Optional[str] = None) -> Dict[str, Any]:
 
 def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
     return {
-        "notebook": [{"id": NOTEBOOK_ID, "name": "Research", "description": "", "archived": False}],
+        "notebook": [
+            {
+                "id": NOTEBOOK_ID,
+                "name": "Research",
+                "description": "",
+                "archived": False,
+            }
+        ],
         "transformation": [
-            {"id": TRANSFORMATION_ID, "name": "Sum", "title": "Sum", "description": "d",
-             "prompt": "p", "apply_default": False, "model_id": "model:m1"}
+            {
+                "id": TRANSFORMATION_ID,
+                "name": "Sum",
+                "title": "Sum",
+                "description": "d",
+                "prompt": "p",
+                "apply_default": False,
+                "model_id": "model:m1",
+            }
         ],
         "source_view": [
-            {"id": "source_view:ai_content", "name": "AI Content", "view_type": "ai_content"},
+            {
+                "id": "source_view:ai_content",
+                "name": "AI Content",
+                "view_type": "ai_content",
+            },
             {"id": VIEW_ID, "name": "Custom", "view_type": "custom"},
         ],
         "source_group": [
@@ -80,12 +98,22 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
         ],
         "source": [_source_row()],
         "source_insight": [
-            {"id": INSIGHT_ID, "source": SOURCE_ID, "insight_type": "Summary",
-             "content": "insight", "embedding": [0.1, 0.2, 0.3]}
+            {
+                "id": INSIGHT_ID,
+                "source": SOURCE_ID,
+                "insight_type": "Summary",
+                "content": "insight",
+                "embedding": [0.1, 0.2, 0.3],
+            }
         ],
         "note": [
-            {"id": NOTE_ID, "title": "N", "note_type": "human",
-             "content": "note", "embedding": [0.4, 0.5, 0.6]}
+            {
+                "id": NOTE_ID,
+                "title": "N",
+                "note_type": "human",
+                "content": "note",
+                "embedding": [0.4, 0.5, 0.6],
+            }
         ],
         "reference": [{"id": "reference:r1", "in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"id": "artifact:a1", "in": NOTE_ID, "out": NOTEBOOK_ID}],
@@ -93,51 +121,77 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
             {"id": "source_group_member:m1", "in": SOURCE_ID, "out": GROUP_ID}
         ],
         "source_embedding": [
-            {"id": EMB_IDS[0], "source": SOURCE_ID, "order": 0,
-             "content": "chunk 0", "embedding": [0.1, 0.2, 0.3]},
-            {"id": EMB_IDS[1], "source": SOURCE_ID, "order": 1,
-             "content": "chunk 1", "embedding": [0.4, 0.5, 0.6]},
+            {
+                "id": EMB_IDS[0],
+                "source": SOURCE_ID,
+                "order": 0,
+                "content": "chunk 0",
+                "embedding": [0.1, 0.2, 0.3],
+            },
+            {
+                "id": EMB_IDS[1],
+                "source": SOURCE_ID,
+                "order": 1,
+                "content": "chunk 1",
+                "embedding": [0.4, 0.5, 0.6],
+            },
         ],
-        "content_settings": [{
-            "id": "open_notebook:content_settings",
-            "default_content_processing_engine_doc": "auto",
-            "chunk_size": 800,
-            "chunk_overlap": 100,
-            "usage_tracking_enabled": True,
-            "internal_runtime_state": "must not be exported",
-        }],
-        "default_prompts": [{
-            "id": "open_notebook:default_prompts",
-            "transformation_instructions": "Custom prompt test",
-        }],
-        "credential": [{
-            "id": CREDENTIAL_ID,
-            "name": "Main",
-            "provider": "openai",
-            "modalities": ["language", "embedding"],
-            "api_key": CREDENTIAL_CIPHER,
-            "base_url": None,
-            "config": {"num_ctx": 8192},
-            "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
-            "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
-        }],
+        "content_settings": [
+            {
+                "id": "open_notebook:content_settings",
+                "default_content_processing_engine_doc": "auto",
+                "chunk_size": 800,
+                "chunk_overlap": 100,
+                "usage_tracking_enabled": True,
+                "internal_runtime_state": "must not be exported",
+            }
+        ],
+        "default_prompts": [
+            {
+                "id": "open_notebook:default_prompts",
+                "transformation_instructions": "Custom prompt test",
+            }
+        ],
+        "credential": [
+            {
+                "id": CREDENTIAL_ID,
+                "name": "Main",
+                "provider": "openai",
+                "modalities": ["language", "embedding"],
+                "api_key": CREDENTIAL_CIPHER,
+                "base_url": None,
+                "config": {"num_ctx": 8192},
+                "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
+                "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
+            }
+        ],
         "model": [
-            {"id": MODEL_ID, "name": "GPT", "provider": "openai", "type": "language",
-             "credential": CREDENTIAL_ID, "price_input_per_m": 0.5,
-             "price_output_per_m": 1.5, "price_source": "manual",
-             "price_matched_key": None, "price_fetched_at": None},
+            {
+                "id": MODEL_ID,
+                "name": "GPT",
+                "provider": "openai",
+                "type": "language",
+                "credential": CREDENTIAL_ID,
+                "price_input_per_m": 0.5,
+                "price_output_per_m": 1.5,
+                "price_source": "manual",
+                "price_matched_key": None,
+                "price_fetched_at": None,
+            },
         ],
-        "default_models": [{
-            "id": "open_notebook:default_models",
-            "default_chat_model": MODEL_ID,
-            "default_transformation_model": None,
-            "large_context_model": None,
-            "default_text_to_speech_model": None,
-            "default_speech_to_text_model": None,
-            "default_embedding_model": None,
-            "default_tools_model": None,
-            "default_qa_model": None,
-        }],
+        "default_models": [
+            {
+                "id": "open_notebook:default_models",
+                "default_chat_model": MODEL_ID,
+                "default_transformation_model": None,
+                "large_context_model": None,
+                "default_text_to_speech_model": None,
+                "default_speech_to_text_model": None,
+                "default_embedding_model": None,
+                "default_tools_model": None,
+                "default_qa_model": None,
+            }
+        ],
     }
 
 
@@ -198,7 +252,8 @@ class TransferRecorder:
         if "SELECT in, out FROM " in sql:
             edge = sql[len("SELECT in, out FROM ") :].strip()
             return [
-                {"in": a, "out": b} for a, b in sorted(self.existing_pairs.get(edge, set()))
+                {"in": a, "out": b}
+                for a, b in sorted(self.existing_pairs.get(edge, set()))
             ]
         if "SELECT title, prompt FROM transformation" in sql:
             return [
@@ -256,17 +311,23 @@ def no_encryption_key(monkeypatch):
     monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY", raising=False)
     monkeypatch.delenv("OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE", raising=False)
     monkeypatch.setattr(enc, "_ENCRYPTION_KEY", None)
+    # get_fernet() caches its instance; a stale one would outlive the deleted key
+    monkeypatch.setattr(enc, "_FERNET", None)
+    monkeypatch.setattr(enc, "_FERNET_LEGACY", None)
     yield None
 
 
 async def _run_export(recorder, exports, uploads, include_files=True, **input_kwargs):
-    with patch.multiple(
-        "commands.data_transfer_commands",
-        repo_query=recorder,
-        EXPORTS_FOLDER=exports,
-        UPLOADS_FOLDER=uploads,
-    ), patch.object(
-        dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
+    with (
+        patch.multiple(
+            "commands.data_transfer_commands",
+            repo_query=recorder,
+            EXPORTS_FOLDER=exports,
+            UPLOADS_FOLDER=uploads,
+        ),
+        patch.object(
+            dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
+        ),
     ):
         return await export_data_command(
             ExportDataInput(include_files=include_files, **input_kwargs)
@@ -274,15 +335,19 @@ async def _run_export(recorder, exports, uploads, include_files=True, **input_kw
 
 
 async def _run_import(recorder, uploads, package_path, **input_kwargs):
-    with patch.multiple(
-        "commands.data_transfer_commands",
-        repo_query=recorder,
-        UPLOADS_FOLDER=uploads,
-    ), patch.object(
-        dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
-    ), patch(
-        "commands.data_transfer_commands.ensure_default_views",
-        new=AsyncMock(return_value=None),
+    with (
+        patch.multiple(
+            "commands.data_transfer_commands",
+            repo_query=recorder,
+            UPLOADS_FOLDER=uploads,
+        ),
+        patch.object(
+            dtc.DefaultModels, "get_instance", new=AsyncMock(return_value=_DEFAULTS)
+        ),
+        patch(
+            "commands.data_transfer_commands.ensure_default_views",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         return await import_data_command(
             ImportDataInput(package_path=str(package_path), **input_kwargs)
@@ -326,30 +391,76 @@ def _build_package(
 
 def _package_rows() -> Dict[str, List[Dict[str, Any]]]:
     return {
-        "notebook": [{"id": NOTEBOOK_ID, "name": "Research", "created": "2026-09-01T00:00:00+00:00"}],
-        "transformation": [{"id": TRANSFORMATION_ID, "name": "Sum", "title": "Sum",
-                             "description": "d", "prompt": "p", "apply_default": False,
-                             "model_id": "model:m1"}],
+        "notebook": [
+            {
+                "id": NOTEBOOK_ID,
+                "name": "Research",
+                "created": "2026-09-01T00:00:00+00:00",
+            }
+        ],
+        "transformation": [
+            {
+                "id": TRANSFORMATION_ID,
+                "name": "Sum",
+                "title": "Sum",
+                "description": "d",
+                "prompt": "p",
+                "apply_default": False,
+                "model_id": "model:m1",
+            }
+        ],
         "source_view": [{"id": VIEW_ID, "name": "Custom", "view_type": "custom"}],
         "source_group": [{"id": GROUP_ID, "name": "G", "source_view": VIEW_ID}],
-        "source": [{"id": SOURCE_ID, "title": "Report",
-                     "asset": {"file_path": "/source-env/uploads/report.pdf",
-                                "url": "https://example.com/report.pdf"},
-                     "embedding_status": "completed", "total_chunks": 2,
-                     "embedded_chunks": 2, "created": "2026-09-01T00:00:00+00:00"}],
-        "source_insight": [{"id": INSIGHT_ID, "source": SOURCE_ID,
-                             "insight_type": "Summary", "content": "insight",
-                             "embedding": [0.1, 0.2, 0.3]}],
-        "note": [{"id": NOTE_ID, "title": "N", "note_type": "human",
-                   "content": "note", "embedding": [0.4, 0.5, 0.6]}],
+        "source": [
+            {
+                "id": SOURCE_ID,
+                "title": "Report",
+                "asset": {
+                    "file_path": "/source-env/uploads/report.pdf",
+                    "url": "https://example.com/report.pdf",
+                },
+                "embedding_status": "completed",
+                "total_chunks": 2,
+                "embedded_chunks": 2,
+                "created": "2026-09-01T00:00:00+00:00",
+            }
+        ],
+        "source_insight": [
+            {
+                "id": INSIGHT_ID,
+                "source": SOURCE_ID,
+                "insight_type": "Summary",
+                "content": "insight",
+                "embedding": [0.1, 0.2, 0.3],
+            }
+        ],
+        "note": [
+            {
+                "id": NOTE_ID,
+                "title": "N",
+                "note_type": "human",
+                "content": "note",
+                "embedding": [0.4, 0.5, 0.6],
+            }
+        ],
         "reference": [{"in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"in": NOTE_ID, "out": NOTEBOOK_ID}],
         "source_group_member": [{"in": SOURCE_ID, "out": GROUP_ID}],
         "source_embedding": [
-            {"id": EMB_IDS[0], "source": SOURCE_ID, "order": 0,
-             "content": "chunk 0", "embedding": [0.1, 0.2, 0.3]},
-            {"id": EMB_IDS[1], "source": SOURCE_ID, "order": 1,
-             "content": "chunk 1", "embedding": [0.4, 0.5, 0.6]},
+            {
+                "id": EMB_IDS[0],
+                "source": SOURCE_ID,
+                "order": 0,
+                "content": "chunk 0",
+                "embedding": [0.1, 0.2, 0.3],
+            },
+            {
+                "id": EMB_IDS[1],
+                "source": SOURCE_ID,
+                "order": 1,
+                "content": "chunk 1",
+                "embedding": [0.4, 0.5, 0.6],
+            },
         ],
     }
 
@@ -463,7 +574,9 @@ class TestExport:
             if sql.startswith("UPSERT $target SET"):
                 continue
             for word in forbidden:
-                assert word not in sql, f"sensitive table {word!r} in query: {sql[:120]}"
+                assert word not in sql, (
+                    f"sensitive table {word!r} in query: {sql[:120]}"
+                )
 
     @pytest.mark.asyncio
     async def test_export_without_models_writes_no_model_members(self, tmp_path):
@@ -492,7 +605,9 @@ class TestExport:
         assert indexes == sorted(indexes)
         percents = [
             p
-            for s, p in zip(recorder.state_stages("export"), recorder.state_percents("export"))
+            for s, p in zip(
+                recorder.state_stages("export"), recorder.state_percents("export")
+            )
             if s != "starting"
         ]
         assert percents == sorted(percents)
@@ -620,9 +735,7 @@ class TestModelRoundTrip:
         assert output.success is True
 
         import_recorder = TransferRecorder(tables={"credential": [], "model": []})
-        result = await _run_import(
-            import_recorder, str(tmp_path), output.package_path
-        )
+        result = await _run_import(import_recorder, str(tmp_path), output.package_path)
 
         assert result.success is True
         assert result.imported["notebook"] == 1
@@ -683,7 +796,9 @@ class TestImport:
 
         # File extracted into UPLOADS_FOLDER and asset updated with new path.
         update = [
-            p or {} for sql, p in recorder.writes if sql.startswith("UPDATE $id SET asset")
+            p or {}
+            for sql, p in recorder.writes
+            if sql.startswith("UPDATE $id SET asset")
         ][0]
         new_path = update["asset"]["file_path"]
         assert new_path.startswith(str(uploads))
@@ -714,9 +829,17 @@ class TestImport:
     async def test_import_package_with_missing_table_members(self, tmp_path):
         rows = _package_rows()
         # A minimal package: no views/groups/edges/insights at all.
-        for missing in ("source_view", "source_group", "source_insight", "note",
-                        "reference", "artifact", "source_group_member",
-                        "source_embedding", "transformation"):
+        for missing in (
+            "source_view",
+            "source_group",
+            "source_insight",
+            "note",
+            "reference",
+            "artifact",
+            "source_group_member",
+            "source_embedding",
+            "transformation",
+        ):
             rows.pop(missing)
         package = tmp_path / "pkg.zip"
         _build_package(package, rows, {})
@@ -731,9 +854,7 @@ class TestImport:
     @pytest.mark.asyncio
     async def test_second_import_of_same_package_writes_nothing(self, tmp_path):
         package = tmp_path / "pkg.zip"
-        _build_package(
-            package, _package_rows(), {"files/s1/report.pdf": b"pdf bytes"}
-        )
+        _build_package(package, _package_rows(), {"files/s1/report.pdf": b"pdf bytes"})
         recorder = TransferRecorder(
             existing_ids=_all_existing(),
             existing_pairs={
@@ -769,7 +890,9 @@ class TestImport:
         await _run_import(recorder, str(uploads), package)
 
         update = [
-            p or {} for sql, p in recorder.writes if sql.startswith("UPDATE $id SET asset")
+            p or {}
+            for sql, p in recorder.writes
+            if sql.startswith("UPDATE $id SET asset")
         ][0]
         new_path = update["asset"]["file_path"]
         assert new_path.endswith("report (1).pdf")
@@ -798,7 +921,9 @@ class TestImport:
         assert output.imported["source"] == 1
         assert any("sha256 mismatch" in w for w in output.warnings)
         assert not list(uploads.iterdir())
-        assert not [sql for sql, _ in recorder.writes if sql.startswith("UPDATE $id SET asset")]
+        assert not [
+            sql for sql, _ in recorder.writes if sql.startswith("UPDATE $id SET asset")
+        ]
 
     @pytest.mark.asyncio
     async def test_import_creates_only_missing_edges(self, tmp_path):
@@ -844,7 +969,9 @@ class TestImport:
         assert output.skipped["source_group_member"] == 1
         assert any("source:ghost" in w for w in output.warnings)
         actual_import = sum(output.imported.values())
-        last_state = [d for t, d in recorder.states if t.startswith("data_transfer_state:import")][-1]
+        last_state = [
+            d for t, d in recorder.states if t.startswith("data_transfer_state:import")
+        ][-1]
         assert last_state["progress"]["message"] == (
             f"Import complete: {actual_import} imported, {sum(output.skipped.values())} skipped"
         )
@@ -885,19 +1012,25 @@ class TestImport:
         recorder = TransferRecorder(models=["model:missing"], embedding_lengths=[7, 7])
 
         other_defaults = SimpleNamespace(default_embedding_model="model:other")
-        with patch.multiple(
-            "commands.data_transfer_commands",
-            repo_query=recorder,
-            UPLOADS_FOLDER=str(tmp_path / "uploads"),
-        ), patch.object(
-            dtc.DefaultModels,
-            "get_instance",
-            new=AsyncMock(return_value=other_defaults),
-        ), patch(
-            "commands.data_transfer_commands.ensure_default_views",
-            new=AsyncMock(return_value=None),
+        with (
+            patch.multiple(
+                "commands.data_transfer_commands",
+                repo_query=recorder,
+                UPLOADS_FOLDER=str(tmp_path / "uploads"),
+            ),
+            patch.object(
+                dtc.DefaultModels,
+                "get_instance",
+                new=AsyncMock(return_value=other_defaults),
+            ),
+            patch(
+                "commands.data_transfer_commands.ensure_default_views",
+                new=AsyncMock(return_value=None),
+            ),
         ):
-            output = await import_data_command(ImportDataInput(package_path=str(package)))
+            output = await import_data_command(
+                ImportDataInput(package_path=str(package))
+            )
 
         joined = "\n".join(output.warnings)
         assert "model:emb" in joined and "model:other" in joined
@@ -945,9 +1078,7 @@ class TestImport:
         assert recorder.writes == []
         # No precheck reads ran: validation fails before any data query; only
         # the best-effort transfer-state upserts are allowed through.
-        assert all(
-            sql.startswith("UPSERT $target SET") for sql, _ in recorder.queries
-        )
+        assert all(sql.startswith("UPSERT $target SET") for sql, _ in recorder.queries)
         assert recorder.state_stages("import")[-1] == "failed"
         assert not package.exists()
 
@@ -956,18 +1087,22 @@ class TestConfigTables:
     @pytest.mark.asyncio
     async def test_import_merges_config_tables(self, tmp_path):
         rows = _package_rows()
-        rows["content_settings"] = [{
-            "id": "open_notebook:content_settings",
-            "default_content_processing_engine_doc": "docling",
-            "chunk_size": 800,
-            "chunk_overlap": 100,
-            "usage_tracking_enabled": True,
-            "secret_field": "dropped",
-        }]
-        rows["default_prompts"] = [{
-            "id": "open_notebook:default_prompts",
-            "transformation_instructions": "Custom prompt test",
-        }]
+        rows["content_settings"] = [
+            {
+                "id": "open_notebook:content_settings",
+                "default_content_processing_engine_doc": "docling",
+                "chunk_size": 800,
+                "chunk_overlap": 100,
+                "usage_tracking_enabled": True,
+                "secret_field": "dropped",
+            }
+        ]
+        rows["default_prompts"] = [
+            {
+                "id": "open_notebook:default_prompts",
+                "transformation_instructions": "Custom prompt test",
+            }
+        ]
         package = tmp_path / "pkg.zip"
         _build_package(package, rows, {})
         recorder = TransferRecorder(models=["model:m1"])
@@ -990,9 +1125,7 @@ class TestConfigTables:
         assert any(
             "secret_field" in w and "content_settings" in w for w in output.warnings
         )
-        dp_params = _params_of(
-            recorder, "UPSERT open_notebook:default_prompts MERGE"
-        )
+        dp_params = _params_of(recorder, "UPSERT open_notebook:default_prompts MERGE")
         assert dp_params["data"]["transformation_instructions"] == "Custom prompt test"
 
     @pytest.mark.asyncio
@@ -1016,15 +1149,33 @@ class TestTransformationTitleDedup:
     async def test_same_title_skipped_and_prompt_conflict_warns(self, tmp_path):
         rows = _package_rows()
         rows["transformation"] = [
-            {"id": TRANSFORMATION_ID, "name": "Sum", "title": "Sum",
-             "description": "d", "prompt": "p", "apply_default": False,
-             "model_id": "model:m1"},
-            {"id": "transformation:t2", "name": "SumV2", "title": "Sum",
-             "description": "d", "prompt": "p v2", "apply_default": False,
-             "model_id": "model:m1"},
-            {"id": "transformation:t3", "name": "New", "title": "New",
-             "description": "d", "prompt": "p3", "apply_default": False,
-             "model_id": "model:m1"},
+            {
+                "id": TRANSFORMATION_ID,
+                "name": "Sum",
+                "title": "Sum",
+                "description": "d",
+                "prompt": "p",
+                "apply_default": False,
+                "model_id": "model:m1",
+            },
+            {
+                "id": "transformation:t2",
+                "name": "SumV2",
+                "title": "Sum",
+                "description": "d",
+                "prompt": "p v2",
+                "apply_default": False,
+                "model_id": "model:m1",
+            },
+            {
+                "id": "transformation:t3",
+                "name": "New",
+                "title": "New",
+                "description": "d",
+                "prompt": "p3",
+                "apply_default": False,
+                "model_id": "model:m1",
+            },
         ]
         uploads = tmp_path / "uploads"
         uploads.mkdir()
@@ -1039,9 +1190,7 @@ class TestTransformationTitleDedup:
 
         output = await _run_import(recorder, str(uploads), package)
 
-        created = [
-            sql for sql, _ in recorder.writes if "CREATE transformation:" in sql
-        ]
+        created = [sql for sql, _ in recorder.writes if "CREATE transformation:" in sql]
         assert len(created) == 1
         assert "CREATE transformation:t3 SET" in created[0]
         assert output.warnings == [
@@ -1118,7 +1267,9 @@ def _build_v2_package(path, rows, package_type="models"):
 
 class TestModelExport:
     @pytest.mark.asyncio
-    async def test_models_scope_packages_only_model_config(self, tmp_path, encryption_key):
+    async def test_models_scope_packages_only_model_config(
+        self, tmp_path, encryption_key
+    ):
         recorder = TransferRecorder()
         exports = str(tmp_path / "exports")
 
@@ -1141,7 +1292,11 @@ class TestModelExport:
             manifest = json.loads(zf.read("manifest.json"))
             assert manifest["format_version"] == 2
             assert manifest["package_type"] == "models"
-            assert manifest["counts"] == {"credential": 1, "model": 1, "default_models": 1}
+            assert manifest["counts"] == {
+                "credential": 1,
+                "model": 1,
+                "default_models": 1,
+            }
             assert "embedding" not in manifest
             assert "files" not in manifest
 
@@ -1154,7 +1309,9 @@ class TestModelExport:
             assert cred_row["modalities"] == ["language", "embedding"]
             assert "decryption_error" not in cred_row
 
-            model_row = json.loads(zf.read("data/model.ndjson").decode().splitlines()[0])
+            model_row = json.loads(
+                zf.read("data/model.ndjson").decode().splitlines()[0]
+            )
             assert model_row["id"] == MODEL_ID
             assert model_row["credential"] == CREDENTIAL_ID
 
@@ -1167,7 +1324,9 @@ class TestModelExport:
         assert output.counts == {"credential": 1, "model": 1, "default_models": 1}
 
     @pytest.mark.asyncio
-    async def test_full_export_with_models_has_all_members(self, tmp_path, encryption_key):
+    async def test_full_export_with_models_has_all_members(
+        self, tmp_path, encryption_key
+    ):
         recorder = TransferRecorder()
         output = await _run_export(
             recorder, str(tmp_path / "exports"), str(tmp_path), include_models=True
@@ -1177,7 +1336,12 @@ class TestModelExport:
             names = zf.namelist()
             manifest = json.loads(zf.read("manifest.json"))
         assert manifest["package_type"] == "full"
-        for table in ("notebook", "source", "source_embedding", *dtc.MODEL_CONFIG_TABLES):
+        for table in (
+            "notebook",
+            "source",
+            "source_embedding",
+            *dtc.MODEL_CONFIG_TABLES,
+        ):
             assert f"data/{table}.ndjson" in names
         assert manifest["counts"]["credential"] == 1
         assert manifest["counts"]["model"] == 1
@@ -1229,8 +1393,11 @@ class TestModelExport:
         recorder = TransferRecorder(tables=tables)
 
         output = await _run_export(
-            recorder, str(tmp_path / "exports"), str(tmp_path),
-            include_files=False, scope="models",
+            recorder,
+            str(tmp_path / "exports"),
+            str(tmp_path),
+            include_files=False,
+            scope="models",
         )
 
         assert output.success is True
@@ -1245,7 +1412,9 @@ class TestModelExport:
 
 class TestModelImport:
     @pytest.mark.asyncio
-    async def test_import_model_package_creates_and_reencrypts(self, tmp_path, encryption_key):
+    async def test_import_model_package_creates_and_reencrypts(
+        self, tmp_path, encryption_key
+    ):
         package = tmp_path / "models.zip"
         _build_v2_package(package, _model_package_rows())
         recorder = TransferRecorder(tables={"credential": [], "model": []})
@@ -1284,7 +1453,9 @@ class TestModelImport:
         assert output.warning_codes[0].params["model"] == "model:missing"
 
     @pytest.mark.asyncio
-    async def test_import_same_fingerprint_skips_silently(self, tmp_path, encryption_key):
+    async def test_import_same_fingerprint_skips_silently(
+        self, tmp_path, encryption_key
+    ):
         import open_notebook.utils.encryption as enc
 
         rows = _model_package_rows()
@@ -1309,7 +1480,9 @@ class TestModelImport:
         assert not [sql for sql, _ in recorder.writes if sql.startswith("CREATE")]
 
     @pytest.mark.asyncio
-    async def test_import_conflict_without_decision_skips(self, tmp_path, encryption_key):
+    async def test_import_conflict_without_decision_skips(
+        self, tmp_path, encryption_key
+    ):
         rows = _model_package_rows()
         package = tmp_path / "models.zip"
         _build_v2_package(package, rows)
@@ -1335,7 +1508,9 @@ class TestModelImport:
         assert output.imported == {"default_models": 1}
         assert output.skipped["credential"] == 1
         assert output.skipped["model"] == 1
-        assert not [sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))]
+        assert not [
+            sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))
+        ]
 
     @pytest.mark.asyncio
     async def test_import_conflict_with_explicit_skip_keeps_local(
@@ -1374,7 +1549,9 @@ class TestModelImport:
         assert output.imported == {"default_models": 1}
         assert output.skipped["credential"] == 1
         assert output.skipped["model"] == 1
-        assert not [sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))]
+        assert not [
+            sql for sql, _ in recorder.writes if sql.startswith(("CREATE", "UPDATE"))
+        ]
 
     @pytest.mark.asyncio
     async def test_import_overwrite_credential_updates_only_secret_fields(
@@ -1474,7 +1651,9 @@ class TestModelImport:
                 recorder,
                 str(tmp_path),
                 package,
-                model_decisions=[{"kind": "model", "id": "model:ghost", "action": "skip"}],
+                model_decisions=[
+                    {"kind": "model", "id": "model:ghost", "action": "skip"}
+                ],
             )
         assert recorder.writes == []
         assert recorder.state_stages("import")[-1] == "failed"
@@ -1499,7 +1678,9 @@ class TestModelImport:
         assert recorder.writes == []
 
     @pytest.mark.asyncio
-    async def test_import_with_keys_requires_encryption_key(self, tmp_path, no_encryption_key):
+    async def test_import_with_keys_requires_encryption_key(
+        self, tmp_path, no_encryption_key
+    ):
         rows = _model_package_rows()
         package = tmp_path / "models.zip"
         _build_v2_package(package, rows)

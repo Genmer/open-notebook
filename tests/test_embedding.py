@@ -269,7 +269,8 @@ class TestGenerateEmbedding:
         from open_notebook.utils.embedding_config import EmbeddingParams
 
         long_text = _build_text_exceeding_tokens(
-            "This is a sentence. ", 200  # > small chunk_size below, < snapshot 400
+            "This is a sentence. ",
+            200,  # > small chunk_size below, < snapshot 400
         )
 
         mock_model = MagicMock()

@@ -320,13 +320,6 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
         docs_url="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/openai-compatible.md",
     ),
     ProviderSpec(
-        name="anthropic_compatible",
-        display_name="Anthropic Compatible",
-        modalities=_LANGUAGE_ONLY,
-        required_env=(
-            "ANTHROPIC_COMPATIBLE_BASE_URL",
-            "ANTHROPIC_COMPATIBLE_API_KEY",
-    ProviderSpec(
         name="zhipu",
         display_name="Zhipu (BigModel)",
         modalities=("language", "embedding"),
@@ -361,6 +354,13 @@ _PROVIDER_SPECS: Tuple[ProviderSpec, ...] = (
         docs_url="https://mimo.mi.com/docs/zh-CN/price/token-plan",
         openai_compat_discovery_url="https://token-plan-cn.xiaomimimo.com/v1/models",
     ),
+    ProviderSpec(
+        name="anthropic_compatible",
+        display_name="Anthropic Compatible",
+        modalities=_LANGUAGE_ONLY,
+        required_env=(
+            "ANTHROPIC_COMPATIBLE_BASE_URL",
+            "ANTHROPIC_COMPATIBLE_API_KEY",
         ),
         test_model=None,  # Dynamic - uses the endpoint's model list
         docs_url="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md",

@@ -289,7 +289,9 @@ class TestChunkText:
 
     def test_long_text_is_chunked(self):
         """Test that long English text is chunked by token budget."""
-        text = _build_text_exceeding_tokens("This is a sentence. ", _params().chunk_size)
+        text = _build_text_exceeding_tokens(
+            "This is a sentence. ", _params().chunk_size
+        )
         chunks = chunk_text(text)
         assert len(chunks) > 1
         _assert_chunks_within_token_limit(chunks)
@@ -369,7 +371,8 @@ Content for section 2.
     def test_drops_degenerate_short_chunks(self):
         """Header splitters can emit single-char chunks; they must be filtered."""
         large_section = _build_text_exceeding_tokens(
-            "This is a paragraph with enough content to be useful. ", _params().chunk_size
+            "This is a paragraph with enough content to be useful. ",
+            _params().chunk_size,
         )
         # A trailing micro-section ("# .") would otherwise produce a "." chunk.
         md_text = f"# Real Title\n\n{large_section}\n\n# .\n"

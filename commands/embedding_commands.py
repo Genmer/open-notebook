@@ -478,7 +478,9 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         )
 
         if total_chunks == 0:
-            await _mark_state(source, "failed", "No chunks created after splitting text")
+            await _mark_state(
+                source, "failed", "No chunks created after splitting text"
+            )
             raise ValueError("No chunks created after splitting text")
 
         # 5. Reset progress before the first batch
@@ -515,9 +517,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
                 await repo_insert("source_embedding", records)
                 embedded_so_far += len(records)
 
-                await _mark_state(
-                    source, "running", embedded_chunks=embedded_so_far
-                )
+                await _mark_state(source, "running", embedded_chunks=embedded_so_far)
         except ValueError as e:
             # Permanent (bad input / missing config) - terminal state; retrying
             # cannot fix it (stop_on includes ValueError anyway).
@@ -832,9 +832,7 @@ async def _claim_and_submit_sources(
 
     # 'unknown' (no execution context) must not be stored as a command id
     command_set = (
-        ", embedding_command = $coordinator_id"
-        if coordinator_id != "unknown"
-        else ""
+        ", embedding_command = $coordinator_id" if coordinator_id != "unknown" else ""
     )
     params: Dict[str, Any] = {
         "ids": [ensure_record_id(source_id) for source_id in source_ids]
@@ -883,9 +881,7 @@ async def _claim_and_submit_sources(
         )
         claimed_ids.extend(str(row["id"]) for row in rows or [])
 
-    logger.info(
-        f"Claimed {len(claimed_ids)}/{len(source_ids)} sources for embedding"
-    )
+    logger.info(f"Claimed {len(claimed_ids)}/{len(source_ids)} sources for embedding")
 
     submitted = 0
     failed = 0
