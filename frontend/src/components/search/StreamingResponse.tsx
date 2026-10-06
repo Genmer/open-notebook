@@ -8,6 +8,7 @@ import { CheckCircle, Sparkles, Lightbulb, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { convertReferencesToMarkdownLinks, createReferenceLinkComponent } from '@/lib/utils/source-references'
+import { sourcesApi } from '@/lib/api/sources'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { toast } from 'sonner'
@@ -35,8 +36,18 @@ export function StreamingResponse({
   const { openModal } = useModalManager()
   const { t } = useTranslation()
 
-  const handleReferenceClick = (type: string, id: string) => {
+  const handleReferenceClick = async (type: string, id: string, passage?: string) => {
     const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+
+    // Source citations with answer context: try to locate the exact passage
+    // and open the reader positioned on it (falls back to a plain open).
+    if (modalType === 'source' && passage) {
+      const located = await sourcesApi.locatePassage(id, passage)
+      if (located?.quote) {
+        openModal(modalType, id, { citeQuote: located.quote })
+        return
+      }
+    }
 
     try {
       openModal(modalType, id)
@@ -163,13 +174,13 @@ function FinalAnswerContent({
   onReferenceClick
 }: {
   content: string
-  onReferenceClick: (type: string, id: string) => void
+  onReferenceClick: (type: string, id: string, passage?: string) => void
 }) {
   // Convert references to markdown links
   const markdownWithLinks = convertReferencesToMarkdownLinks(content)
 
   // Create custom link component
-  const LinkComponent = createReferenceLinkComponent(onReferenceClick)
+  const LinkComponent = createReferenceLinkComponent(onReferenceClick, content)
 
   return (
     <MarkdownRenderer components={{

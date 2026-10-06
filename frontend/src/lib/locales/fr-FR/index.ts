@@ -523,6 +523,11 @@ export const frFR = {
       allLinked: "Toutes les sources de la bibliothèque sont liées à ce notebook",
       viewAll: "Voir la bibliothèque",
     },
+    citation: {
+      highlightBanner: "Vue citation : le passage surligné ci-dessous appuie la réponse",
+      notFoundBanner: "Passage cité introuvable ; le texte intégral est affiché à la place",
+      exitHighlight: "Quitter la vue citation",
+    },
     pdfViewer: {
       restore: "Restaurer",
       open: "Voir le fichier original",

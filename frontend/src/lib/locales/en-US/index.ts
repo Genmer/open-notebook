@@ -521,6 +521,11 @@ export const enUS = {
       allLinked: "All library sources are linked to this notebook",
       viewAll: "View library",
     },
+    citation: {
+      highlightBanner: "Citation view: the highlighted passage below backs the answer you clicked from",
+      notFoundBanner: "Could not locate the cited passage in this source; showing the full text instead",
+      exitHighlight: "Exit citation view",
+    },
     pdfViewer: {
       restore: "Restore",
       open: "View original file",

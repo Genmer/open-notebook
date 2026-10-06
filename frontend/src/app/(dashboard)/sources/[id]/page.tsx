@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
@@ -13,8 +13,12 @@ import { SourceDetailContent } from '@/components/sources/SourceDetailContent'
 export default function SourceDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const { t } = useTranslation()
   const sourceId = params?.id ? decodeURIComponent(params.id as string) : ''
+  // Citation quote carried by ?cite= (set when jumping from a chat citation);
+  // the reader locates and highlights this passage.
+  const citeQuote = searchParams?.get('cite') ?? undefined
   const navigation = useNavigation()
 
   // Initialize source chat
@@ -49,6 +53,7 @@ export default function SourceDetailPage() {
             sourceId={sourceId}
             showChatButton={false}
             onClose={handleBack}
+            citeQuote={citeQuote}
           />
         </div>
 

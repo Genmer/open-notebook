@@ -763,6 +763,12 @@
   border-radius: 4px;
 }
 
+/* Citation jump: spans of the passage a chat reference pointed at. */
+.textLayer span.pdf-cite-hit {
+  background-color: rgb(250 204 21 / 0.4);
+  border-radius: 2px;
+}
+
 .textLayer .highlight.appended {
   position: initial;
 }

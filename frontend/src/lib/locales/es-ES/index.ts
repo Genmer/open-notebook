@@ -523,6 +523,11 @@ export const esES = {
       allLinked: "Todas las fuentes de la biblioteca están vinculadas a este cuaderno",
       viewAll: "Ver biblioteca",
     },
+    citation: {
+      highlightBanner: "Vista de cita: el pasaje resaltado a continuación respalda la respuesta",
+      notFoundBanner: "No se encontró el pasaje citado; se muestra el texto completo",
+      exitHighlight: "Salir de la vista de cita",
+    },
     pdfViewer: {
       restore: "Restaurar",
       open: "Ver archivo original",

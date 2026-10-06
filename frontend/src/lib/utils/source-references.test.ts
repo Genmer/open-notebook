@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { convertReferencesToCompactMarkdown } from './source-references'
+import { convertReferencesToCompactMarkdown, extractPassageAround } from './source-references'
 
 describe('convertReferencesToCompactMarkdown titleLookup', () => {
   const lookup = new Map([
@@ -61,11 +61,11 @@ describe('convertReferencesToCompactMarkdown titleLookup', () => {
     expect(result).not.toContain('A Note Title')
   })
 
-  it('behaves the same as before when the third parameter is omitted', () => {
+  it('behaves the same as before when the third parameter is omitted (repeat citations carry ~n)', () => {
     const text = 'See [source:abc] and [note:xyz]. Also [source:abc] again.'
     const result = convertReferencesToCompactMarkdown(text)
     expect(result).toBe(
-      'See [1](#ref-source-abc) and [2](#ref-note-xyz). Also [1](#ref-source-abc) again.' +
+      'See [1](#ref-source-abc) and [2](#ref-note-xyz). Also [1](#ref-source-abc~2) again.' +
         '\n\nReferences:\n[1] - [source:abc](#ref-source-abc)\n[2] - [note:xyz](#ref-note-xyz)'
     )
   })
@@ -140,5 +140,28 @@ describe('convertReferencesToCompactMarkdown title edge cases', () => {
       new Map([['emoji', 'a' + '🎉'.repeat(30)]])
     )
     expect(hasLoneSurrogate(result)).toBe(false)
+  })
+})
+
+describe('citation occurrence hrefs', () => {
+  const text =
+    'First claim cites [source:abc] early. Later it cites [source:abc] again, ' +
+    'then [note:def] once.'
+
+  it('assigns ~2, ~3… to repeated citations of the same reference', () => {
+    const result = convertReferencesToCompactMarkdown(text)
+    expect(result).toContain('[1](#ref-source-abc)')
+    expect(result).toContain('[1](#ref-source-abc~2)')
+    // A different reference type/id never gets an occurrence suffix
+    expect(result).toContain('[2](#ref-note-def)')
+  })
+
+  it('extracts the answer window around the requested occurrence', () => {
+    const first = extractPassageAround(text, 'source', 'abc', 1)
+    const second = extractPassageAround(text, 'source', 'abc', 2)
+    expect(first).toContain('First claim cites')
+    expect(second).toContain('Later it cites')
+    expect(extractPassageAround(text, 'source', 'abc', 3)).toBeNull()
+    expect(extractPassageAround(text, 'note', 'def', 1)).toContain('then')
   })
 })

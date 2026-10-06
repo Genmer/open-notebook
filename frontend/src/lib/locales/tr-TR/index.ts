@@ -523,6 +523,11 @@ export const trTR = {
       allLinked: "Kitaplıktaki tüm kaynaklar bu deftere bağlı",
       viewAll: "Kitaplığı görüntüle",
     },
+    citation: {
+      highlightBanner: "Alıntı görünümü: aşağıda vurgulanan bölüm yanıtı destekler",
+      notFoundBanner: "Alıntılanen bölüm bulunamadı; tam metin gösteriliyor",
+      exitHighlight: "Alıntı görünümünden çık",
+    },
     pdfViewer: {
       restore: "Geri yükle",
       open: "Orijinal dosyayı görüntüle",

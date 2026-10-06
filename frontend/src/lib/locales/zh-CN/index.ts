@@ -523,6 +523,11 @@ export const zhCN = {
       allLinked: "全库文献已全部关联至本笔记本",
       viewAll: "查看全库",
     },
+    citation: {
+      highlightBanner: "引用定位视图：下方高亮段落来自该条回答的引用依据",
+      notFoundBanner: "未能在原文中定位到该引用的具体段落，已为你打开原文",
+      exitHighlight: "退出引用定位",
+    },
     pdfViewer: {
       restore: "恢复",
       open: "以源文件展示",

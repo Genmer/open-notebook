@@ -76,6 +76,8 @@ import { SourceProcessingSteps } from '@/components/sources/SourceProcessingStep
 
 // pdf.js is browser-only and heavy: load the viewer lazily, client-side only
 // (same pattern as markdown-editor.tsx).
+import { CiteHighlightedText } from '@/components/sources/CiteHighlightedText'
+
 const PdfSourceViewer = dynamic(() => import('@/components/sources/PdfSourceViewer'), {
   ssr: false,
 })
@@ -87,6 +89,12 @@ interface SourceDetailContentProps {
   onClose?: () => void
   /** Notebook context (from the ?nb= modal param) for the PDF viewer save flow. */
   notebookId?: string
+  /**
+   * Citation quote from a chat/ask reference jump (?cite= param). PDF sources
+   * auto-open the file view on the matching page; text sources highlight the
+   * matching paragraph and scroll to it. Consumed once per source mount.
+   */
+  citeQuote?: string
 }
 
 const safeExternalHref = (url: string | null | undefined): string | null => {
@@ -113,7 +121,8 @@ function SourceDetailContentInner({
   showChatButton = false,
   onChatClick,
   onClose,
-  notebookId
+  notebookId,
+  citeQuote
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
@@ -131,6 +140,9 @@ function SourceDetailContentInner({
   const [deletingInsight, setDeletingInsight] = useState(false)
   // In-app original-file (PDF) viewer, opened from the Content tab.
   const [fileViewOpen, setFileViewOpen] = useState(false)
+  // Citation jump quote (?cite=) held as dismissible UI state: the banner's
+  // close button clears it while the URL param survives a refresh.
+  const [activeCite, setActiveCite] = useState(citeQuote)
   // Insight completion catch-up compares against the count before the job ran.
   const insightsCountRef = useRef(0)
 
@@ -388,6 +400,17 @@ function SourceDetailContentInner({
     [source?.asset?.file_path]
   )
 
+  // Citation jump: a PDF source positions the file view on the cited passage,
+  // so open it automatically. Consumed once per source mount — later manual
+  // toggles stay user-owned. Text sources highlight in the content pane below.
+  const citeConsumedRef = useRef(false)
+  useEffect(() => {
+    if (!activeCite || !isPdfFile || fileAvailable === false) return
+    if (citeConsumedRef.current) return
+    citeConsumedRef.current = true
+    setFileViewOpen(true)
+  }, [activeCite, isPdfFile, fileAvailable])
+
   const handleCopyUrl = useCallback(() => {
     if (source?.asset?.url) {
       navigator.clipboard.writeText(source.asset.url)
@@ -588,6 +611,7 @@ function SourceDetailContentInner({
                   inline
                   open
                   onOpenChange={setFileViewOpen}
+                  locateQuote={activeCite}
                   sourceId={source.id}
                   filePath={source.asset?.file_path ?? null}
                   /* Direct context first; on the bare detail route (no prop)
@@ -636,9 +660,17 @@ function SourceDetailContentInner({
                   )}
                 </div>
               )}
-              <MarkdownRenderer>
-                {source.full_text || t('sources.noContent')}
-              </MarkdownRenderer>
+              {activeCite && source.full_text ? (
+                <CiteHighlightedText
+                  fullText={source.full_text}
+                  quote={activeCite}
+                  onDismiss={() => setActiveCite(undefined)}
+                />
+              ) : (
+                <MarkdownRenderer>
+                  {source.full_text || t('sources.noContent')}
+                </MarkdownRenderer>
+              )}
                 </>
               )}
             </section>

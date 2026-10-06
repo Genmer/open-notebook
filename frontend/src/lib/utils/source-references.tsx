@@ -72,6 +72,30 @@ export function parseSourceReferences(text: string): ParsedReference[] {
 }
 
 /**
+ * Answer text around the occurrence-th citation marker of (type, id) — the
+ * window the citation locator scores against the source's chunks. Returns
+ * null when that occurrence does not exist.
+ */
+export function extractPassageAround(
+  text: string,
+  type: ReferenceType,
+  id: string,
+  occurrence = 1,
+  radius = 160
+): string | null {
+  let seen = 0
+  for (const ref of parseSourceReferences(text)) {
+    if (ref.type !== type || ref.id !== id) continue
+    seen++
+    if (seen !== occurrence) continue
+    const before = text.slice(Math.max(0, ref.startIndex - radius), ref.startIndex)
+    const after = text.slice(ref.endIndex, ref.endIndex + radius)
+    return `${before}${after}`.trim()
+  }
+  return null
+}
+
+/**
  * Convert source references in text to clickable React elements
  *
  * @param text - Text containing references
@@ -273,7 +297,8 @@ export function convertReferencesToMarkdownLinks(text: string): string {
  * @returns React component for rendering links
  */
 export function createReferenceLinkComponent(
-  onReferenceClick: (type: ReferenceType, id: string) => void
+  onReferenceClick: (type: ReferenceType, id: string, passage?: string) => void,
+  sourceText?: string
 ) {
   const ReferenceLinkComponent = ({
     href,
@@ -288,7 +313,14 @@ export function createReferenceLinkComponent(
       // Parse: #ref-source-abc123 → type=source, id=abc123
       const parts = href.substring(5).split('-') // Remove '#ref-'
       const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      const rest = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      // #ref-source-abc123~2 → occurrence 2 of that citation (assigned by
+      // convertReferencesToCompactMarkdown for repeated citations)
+      const [id, occ] = rest.split('~')
+      const occurrence = occ ? Number.parseInt(occ, 10) : undefined
+      const passage = sourceText
+        ? extractPassageAround(sourceText, type, id, occurrence ?? 1)
+        : undefined
 
       // Select appropriate icon based on reference type
       const IconComponent =
@@ -301,7 +333,7 @@ export function createReferenceLinkComponent(
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            onReferenceClick(type, id)
+            onReferenceClick(type, id, passage ?? undefined)
           }}
           className="text-primary hover:underline cursor-pointer inline font-medium"
           type="button"
@@ -421,8 +453,19 @@ export function convertReferencesToCompactMarkdown(
       replaceEnd = refEnd + 1
     }
 
+    // Occurrences were counted front-to-back by parseSourceReferences; this
+    // loop runs back-to-front, so count earlier matches of the same reference
+    // to recover this marker's 1-based occurrence number.
+    let occurrence = 1
+    for (let j = 0; j < i; j++) {
+      if (references[j].type === reference.type && references[j].id === reference.id) {
+        occurrence++
+      }
+    }
+
     // Build the numbered citation with full reference in href
-    const citationLink = `[${number}](#ref-${reference.type}-${reference.id})`
+    const suffix = occurrence > 1 ? `~${occurrence}` : ''
+    const citationLink = `[${number}](#ref-${reference.type}-${reference.id}${suffix})`
 
     // Replace in the result string
     result = result.substring(0, replaceStart) + citationLink + result.substring(replaceEnd)
@@ -466,7 +509,8 @@ export function convertReferencesToCompactMarkdown(
  * <ReactMarkdown components={{ a: LinkComponent }}>...</ReactMarkdown>
  */
 export function createCompactReferenceLinkComponent(
-  onReferenceClick: (type: ReferenceType, id: string) => void
+  onReferenceClick: (type: ReferenceType, id: string, passage?: string) => void,
+  sourceText?: string
 ) {
   const CompactReferenceLinkComponent = ({
     href,
@@ -481,14 +525,21 @@ export function createCompactReferenceLinkComponent(
       // Parse: #ref-source-abc123 → type=source, id=abc123
       const parts = href.substring(5).split('-') // Remove '#ref-'
       const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      const rest = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      // #ref-source-abc123~2 → occurrence 2 of that citation (assigned by
+      // convertReferencesToCompactMarkdown for repeated citations)
+      const [id, occ] = rest.split('~')
+      const occurrence = occ ? Number.parseInt(occ, 10) : undefined
+      const passage = sourceText
+        ? extractPassageAround(sourceText, type, id, occurrence ?? 1)
+        : undefined
 
       return (
         <button
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            onReferenceClick(type, id)
+            onReferenceClick(type, id, passage ?? undefined)
           }}
           className="text-primary hover:underline cursor-pointer inline font-medium"
           type="button"

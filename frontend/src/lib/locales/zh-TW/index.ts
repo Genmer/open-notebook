@@ -523,6 +523,11 @@ export const zhTW = {
       allLinked: "全庫文獻已全部關聯至本筆記本",
       viewAll: "查看全庫",
     },
+    citation: {
+      highlightBanner: "引用定位視圖：下方高亮段落來自該條回答的引用依據",
+      notFoundBanner: "未能在原文中定位到該引用的具體段落，已為你開啟原文",
+      exitHighlight: "退出引用定位",
+    },
     pdfViewer: {
       restore: "恢復",
       open: "以原始檔案顯示",

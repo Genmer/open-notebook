@@ -25,6 +25,7 @@ from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
     InsightCreationResponse,
+    PassageLocateResponse,
     SourceCreate,
     SourceEmbeddingStatus,
     SourceInsightResponse,
@@ -39,7 +40,7 @@ from api.models import (
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Asset, Notebook, Source
+from open_notebook.domain.notebook import Asset, Notebook, Source, SourceEmbedding
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import (
     InvalidInputError,
@@ -47,6 +48,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
+from open_notebook.utils.passage_locate import locate_passage_in_chunks
 
 router = APIRouter()
 
@@ -1585,6 +1587,47 @@ async def delete_source(source_id: str):
     except Exception as e:
         logger.error(f"Error deleting source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error deleting source")
+
+
+@router.get("/sources/{source_id}/locate-passage", response_model=PassageLocateResponse)
+async def locate_passage(source_id: str, passage: str = Query(..., min_length=8, max_length=2000)):
+    """Find which passage of a source backs a clicked inline citation.
+
+    The passage is the answer text around the citation marker; matching is
+    plain n-gram overlap against the source's embedding chunks (no model
+    call). 404 when the source is unknown or nothing matches well enough —
+    the UI then falls back to opening the source unpositioned.
+    """
+    try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+
+        chunks = await SourceEmbedding.get_passage_chunks(source.id or source_id)
+        located = (
+            locate_passage_in_chunks(
+                passage, [(c.order if c.order is not None else 0, c.content) for c in chunks]
+            )
+            if chunks
+            else None
+        )
+        if located is None:
+            raise HTTPException(status_code=404, detail="No matching passage found")
+
+        order, quote, score = located
+        return PassageLocateResponse(
+            source_id=source_id,
+            chunk_order=order,
+            quote=quote,
+            score=score,
+        )
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error locating passage for source {source_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error locating passage")
 
 
 @router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])

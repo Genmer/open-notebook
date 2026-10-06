@@ -6,6 +6,7 @@ stack — pydantic validation, ObjectModel.save, router mapping — runs for rea
 """
 
 import json
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -272,6 +273,9 @@ class TestUpdateDelete:
     def test_update_changes_color_and_refreshes_updated(self, client, store):
         created = client.post("/api/source-annotations", json=_create_payload()).json()
         before = created["updated"]
+        # The updated-at assertion below needs the save to land on a later
+        # timestamp; without a nudge both can fall inside the same clock tick.
+        time.sleep(0.002)
         resp = client.put(
             f"/api/source-annotations/{created['id']}",
             json={"color": "plum", "line_style": "straight"},

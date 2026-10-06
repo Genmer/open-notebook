@@ -523,6 +523,11 @@ export const plPL = {
       allLinked: "Wszystkie źródła z biblioteki są powiązane z tym notesem",
       viewAll: "Zobacz bibliotekę",
     },
+    citation: {
+      highlightBanner: "Widok cytatu: wyróżniony poniżej fragment potwierdza odpowiedź",
+      notFoundBanner: "Nie udało się znaleźć cytowanego fragmentu; pokazano pełny tekst",
+      exitHighlight: "Zamknij widok cytatu",
+    },
     pdfViewer: {
       restore: "Przywróć",
       open: "Pokaż oryginalny plik",

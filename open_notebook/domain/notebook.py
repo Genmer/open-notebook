@@ -350,6 +350,27 @@ class Asset(BaseModel):
 class SourceEmbedding(ObjectModel):
     table_name: ClassVar[str] = "source_embedding"
     content: str
+    # Chunk position in document order (written by embed_source). Optional:
+    # historical readers of this model only ever used content.
+    order: Optional[int] = None
+
+    @classmethod
+    async def get_passage_chunks(cls, source_id: str) -> List["SourceEmbedding"]:
+        """Chunks of a source in document order, without the vector payloads.
+
+        Serves citation passage location, which only needs the text; the
+        embedding column itself can be kilobytes per row.
+        """
+        try:
+            rows = await repo_query(
+                "SELECT id, content, `order` FROM source_embedding "
+                "WHERE source = $sid ORDER BY `order` ASC",
+                {"sid": ensure_record_id(source_id)},
+            )
+        except Exception as e:
+            logger.error(f"Error fetching chunks for source {source_id}: {e}")
+            raise DatabaseOperationError("Failed to fetch source chunks")
+        return [cls(**row) for row in rows]
 
     async def get_source(self) -> "Source":
         try:

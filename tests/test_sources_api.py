@@ -667,3 +667,79 @@ class TestSourceTitlesEndpoint:
         # Bare chat-reference ids get the source: table prefix, existing
         # full record ids are passed through unchanged.
         assert sorted(str(r) for r in bound_ids) == ["source:abc", "source:def"]
+
+
+class TestLocatePassage:
+    """GET /sources/{id}/locate-passage — citation anchor lookup."""
+
+    CHUNK_TEXT = (
+        "In the Raft algorithm, a leader is elected by majority vote. "
+        "Log entries replicate from leader to followers, and a committed "
+        "entry is safe once a majority acknowledges it."
+    )
+
+    def _chunks(self):
+        return [
+            MagicMock(order=0, content="Unrelated chapter about databases."),
+            MagicMock(order=1, content=self.CHUNK_TEXT),
+        ]
+
+    @pytest.mark.asyncio
+    @patch(
+        "api.routers.sources.SourceEmbedding.get_passage_chunks",
+        new_callable=AsyncMock,
+    )
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_locates_best_chunk_and_excerpt(self, mock_get, mock_chunks, client):
+        mock_get.return_value = MagicMock(id="source:1")
+        mock_chunks.return_value = self._chunks()
+
+        response = client.get(
+            "/api/sources/source:1/locate-passage",
+            params={
+                "passage": "The leader in Raft is elected through a majority "
+                "vote and log entries replicate to followers."
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source_id"] == "source:1"
+        assert body["chunk_order"] == 1
+        assert "leader" in body["quote"].lower()
+        assert body["score"] > 0.1
+
+    @pytest.mark.asyncio
+    @patch(
+        "api.routers.sources.SourceEmbedding.get_passage_chunks",
+        new_callable=AsyncMock,
+    )
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_unmatched_passage_is_404(self, mock_get, mock_chunks, client):
+        mock_get.return_value = MagicMock(id="source:1")
+        mock_chunks.return_value = self._chunks()
+
+        response = client.get(
+            "/api/sources/source:1/locate-passage",
+            params={"passage": "quantum qubits superposition entanglement"},
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
+    async def test_missing_source_is_404_without_chunk_query(self, mock_get, client):
+        mock_get.return_value = None
+
+        response = client.get(
+            "/api/sources/source:nope/locate-passage",
+            params={"passage": "anything at all here"},
+        )
+
+        assert response.status_code == 404
+
+    def test_short_passage_is_rejected(self, client):
+        response = client.get(
+            "/api/sources/source:1/locate-passage", params={"passage": "tiny"}
+        )
+        assert response.status_code == 422

@@ -523,6 +523,11 @@ export const itIT = {
       allLinked: "Tutte le fonti della libreria sono collegate a questo notebook",
       viewAll: "Vedi libreria",
     },
+    citation: {
+      highlightBanner: "Vista citazione: il passaggio evidenziato sotto supporta la risposta",
+      notFoundBanner: "Passaggio citato non trovato; viene mostrato il testo completo",
+      exitHighlight: "Esci dalla vista citazione",
+    },
     pdfViewer: {
       restore: "Ripristina",
       open: "Visualizza file originale",

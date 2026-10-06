@@ -11,6 +11,8 @@ interface PageTextLayerProps {
   cssViewport: PageViewport
   /** Pre-fetched text content (the caller already read it to classify the page). */
   textContent: TextContent
+  /** Fires after the spans are laid out (citation highlight needs them in the DOM). */
+  onRendered?: () => void
 }
 
 type TextLayerInstance = {
@@ -29,6 +31,7 @@ export default function PageTextLayer({
   page,
   cssViewport,
   textContent,
+  onRendered,
 }: PageTextLayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const instanceRef = useRef<TextLayerInstance | null>(null)
@@ -55,6 +58,7 @@ export default function PageTextLayer({
         // The lib sets this too; pin it explicitly because the CSS
         // font-size chain resolves through it on the container.
         container.style.setProperty('--total-scale-factor', String(cssViewport.scale))
+        onRendered?.()
       } catch {
         // A failed text layer leaves the canvas readable; selection
         // annotation is simply unavailable for this page.

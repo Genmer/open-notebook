@@ -137,4 +137,31 @@ export const sourcesApi = {
     )
     return response.data
   },
+
+  /**
+   * Locate which passage of a source backs a clicked citation. `passage` is
+   * the answer text around the citation marker. Returns null when nothing
+   * matches well enough (endpoint 404) — callers fall back to a plain open.
+   */
+  locatePassage: async (
+    sourceId: string,
+    passage: string
+  ): Promise<PassageLocateResponse | null> => {
+    try {
+      const response = await apiClient.get<PassageLocateResponse>(
+        `/sources/${sourceId}/locate-passage`,
+        { params: { passage } }
+      )
+      return response.data
+    } catch {
+      return null
+    }
+  },
+}
+
+export interface PassageLocateResponse {
+  source_id: string
+  chunk_order: number
+  quote: string
+  score: number
 }

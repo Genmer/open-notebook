@@ -523,6 +523,11 @@ export const ptBR = {
       allLinked: "Todas as fontes da biblioteca estão vinculadas a este notebook",
       viewAll: "Ver biblioteca",
     },
+    citation: {
+      highlightBanner: "Vista de citação: a passagem destacada abaixo fundamenta a resposta",
+      notFoundBanner: "Não foi possível localizar a passagem citada; exibindo o texto completo",
+      exitHighlight: "Sair da vista de citação",
+    },
     pdfViewer: {
       restore: "Restaurar",
       open: "Ver arquivo original",

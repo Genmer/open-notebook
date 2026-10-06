@@ -41,6 +41,7 @@ import { ChatProjectEnv } from '@/components/project-envs/ChatProjectEnv'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { excerpt } from '@/app/(dashboard)/notebooks/components/ContextBreakdownDialog'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
+import { sourcesApi } from '@/lib/api/sources'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
@@ -253,18 +254,32 @@ export function ChatPanel({
   // Stable reference-click handler so memoized messages don't re-render on
   // composer keystrokes (which no longer re-render this component at all, since
   // the input state lives in the ChatComposer child).
-  const handleReferenceClick = useCallback((type: string, id: string) => {
-    const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+  const handleReferenceClick = useCallback(
+    async (type: string, id: string, passage?: string) => {
+      const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
 
-    try {
-      openModal(modalType, id)
-      // Note: The modal system uses URL parameters and doesn't throw errors for missing items.
-      // The modal component itself will handle displaying "not found" states.
-      // This try-catch is here for future enhancements or unexpected errors.
-    } catch {
-      toast.error(t('common.noResults'))
-    }
-  }, [openModal, t])
+      // Source citations with answer context: try to locate the exact passage
+      // and open the reader positioned on it. Any failure falls back to a
+      // plain unpositioned open.
+      if (modalType === 'source' && passage) {
+        const located = await sourcesApi.locatePassage(id, passage)
+        if (located?.quote) {
+          openModal(modalType, id, { citeQuote: located.quote })
+          return
+        }
+      }
+
+      try {
+        openModal(modalType, id)
+        // Note: The modal system uses URL parameters and doesn't throw errors for missing items.
+        // The modal component itself will handle displaying "not found" states.
+        // This try-catch is here for future enhancements or unexpected errors.
+      } catch {
+        toast.error(t('common.noResults'))
+      }
+    },
+    [openModal, t]
+  )
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -921,7 +936,7 @@ function ParallelGroupView({
 }: {
   item: import('@/lib/utils/parallel-messages').MessageListItem<SourceChatMessage>
   notebookId?: string
-  onReferenceClick: (type: string, id: string) => void
+  onReferenceClick: (type: string, id: string, passage?: string) => void
   sourceGrouping?: NotebookSourceFilters
 }) {
   const { t } = useTranslation()
@@ -995,7 +1010,7 @@ function ParallelGroupView({
 interface ChatMessageProps {
   message: SourceChatMessage
   notebookId?: string
-  onReferenceClick: (type: string, id: string) => void
+  onReferenceClick: (type: string, id: string, passage?: string) => void
   sourceGrouping?: NotebookSourceFilters
   /** Per-message delete entry (history editing). Present only when the panel
    *  unlocked it: not streaming, no parallel fan-out, not a temp-* bubble. */
@@ -1086,7 +1101,7 @@ function AIMessageContent({
   onReferenceClick
 }: {
   content: string
-  onReferenceClick: (type: string, id: string) => void
+  onReferenceClick: (type: string, id: string, passage?: string) => void
 }) {
   const { t } = useTranslation()
   // The hook lives here (not in memoized ChatMessage) so arriving title data
@@ -1114,7 +1129,7 @@ function AIMessageContent({
   const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'), titleLookup)
 
   // Create custom link component for compact references
-  const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
+  const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick, content)
 
   return (
     <MarkdownRenderer components={{

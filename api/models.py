@@ -806,6 +806,20 @@ class SourceStatusResponse(BaseModel):
     )
 
 
+class PassageLocateResponse(BaseModel):
+    """Best-matching excerpt for a clicked citation's surrounding answer text.
+
+    score is the n-gram overlap fraction between the answer window and the
+    returned quote (0-1); the UI falls back to a plain source open when it is
+    low or the endpoint 404s.
+    """
+
+    source_id: str
+    chunk_order: int
+    quote: str
+    score: float
+
+
 # Error response
 class ErrorResponse(BaseModel):
     error: str

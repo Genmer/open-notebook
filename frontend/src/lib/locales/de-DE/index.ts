@@ -526,6 +526,11 @@ export const deDE = {
       allLinked: "Alle Quellen der Bibliothek sind mit diesem Notebook verknüpft",
       viewAll: "Bibliothek ansehen",
     },
+    citation: {
+      highlightBanner: "Zitatansicht: Die hervorgehobene Stelle unten belegt die Antwort",
+      notFoundBanner: "Die zitierte Stelle wurde nicht gefunden; stattdessen wird der vollständige Text angezeigt",
+      exitHighlight: "Zitatansicht verlassen",
+    },
     pdfViewer: {
       restore: "Wiederherstellen",
       open: "Originaldatei anzeigen",

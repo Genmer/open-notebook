@@ -11,6 +11,9 @@ interface SourceDialogProps {
   sourceId: string | null
   /** Notebook context from the ?nb= URL param (AI save chains); optional. */
   notebookId?: string
+  /** Citation quote from the ?cite= URL param — the reader locates and
+   * highlights this passage (deep citation jumps). */
+  citeQuote?: string
 }
 
 /**
@@ -19,7 +22,7 @@ interface SourceDialogProps {
  * Displays source details in a modal dialog.
  * Includes a "Chat with source" button that navigates to the full source page in-app.
  */
-export function SourceDialog({ open, onOpenChange, sourceId, notebookId }: SourceDialogProps) {
+export function SourceDialog({ open, onOpenChange, sourceId, notebookId, citeQuote }: SourceDialogProps) {
   const { t } = useTranslation()
   const router = useRouter()
   // Ensure source ID has 'source:' prefix for API calls and routing
@@ -56,6 +59,7 @@ export function SourceDialog({ open, onOpenChange, sourceId, notebookId }: Sourc
             onChatClick={handleChatClick}
             onClose={handleClose}
             notebookId={notebookId}
+            citeQuote={citeQuote}
           />
         </div>
       </DialogContent>

@@ -40,6 +40,7 @@ import PageTextLayer from '@/components/sources/annotations/PageTextLayer'
 import ScanPageNotice from '@/components/sources/annotations/ScanPageNotice'
 import SelectionToolbar from '@/components/sources/annotations/SelectionToolbar'
 import { sourcesApi } from '@/lib/api/sources'
+import { buildNormMap, findCiteMatch } from '@/lib/utils/text-locate'
 import {
   sourceAnnotationsApi,
   type AnnotationColor,
@@ -88,6 +89,12 @@ interface PdfSourceViewerProps {
    * file" toggle replaces the parsed text in place.
    */
   inline?: boolean
+  /**
+   * Citation-jump quote (from a chat reference click): the viewer scans the
+   * pages' text layers for it, jumps to the first page containing it and
+   * highlights the covering spans.
+   */
+  locateQuote?: string
 }
 
 interface SectionAnalysis {
@@ -165,6 +172,7 @@ export default function PdfSourceViewer({
   filePath,
   notebookId,
   inline = false,
+  locateQuote,
 }: PdfSourceViewerProps) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -507,6 +515,94 @@ export default function PdfSourceViewer({
       pageWrapperRef.current?.querySelector<HTMLElement>('[data-testid="pdf-text-layer"]') ?? null
     )
   }, [pageInfo])
+
+  // ── Citation jump (locateQuote) ─────────────────────────────────────────
+  // Search the pages' text layers (cache-first) for the quote, then jump to
+  // the first page containing it. Applied once per quote value so later page
+  // turns stay user-owned.
+  const [citePage, setCitePage] = useState<number | null>(null)
+  // Bumped when the pdf.js text layer finished laying out its spans — the
+  // citation highlight can only paint spans that exist in the DOM.
+  const [textLayerVersion, setTextLayerVersion] = useState(0)
+  const citeQuoteAppliedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!doc || status !== 'ready' || !locateQuote) return
+    if (citeQuoteAppliedRef.current === locateQuote) return
+    citeQuoteAppliedRef.current = locateQuote
+    let cancelled = false
+    void (async () => {
+      if (!buildNormMap(locateQuote).norm) return
+      for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+        let cached = pageTextCacheRef.current.get(pageNumber)
+        if (!cached) {
+          const page = await doc.getPage(pageNumber)
+          const textContent = await page.getTextContent()
+          const hasText = textContent.items.some(
+            (item) =>
+              typeof (item as TextItem).str === 'string' &&
+              (item as TextItem).str.trim().length > 0
+          )
+          cached = { kind: hasText ? 'text' : 'scan', textContent }
+          pageTextCacheRef.current.set(pageNumber, cached)
+        }
+        if (cancelled) return
+        if (cached.kind !== 'text') continue
+        // Same joining rules as extractPagesText in pdf-utils.
+        let pageText = ''
+        for (const item of cached.textContent.items) {
+          if (!('str' in item)) continue
+          pageText += item.str
+          pageText += item.hasEOL ? '\n' : ' '
+        }
+        if (findCiteMatch(buildNormMap(pageText).norm, locateQuote)) {
+          setCitePage(pageNumber)
+          setCurrentPage(pageNumber)
+          return
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [doc, status, locateQuote])
+
+  // Highlight the quote's covering spans on the located page. Re-applies
+  // whenever the text layer remounts (page turn away and back, shell swap).
+  useEffect(() => {
+    if (!textLayerEl || citePage === null || currentPage !== citePage) return
+    const spans = Array.from(textLayerEl.querySelectorAll<HTMLElement>('span'))
+    if (!spans.length) return
+    // Normalize each span and remember its range in the joined text (spans
+    // joined by a single space, matching how the search joined page text
+    // after normalization collapses all whitespace).
+    const parts: string[] = []
+    const ranges: Array<{ el: HTMLElement; start: number; end: number }> = []
+    let cursor = 0
+    for (const span of spans) {
+      const norm = buildNormMap(span.textContent ?? '').norm
+      if (norm) {
+        ranges.push({ el: span, start: cursor, end: cursor + norm.length })
+        parts.push(norm)
+        cursor += norm.length + 1
+      }
+    }
+    const joined = parts.join(' ')
+    const hit = findCiteMatch(joined, locateQuote ?? '')
+    if (!hit) return
+    const hitEnd = hit.index + hit.length - 1
+    let scrolled = false
+    for (const range of ranges) {
+      if (range.end < hit.index || range.start > hitEnd) continue
+      range.el.classList.add('pdf-cite-hit')
+      if (!scrolled) {
+        range.el.scrollIntoView({ block: 'center' })
+        scrolled = true
+      }
+    }
+    return () => {
+      for (const range of ranges) range.el.classList.remove('pdf-cite-hit')
+    }
+  }, [textLayerEl, textLayerVersion, citePage, currentPage, locateQuote])
 
   // A page turn invalidates any open hover card — its anchor rect and row
   // live on the old page; without this, returning to that page would pop the
@@ -1081,6 +1177,7 @@ export default function PdfSourceViewer({
                     page={pageInfo.page}
                     cssViewport={pageInfo.cssViewport}
                     textContent={pageInfo.textContent}
+                    onRendered={() => setTextLayerVersion((v) => v + 1)}
                   />
                 )}
                 {pageInfo && pageDims && overlayAnnotations.length > 0 && (

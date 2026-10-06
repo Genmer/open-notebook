@@ -523,6 +523,11 @@ export const caES = {
       allLinked: "Totes les fonts de la biblioteca estan vinculades a aquest quadern",
       viewAll: "Mostra la biblioteca",
     },
+    citation: {
+      highlightBanner: "Vista de cita: el passatge ressaltat a continuació fonamenta la resposta",
+      notFoundBanner: "No s'ha trobat el passatge citat; es mostra el text complet",
+      exitHighlight: "Surt de la vista de cita",
+    },
     pdfViewer: {
       restore: "Restaura",
       open: "Mostra el fitxer original",

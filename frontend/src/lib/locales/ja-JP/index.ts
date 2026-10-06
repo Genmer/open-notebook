@@ -523,6 +523,11 @@ export const jaJP = {
       allLinked: "ライブラリのすべてのソースがこのノートブックにリンクされています",
       viewAll: "ライブラリを表示",
     },
+    citation: {
+      highlightBanner: "引用ビュー：下のハイライト部分が、クリックした回答の出典です",
+      notFoundBanner: "引用箇所を特定できなかったため、原文全体を表示しています",
+      exitHighlight: "引用ビューを閉じる",
+    },
     pdfViewer: {
       restore: "元に戻す",
       open: "元ファイルを表示",
