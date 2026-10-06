@@ -128,6 +128,7 @@ export function ClassicNotebookView({
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
                 sourceGrouping={sourceGrouping}
+                onNoteContextModeChange={handleNoteContextModeChange}
               />
             )}
           </div>
@@ -202,6 +203,7 @@ export function ClassicNotebookView({
                 sources={sources ?? []}
                 sourcesLoading={sourcesLoading}
                 sourceGrouping={sourceGrouping}
+                onNoteContextModeChange={handleNoteContextModeChange}
               />
             </div>
       </div>

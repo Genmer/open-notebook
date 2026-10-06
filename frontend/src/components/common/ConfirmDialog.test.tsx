@@ -48,4 +48,16 @@ describe('ConfirmDialog', () => {
     expect(confirmBtn).toBeDisabled()
     expect(cancelBtn).toBeDisabled()
   })
+
+  it('should disable only the confirm button when confirmDisabled is set', () => {
+    render(<ConfirmDialog {...defaultProps} confirmDisabled={true} />)
+
+    const confirmBtn = screen.getByText('common.confirm').closest('button')
+    const cancelBtn = screen.getByText('common.cancel').closest('button')
+
+    expect(confirmBtn).toBeDisabled()
+    // No spinner — cancel stays available so the user can still close.
+    expect(cancelBtn).not.toBeDisabled()
+    expect(screen.queryByTestId('loading-spinner')).not.toBeInTheDocument()
+  })
 })

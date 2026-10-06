@@ -5,7 +5,9 @@ import {
   SourceChatSessionWithMessages,
   CreateSourceChatSessionRequest,
   UpdateSourceChatSessionRequest,
-  SendMessageRequest
+  SendMessageRequest,
+  DeleteChatMessagesRequest,
+  DeleteChatMessagesResponse
 } from '@/lib/types/api'
 
 export const sourceChatApi = {
@@ -44,6 +46,25 @@ export const sourceChatApi = {
 
   deleteSession: async (sourceId: string, sessionId: string) => {
     await apiClient.delete(`/sources/${sourceId}/chat/sessions/${sessionId}`)
+  },
+
+  // History editing (checkpoint hard-delete). The endpoint is shared with
+  // notebook chats — the backend resolves the owning graph (source vs
+  // notebook) from the session's refers_to edge, so only the session id is
+  // needed; the sourceId-scoped prefix is not part of these routes.
+  deleteMessages: async (sessionId: string, data: DeleteChatMessagesRequest) => {
+    const response = await apiClient.post<DeleteChatMessagesResponse>(
+      `/chat/sessions/${sessionId}/messages/delete`,
+      data
+    )
+    return response.data
+  },
+
+  clearMessages: async (sessionId: string) => {
+    const response = await apiClient.post<DeleteChatMessagesResponse>(
+      `/chat/sessions/${sessionId}/messages/clear`
+    )
+    return response.data
   },
 
   // Messaging with streaming

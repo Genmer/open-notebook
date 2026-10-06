@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { BookOpen, Sparkles, MessageSquare } from 'lucide-react'
 import type { NotebookResponse, SourceListResponse, NoteResponse } from '@/lib/types/api'
-import type { ContextSelections, ContextMode } from '@/lib/types/notebook-context'
+import type { ContextSelections, ContextMode, NoteContextMode } from '@/lib/types/notebook-context'
 import type { BulkContextHandler } from '@/lib/utils/source-context'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 
@@ -28,6 +28,8 @@ export interface GeminiNotebookViewProps {
   contextSelections: ContextSelections
   handleSourceContextModeChange: (sourceId: string, mode: ContextMode) => void
   handleBulkSourceContext: BulkContextHandler
+  /** 明细弹层的笔记移除入口复用页面既有的笔记模式回调。 */
+  handleNoteContextModeChange?: (noteId: string, mode: NoteContextMode) => void
   setContextPickerOpen: (open: boolean) => void
 }
 
@@ -44,6 +46,7 @@ export function GeminiNotebookView({
   contextSelections,
   handleSourceContextModeChange,
   handleBulkSourceContext,
+  handleNoteContextModeChange,
   setContextPickerOpen,
 }: GeminiNotebookViewProps) {
   const isDesktop = useIsDesktop()
@@ -105,6 +108,7 @@ export function GeminiNotebookView({
                 onSourceContextModeChange={handleSourceContextModeChange}
                 onBulkSourceContext={handleBulkSourceContext}
                 onGroupingChange={setSourceGrouping}
+                onNoteContextModeChange={handleNoteContextModeChange}
                 notes={notes}
                 notesLoading={notesLoading}
               />
@@ -162,6 +166,7 @@ export function GeminiNotebookView({
             onSourceContextModeChange={handleSourceContextModeChange}
             onBulkSourceContext={handleBulkSourceContext}
             onGroupingChange={setSourceGrouping}
+            onNoteContextModeChange={handleNoteContextModeChange}
             notes={notes}
             notesLoading={notesLoading}
           />

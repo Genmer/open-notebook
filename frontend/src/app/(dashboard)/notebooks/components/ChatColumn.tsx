@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNotebookChat } from '@/lib/hooks/use-notebook-chat'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { ChatPanel } from '@/components/sources/ChatPanel'
+import { ContextBreakdownDialog } from './ContextBreakdownDialog'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle } from 'lucide-react'
@@ -11,7 +12,7 @@ import { ContextSelections } from '../[id]/page'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceListResponse, NoteResponse } from '@/lib/types/api'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
-import type { ContextMode } from '@/lib/types/notebook-context'
+import type { ContextMode, NoteContextMode } from '@/lib/types/notebook-context'
 import type { BulkContextHandler } from '@/lib/utils/source-context'
 
 interface ChatColumnProps {
@@ -27,6 +28,8 @@ interface ChatColumnProps {
   onSourceContextModeChange?: (sourceId: string, mode: ContextMode) => void
   onBulkSourceContext?: BulkContextHandler
   onGroupingChange?: (filters: NotebookSourceFilters) => void
+  /** 明细弹层的笔记移除入口（'off'）复用页面既有的笔记模式回调。 */
+  onNoteContextModeChange?: (noteId: string, mode: NoteContextMode) => void
   notes?: NoteResponse[]
   notesLoading?: boolean
 }
@@ -42,10 +45,13 @@ export function ChatColumn({
   onSourceContextModeChange,
   onBulkSourceContext,
   onGroupingChange,
+  onNoteContextModeChange,
   notes: notesProp,
   notesLoading: notesLoadingProp,
 }: ChatColumnProps) {
   const { t } = useTranslation()
+  // Detail dialog behind the composition bar.
+  const [breakdownOpen, setBreakdownOpen] = useState(false)
 
   // Fetch notes for this notebook
   const { data: ownNotes = [], isLoading: ownNotesLoading } = useNotes(notebookId)
@@ -82,6 +88,11 @@ export function ChatColumn({
     }
   }, [contextSelections, chat.tokenCount, chat.charCount])
 
+  // History/context editing locks up while a generation runs: the single-run
+  // stream or a parallel fan-out (deleting mid-generation would race the
+  // checkpoint writer). Same guard combination as the composer's entries.
+  const editLocked = chat.isSending || chat.parallel.phase === 'running'
+
   // Show loading state while sources/notes are being fetched
   if (sourcesLoading || notesLoading) {
     return (
@@ -109,6 +120,7 @@ export function ChatColumn({
   }
 
   return (
+    <>
     <ChatPanel
       title={t('chat.chatWithNotebook')}
       contextType="notebook"
@@ -136,7 +148,18 @@ export function ChatColumn({
       onUpdateSession={(sessionId, title) => chat.updateSession(sessionId, { title })}
       onDeleteSession={chat.deleteSession}
       loadingSessions={chat.loadingSessions}
+      isDeletingSession={chat.isDeletingSession}
+      onDeleteMessage={(messageId) => {
+        if (chat.currentSessionId) chat.deleteMessages(chat.currentSessionId, [messageId])
+      }}
+      isDeletingMessage={chat.isDeletingMessages}
+      onClearMessages={() => {
+        if (chat.currentSessionId) chat.clearMessages(chat.currentSessionId)
+      }}
+      isClearingMessage={chat.isClearingMessages}
       notebookContextStats={contextStats}
+      contextBreakdown={chat.contextBreakdown}
+      onOpenContextBreakdown={() => setBreakdownOpen(true)}
       notebookId={notebookId}
       onOpenContextPicker={onOpenContextPicker}
       sourceGrouping={sourceGrouping}
@@ -150,5 +173,23 @@ export function ChatColumn({
       notes={notes}
       notesLoading={notesLoading}
     />
+    <ContextBreakdownDialog
+      open={breakdownOpen}
+      onOpenChange={setBreakdownOpen}
+      breakdown={chat.contextBreakdown}
+      messages={chat.messages}
+      editLocked={editLocked}
+      isMutating={chat.isDeletingMessages || chat.isClearingMessages}
+      onRemoveMessages={(messageIds) => {
+        if (chat.currentSessionId) chat.deleteMessages(chat.currentSessionId, messageIds)
+      }}
+      onClearMessages={() => {
+        if (chat.currentSessionId) chat.clearMessages(chat.currentSessionId)
+      }}
+      onSourceModeChange={(sourceId, mode) => onSourceContextModeChange?.(sourceId, mode)}
+      onNoteModeChange={(noteId, mode) => onNoteContextModeChange?.(noteId, mode)}
+      onOpenContextPicker={onOpenContextPicker}
+    />
+    </>
   )
 }

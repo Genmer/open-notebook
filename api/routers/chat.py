@@ -9,10 +9,14 @@ from pydantic import BaseModel, Field
 
 from api.routers._chat_shared import (
     ChatMessage,
+    ContextBreakdown,
     SuccessResponse,
+    compute_context_breakdown,
     extract_chat_messages,
     get_session_or_404,
     resolve_agent_binding,
+    resolve_session_owner_kind,
+    session_in_generation,
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Notebook
@@ -21,6 +25,9 @@ from open_notebook.exceptions import (
     OpenNotebookError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
+from open_notebook.graphs.source_chat import (
+    source_chat_graph as source_chat_graph,
+)
 from open_notebook.utils import token_count
 from open_notebook.utils.context_builder import build_notebook_context
 from open_notebook.utils.graph_utils import get_session_message_count
@@ -95,12 +102,22 @@ class ExecuteChatResponse(BaseModel):
 class BuildContextRequest(BaseModel):
     notebook_id: str = Field(..., description="Notebook ID")
     context_config: Dict[str, Any] = Field(..., description="Context configuration")
+    session_id: Optional[str] = Field(
+        None,
+        description="Optional chat session ID; when present the response "
+        "carries a breakdown including the session's checkpoint history",
+    )
 
 
 class BuildContextResponse(BaseModel):
     context: Dict[str, Any] = Field(..., description="Built context data")
     token_count: int = Field(..., description="Estimated token count")
     char_count: int = Field(..., description="Character count")
+    breakdown: Optional[ContextBreakdown] = Field(
+        None,
+        description="Four-segment context composition breakdown (only when "
+        "the request carries a session_id)",
+    )
 
 
 @router.get("/chat/sessions", response_model=List[ChatSessionResponse])
@@ -312,9 +329,33 @@ async def delete_session(session_id: str):
     """Delete a chat session."""
     try:
         # Get session (normalizes the ID and 404s if missing)
-        _full_session_id, session = await get_session_or_404(session_id)
+        full_session_id, session = await get_session_or_404(session_id)
+
+        # Never delete out from under an active generation (merged guard
+        # across the notebook and source stream routers).
+        if session_in_generation(full_session_id):
+            raise HTTPException(
+                status_code=409,
+                detail="A generation is already in progress for this session",
+            )
 
         await session.delete()
+
+        # The session row is gone and the delete is not retryable, so a
+        # checkpoint cleanup failure must not turn into an error response
+        # (the client would only hit 404 on retry). Both savers point at the
+        # same sqlite file, so chat_graph's checkpointer covers every thread;
+        # a leftover thread here is a logged gap, not a failed request.
+        try:
+            await asyncio.to_thread(
+                chat_graph.checkpointer.delete_thread,  # type: ignore[union-attr]
+                full_session_id,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to delete LangGraph checkpoint for session "
+                f"{full_session_id}: {e}"
+            )
 
         return SuccessResponse(success=True, message="Session deleted successfully")
     except NotFoundError:
@@ -447,8 +488,60 @@ async def build_context(request: BuildContextRequest):
         char_count = len(total_content)
         estimated_tokens = token_count(total_content) if total_content else 0
 
+        # Optional composition breakdown: reuses the exact data assembled
+        # above (no second assembly path). A broken session_id degrades to a
+        # zero history segment instead of failing the display-only request.
+        breakdown = None
+        if request.session_id:
+            agent_instructions = None
+            history_messages: List[ChatMessage] = []
+            try:
+                full_session_id, session = await get_session_or_404(
+                    request.session_id
+                )
+                # Mirror execute_chat's agent resolution for the system
+                # segment; a missing agent degrades to the default skeleton.
+                agent = await resolve_agent_binding(
+                    getattr(session, "agent", None)
+                )
+                agent_instructions = agent.system_prompt if agent else None
+
+                # History reads dispatch to the owning graph: the two graphs
+                # carry different state channels, and reading is harmless but
+                # writing (message deletion) must land on the right one.
+                owner_kind = await resolve_session_owner_kind(full_session_id)
+                history_graph = (
+                    source_chat_graph if owner_kind == "source" else chat_graph
+                )
+                thread_state = await asyncio.to_thread(
+                    history_graph.get_state,
+                    config=RunnableConfig(
+                        configurable={"thread_id": full_session_id}
+                    ),
+                )
+                if thread_state and thread_state.values:
+                    history_messages = extract_chat_messages(
+                        thread_state.values.get("messages", [])
+                    )
+            except HTTPException as e:
+                logger.debug(
+                    f"Session {request.session_id} unavailable for breakdown "
+                    f"({e.status_code}); history segment reported as empty"
+                )
+            breakdown = compute_context_breakdown(
+                notebook=notebook,
+                agent_instructions=agent_instructions,
+                context_data=context_data,
+                total_content=total_content,
+                history_messages=history_messages,
+                context_config=request.context_config,
+            )
+
         return BuildContextResponse(
-            context=context_data, token_count=estimated_tokens, char_count=char_count
+            context=context_data,
+            token_count=estimated_tokens,
+            char_count=char_count,
+            breakdown=breakdown,
         )
     except HTTPException:
         raise

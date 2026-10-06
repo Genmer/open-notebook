@@ -12,6 +12,12 @@ vi.mock('@/lib/hooks/use-modal-manager', () => ({
   useModalManager: () => ({ openModal: vi.fn() }),
 }))
 
+// SessionManager (rendered inside the session dialog once session props are
+// passed) looks up model names via react-query — stubbed to stay provider-free.
+vi.mock('@/lib/hooks/use-models', () => ({
+  useModels: () => ({ data: [{ id: 'model:a', name: 'GPT-4o' }] }),
+}))
+
 // Stubbed so the empty-input parallel hint can be asserted without a Toaster.
 vi.mock('sonner', () => ({
   toast: {
@@ -49,16 +55,21 @@ vi.mock('@/lib/hooks/use-sources', () => ({
 
 // Keep the message-content deps light for this composer-focused test.
 // Probe: expose the received sourceGrouping so the ChatPanel → memo ChatMessage
-// → MessageActions hand-off is asserted with a same-value check.
+// → MessageActions hand-off is asserted with a same-value check. The onDelete
+// flag surfaces whether the panel unlocked the per-message delete entry.
 vi.mock('@/components/sources/MessageActions', () => ({
   MessageActions: ({
     sourceGrouping,
+    onDelete,
   }: {
     sourceGrouping?: { viewId?: string; group?: string }
+    onDelete?: () => void
   }) => (
     <div
       data-testid="message-actions-probe"
       data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
+      data-has-ondelete={typeof onDelete === 'function' ? '1' : ''}
+      onClick={onDelete}
     />
   ),
 }))
@@ -622,5 +633,332 @@ describe('ChatPanel message actions grouping hand-off', () => {
     )
 
     expect(screen.getByTestId('message-actions-probe')).toHaveAttribute('data-source-grouping', '')
+  })
+})
+
+describe('ChatPanel session manager entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  const sessions = [
+    { id: 's1', title: 'Alpha Session', created: '2026-01-01T10:00:00Z', updated: '2026-01-01T10:00:00Z', message_count: 2 },
+    { id: 's2', title: 'Beta Session', created: '2026-01-02T10:00:00Z', updated: '2026-01-02T10:00:00Z', message_count: 4 },
+  ]
+
+  const renderWithSessions = (
+    onSelectSession = vi.fn(),
+    options: { isStreaming?: boolean; parallelPhase?: 'idle' | 'running' | 'done' } = {}
+  ) => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={options.isStreaming ?? false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        sessions={sessions}
+        currentSessionId="s1"
+        onCreateSession={vi.fn()}
+        onSelectSession={onSelectSession}
+        onDeleteSession={vi.fn()}
+        onUpdateSession={vi.fn()}
+        loadingSessions={false}
+        parallelChat={
+          options.parallelPhase
+            ? {
+                phase: options.parallelPhase,
+                runs: [],
+                synthesis: null,
+                isSynthesizing: false,
+                send: vi.fn(),
+                synthesize: vi.fn(),
+              }
+            : undefined
+        }
+      />
+    )
+    return { onSelectSession }
+  }
+
+  it('opens the session dialog from the header button', () => {
+    renderWithSessions()
+
+    fireEvent.click(screen.getByText('chat.sessions'))
+
+    // The sr-only DialogTitle and the panel CardTitle both carry this string.
+    expect(screen.getAllByText('sessions.managerTitle').length).toBeGreaterThan(0)
+    expect(screen.getByText('Alpha Session')).toBeInTheDocument()
+    expect(screen.getByText('Beta Session')).toBeInTheDocument()
+  })
+
+  it('does not render the entry when the session callbacks are absent', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('chat.sessions')).not.toBeInTheDocument()
+  })
+
+  it('switches to the clicked session and closes the dialog', () => {
+    const { onSelectSession } = renderWithSessions()
+
+    fireEvent.click(screen.getByText('chat.sessions'))
+    fireEvent.click(screen.getByText('Beta Session'))
+
+    expect(onSelectSession).toHaveBeenCalledWith('s2')
+    expect(screen.queryByText('sessions.managerTitle')).not.toBeInTheDocument()
+    expect(screen.queryByText('Beta Session')).not.toBeInTheDocument()
+  })
+
+  it('keeps the fullscreen toggle reachable next to the session entry', () => {
+    renderWithSessions()
+
+    expect(screen.getByRole('button', { name: 'chat.enterFullscreen' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'chat.sessions' })).toBeInTheDocument()
+  })
+
+  it('locks the session delete entry while a single-run stream is active (A12)', () => {
+    renderWithSessions(vi.fn(), { isStreaming: true })
+
+    fireEvent.click(screen.getByText('chat.sessions'))
+
+    // Both session cards carry the same aria-labelled delete button.
+    const deleteButtons = screen.getAllByLabelText(
+      'sessions.deleteSession'
+    ) as HTMLButtonElement[]
+    expect(deleteButtons).toHaveLength(2)
+    for (const button of deleteButtons) expect(button).toBeDisabled()
+  })
+
+  it('locks the session delete entry while a parallel run is active (A12)', () => {
+    renderWithSessions(vi.fn(), { parallelPhase: 'running' })
+
+    fireEvent.click(screen.getByText('chat.sessions'))
+
+    const deleteButtons = screen.getAllByLabelText(
+      'sessions.deleteSession'
+    ) as HTMLButtonElement[]
+    for (const button of deleteButtons) expect(button).toBeDisabled()
+  })
+
+  it('keeps the session delete entry enabled once the parallel run is done (A12)', () => {
+    renderWithSessions(vi.fn(), { parallelPhase: 'done' })
+
+    fireEvent.click(screen.getByText('chat.sessions'))
+
+    const deleteButtons = screen.getAllByLabelText(
+      'sessions.deleteSession'
+    ) as HTMLButtonElement[]
+    expect(deleteButtons.length).toBeGreaterThan(0)
+    for (const button of deleteButtons) expect(button).not.toBeDisabled()
+  })
+})
+
+describe('ChatPanel message delete entries (bubble history editing)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  const humanMessage = {
+    id: 'human-1',
+    type: 'human' as const,
+    content: 'What is the capital of France?',
+  }
+
+  const renderPanel = (
+    messages: Parameters<typeof ChatPanel>[0]['messages'],
+    options: {
+      onDeleteMessage?: (messageId: string) => void
+      onClearMessages?: () => void
+      isClearingMessage?: boolean
+      isStreaming?: boolean
+      parallelPhase?: 'idle' | 'running' | 'done'
+    } = {}
+  ) => {
+    render(
+      <ChatPanel
+        messages={messages}
+        isStreaming={options.isStreaming ?? false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        onDeleteMessage={options.onDeleteMessage}
+        onClearMessages={options.onClearMessages}
+        isClearingMessage={options.isClearingMessage}
+        parallelChat={
+          options.parallelPhase
+            ? {
+                phase: options.parallelPhase,
+                runs: [],
+                synthesis: null,
+                isSynthesizing: false,
+                send: vi.fn(),
+                synthesize: vi.fn(),
+              }
+            : undefined
+        }
+      />
+    )
+  }
+
+  it('shows a hover delete button on human bubbles, confirmed via ConfirmDialog', () => {
+    const onDeleteMessage = vi.fn()
+    renderPanel([humanMessage], { onDeleteMessage })
+
+    const deleteButton = screen.getByTestId('message-delete-human-1')
+    fireEvent.click(deleteButton)
+
+    // Confirm dialog appears with the shared delete copy keys.
+    expect(screen.getByText('sessions.deleteMessage')).toBeInTheDocument()
+    // Not deleted yet — the confirm step guards the destructive call.
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('common.confirm'))
+    expect(onDeleteMessage).toHaveBeenCalledTimes(1)
+    expect(onDeleteMessage).toHaveBeenCalledWith('human-1')
+  })
+
+  it('keeps the message when the confirm dialog is cancelled', () => {
+    const onDeleteMessage = vi.fn()
+    renderPanel([humanMessage], { onDeleteMessage })
+
+    fireEvent.click(screen.getByTestId('message-delete-human-1'))
+    fireEvent.click(screen.getByText('common.cancel'))
+
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+  })
+
+  it('hands the delete entry to MessageActions of an AI message', () => {
+    const onDeleteMessage = vi.fn()
+    renderPanel(
+      [{ id: 'ai-1', type: 'ai' as const, content: 'Paris.' }],
+      { onDeleteMessage }
+    )
+
+    const probe = screen.getByTestId('message-actions-probe')
+    expect(probe).toHaveAttribute('data-has-ondelete', '1')
+
+    // The probe stands in for the real delete button; clicking opens the
+    // shared confirm, confirming reaches the callback with the message id.
+    fireEvent.click(probe)
+    fireEvent.click(screen.getByText('common.confirm'))
+    expect(onDeleteMessage).toHaveBeenCalledWith('ai-1')
+  })
+
+  it('renders no delete entries when onDeleteMessage is absent', () => {
+    renderPanel(
+      [humanMessage, { id: 'ai-1', type: 'ai' as const, content: 'Paris.' }],
+      { onDeleteMessage: undefined }
+    )
+
+    expect(screen.queryByTestId('message-delete-human-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('message-actions-probe')).toHaveAttribute('data-has-ondelete', '')
+  })
+
+  it('hides the delete entries while a single-run stream is active', () => {
+    renderPanel([humanMessage], { isStreaming: true })
+
+    expect(screen.queryByTestId('message-delete-human-1')).not.toBeInTheDocument()
+  })
+
+  it('hides the delete entries while a parallel fan-out is running', () => {
+    renderPanel([humanMessage], { parallelPhase: 'running' })
+
+    expect(screen.queryByTestId('message-delete-human-1')).not.toBeInTheDocument()
+  })
+
+  it('hides the delete entry on temp-* optimistic bubbles', () => {
+    renderPanel([
+      { id: 'temp-1700000000000', type: 'human' as const, content: 'in flight' },
+    ])
+
+    expect(
+      screen.queryByTestId('message-delete-temp-1700000000000')
+    ).not.toBeInTheDocument()
+  })
+
+  it('suppresses the delete entry on parallel group questions (A12)', () => {
+    renderPanel([
+      {
+        id: 'q-1',
+        type: 'human' as const,
+        content: 'Compare the two models',
+        group_id: 'g1',
+      },
+      {
+        id: 'a-1',
+        type: 'ai' as const,
+        content: 'Answer one',
+        group_id: 'g1',
+        run_role: 'member',
+      },
+    ])
+
+    // The group renders (answers grid present) but its question bubble — the
+    // group's anchor — carries no delete entry.
+    expect(screen.getByTestId('parallel-group-g1')).toBeInTheDocument()
+    expect(screen.queryByTestId('message-delete-q-1')).not.toBeInTheDocument()
+  })
+
+  it('shows the header clear entry when onClearMessages is wired, confirmed via ConfirmDialog', () => {
+    const onClearMessages = vi.fn()
+    renderPanel([humanMessage], { onClearMessages })
+
+    fireEvent.click(screen.getByTestId('chat-clear-history'))
+
+    // Clear confirm appears with the shared clear-history keys; nothing is
+    // cleared before the confirm step.
+    expect(screen.getByText('context.clearHistory')).toBeInTheDocument()
+    expect(onClearMessages).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('common.confirm'))
+    expect(onClearMessages).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the history when the clear confirm dialog is cancelled', () => {
+    const onClearMessages = vi.fn()
+    renderPanel([humanMessage], { onClearMessages })
+
+    fireEvent.click(screen.getByTestId('chat-clear-history'))
+    fireEvent.click(screen.getByText('common.cancel'))
+
+    expect(onClearMessages).not.toHaveBeenCalled()
+  })
+
+  it('renders no clear entry when onClearMessages is absent or only temp-* bubbles exist', () => {
+    renderPanel([humanMessage])
+    expect(screen.queryByTestId('chat-clear-history')).not.toBeInTheDocument()
+
+    renderPanel(
+      [{ id: 'temp-1700000000000', type: 'human' as const, content: 'in flight' }],
+      { onClearMessages: () => {} }
+    )
+    // Optimistic bubbles have no checkpoint presence — nothing to clear yet.
+    expect(screen.queryByTestId('chat-clear-history')).not.toBeInTheDocument()
+  })
+
+  it('disables the clear entry while a single-run stream is active', () => {
+    renderPanel([humanMessage], {
+      onClearMessages: () => {},
+      isStreaming: true,
+    })
+
+    expect(screen.getByTestId('chat-clear-history')).toBeDisabled()
+  })
+
+  it('disables the clear entry while a parallel fan-out is running', () => {
+    renderPanel([humanMessage], {
+      onClearMessages: () => {},
+      parallelPhase: 'running',
+    })
+
+    expect(screen.getByTestId('chat-clear-history')).toBeDisabled()
   })
 })
