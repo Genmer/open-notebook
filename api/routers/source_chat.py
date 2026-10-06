@@ -17,6 +17,7 @@ from api.routers._chat_shared import (
     extract_chat_messages,
     get_source_or_404,
     get_verified_source_session,
+    session_in_generation,
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession
@@ -24,6 +25,7 @@ from open_notebook.exceptions import (
     NotFoundError,
     OpenNotebookError,
 )
+from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
 from open_notebook.utils.graph_utils import (
     get_session_message_count,
@@ -31,6 +33,21 @@ from open_notebook.utils.graph_utils import (
 )
 
 router = APIRouter()
+
+# Per-session in-flight guard for source streaming (mirrors chat_stream.py's
+# notebook-stream guard; see its module docstring for the atomicity note).
+# The membership check and the add happen with no await between them, and the
+# ONLY removal path is the invoke wrapper task's done_callback — so a client
+# disconnect cannot release the guard while the worker thread is still
+# generating and writing the checkpoint.
+_inflight: set[str] = set()
+
+_IN_GENERATION_DETAIL = "A generation is already in progress for this session"
+
+
+def inflight_session_ids() -> set[str]:
+    """Read-only snapshot of sessions with an active source stream."""
+    return set(_inflight)
 
 
 # Request/Response models
@@ -338,7 +355,27 @@ async def delete_source_chat_session(
             session,
         ) = await get_verified_source_session(source_id, session_id)
 
+        # Never delete out from under an active generation (merged guard
+        # across the notebook and source stream routers).
+        if session_in_generation(full_session_id):
+            raise HTTPException(status_code=409, detail=_IN_GENERATION_DETAIL)
+
         await session.delete()
+
+        # Same degradation contract as the notebook session delete: the row
+        # is already gone and unretryable, so a checkpoint cleanup failure is
+        # a logged gap instead of an error response. Both savers share the
+        # same sqlite file; chat_graph's checkpointer covers every thread.
+        try:
+            await asyncio.to_thread(
+                chat_graph.checkpointer.delete_thread,  # type: ignore[union-attr]
+                full_session_id,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to delete LangGraph checkpoint for session "
+                f"{full_session_id}: {e}"
+            )
 
         return SuccessResponse(
             success=True, message="Source chat session deleted successfully"
@@ -364,6 +401,12 @@ async def stream_source_chat_response(
     project_env_context: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the source chat response as Server-Sent Events."""
+    # The invoke wrapper task created below owns the guard release through its
+    # done_callback; a disconnect therefore cannot free the session for edits
+    # while the worker thread is still generating. This fallback only covers
+    # failures before the task exists (cancelled during the preparatory
+    # awaits) so the set can never leak.
+    invoke_task: Optional[asyncio.Task] = None
     try:
         # Get current state
         # Use sync get_state() in a thread since SqliteSaver doesn't support async
@@ -393,16 +436,31 @@ async def stream_source_chat_response(
         # flush and every other request stalls until the LLM finishes. Mirrors the
         # get_state() calls above.
         # invoke_chat_turn also drops the question from the checkpoint when the
-        # turn fails, so a retry doesn't add it twice.
-        result = await asyncio.to_thread(
-            invoke_chat_turn,
-            source_chat_graph,
-            state_values,
-            RunnableConfig(
-                configurable={"thread_id": session_id, "model_id": model_override}
-            ),
-            user_message,
+        # turn fails, so a retry doesn't add it twice. The thread cannot be
+        # cancelled, so the blocking invoke must outlive a client disconnect and
+        # still land its checkpoint: the explicit task decouples it from this
+        # generator's lifetime, and the done_callback — not a generator finally —
+        # releases the in-flight guard only when the invoke has truly finished.
+        invoke_task = asyncio.create_task(
+            asyncio.to_thread(
+                invoke_chat_turn,
+                source_chat_graph,
+                state_values,
+                RunnableConfig(
+                    configurable={"thread_id": session_id, "model_id": model_override}
+                ),
+                user_message,
+            )
         )
+        invoke_task.add_done_callback(lambda _t: _inflight.discard(session_id))
+        # shield: Task.cancel() cancels the awaited inner future too, so a
+        # plain await would cancel this wrapper on client disconnect, fire
+        # the done_callback early and reopen the very lost-update window
+        # this guard closes. The shield keeps the wrapper task running (the
+        # worker thread cannot be cancelled and must still land its
+        # checkpoint); the CancelledError still propagates to the generator,
+        # and only the invoke's true completion releases the guard.
+        result = await asyncio.shield(invoke_task)
 
         # Stream this turn's AI response. result["messages"] is the full
         # checkpointed history, so only the last message is new.
@@ -440,6 +498,9 @@ async def stream_source_chat_response(
         logger.error(f"Error in source chat streaming: {str(e)}")
         error_event = {"type": "error", "message": error_message}
         yield f"data: {json.dumps(error_event)}\n\n"
+    finally:
+        if invoke_task is None:
+            _inflight.discard(session_id)
 
 
 @router.post("/sources/{source_id}/chat/sessions/{session_id}/messages")
@@ -473,6 +534,14 @@ async def send_message_to_source_chat(
 
         # Update session timestamp
         await session.save()
+
+        # In-flight guard: the membership check and the add have no await
+        # between them (atomic within one event loop iteration, mirroring
+        # chat_stream.py), so concurrent sends can't both slip through.
+        # Discard happens via the invoke wrapper task's done_callback.
+        if full_session_id in _inflight:
+            raise HTTPException(status_code=409, detail=_IN_GENERATION_DETAIL)
+        _inflight.add(full_session_id)
 
         # Return streaming response
         return StreamingResponse(

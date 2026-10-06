@@ -14,7 +14,8 @@ import {
   CreateNotebookChatSessionRequest,
   UpdateNotebookChatSessionRequest,
   SourceListResponse,
-  NoteResponse
+  NoteResponse,
+  ContextBreakdown
 } from '@/lib/types/api'
 import { ContextSelections } from '@/app/(dashboard)/notebooks/[id]/page'
 
@@ -37,6 +38,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [isSending, setIsSending] = useState(false)
   const [tokenCount, setTokenCount] = useState<number>(0)
   const [charCount, setCharCount] = useState<number>(0)
+  // Composition breakdown of the assembled context (char shares per segment,
+  // with per-message history items). null when the backend predates the field.
+  const [contextBreakdown, setContextBreakdown] = useState<ContextBreakdown | null>(null)
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
   // Pending agent binding (PDR-004); mutually exclusive with the model override
@@ -151,7 +155,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         setCurrentSessionId(null)
         setMessages([])
       }
-      toast.success(t('chat.sessionDeleted'))
+      toast.success(t('sessions.sessionDeleted'))
     },
     onError: (err: unknown) => {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
@@ -160,8 +164,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   })
 
   // Build context from the selection maps (the context picker may include
-  // sources that paginated listings have not loaded yet)
-  const buildContext = useCallback(async () => {
+  // sources that paginated listings have not loaded yet). An explicit session
+  // id (or the current one) asks the backend to include the session history in
+  // the breakdown; servers without the field simply ignore it.
+  const buildContext = useCallback(async (sessionId?: string) => {
     const context_config = buildChatContextConfig(
       contextSelections,
       sources.map(source => source.id),
@@ -172,14 +178,84 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     const response = await chatApi.buildContext({
       notebook_id: notebookId,
       context_config,
+      session_id: sessionId ?? currentSessionId ?? undefined,
     })
 
     // Store token and char counts
     setTokenCount(response.token_count)
     setCharCount(response.char_count)
+    setContextBreakdown(response.breakdown ?? null)
 
     return response.context
-  }, [notebookId, sources, notes, contextSelections])
+  }, [notebookId, sources, notes, contextSelections, currentSessionId])
+
+  // Refresh only the composition breakdown (same call as buildContext); the
+  // auto-refresh effect below already fires on selection/session changes, this
+  // covers the post-mutation and post-send refreshes.
+  const refreshContextBreakdown = useCallback(async (sessionId?: string) => {
+    try {
+      await buildContext(sessionId)
+    } catch (error) {
+      console.error('Error refreshing context breakdown:', error)
+    }
+  }, [buildContext])
+
+  // History editing mutations (context breakdown dialog entries). Optimistic
+  // update first; on failure reconcile against the session checkpoint (the
+  // authoritative source) instead of hand-rolling a rollback snapshot.
+  const deleteMessagesMutation = useMutation({
+    mutationFn: ({ sessionId, messageIds }: { sessionId: string; messageIds: string[] }) =>
+      chatApi.deleteChatMessages(sessionId, { message_ids: messageIds }),
+    onMutate: ({ sessionId, messageIds }) => {
+      if (sessionId !== currentSessionId) return
+      const doomed = new Set(messageIds)
+      setMessages(prev => prev.filter(message => !doomed.has(message.id)))
+    },
+    onSuccess: (data, { sessionId }) => {
+      // Authoritative replace with what the checkpoint actually retains.
+      if (sessionId === currentSessionId) setMessages(data.messages)
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSession(sessionId)
+      })
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+      })
+      refreshContextBreakdown(sessionId)
+      toast.success(t('sessions.messageDeleted', { count: data.deleted_count }))
+    },
+    onError: (err: unknown, { sessionId }) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(t('sessions.messageDeleteFailed'), {
+        description: getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.genericError')
+      })
+      if (sessionId === currentSessionId) void refetchCurrentSession()
+    }
+  })
+
+  const clearMessagesMutation = useMutation({
+    mutationFn: (sessionId: string) => chatApi.clearChatMessages(sessionId),
+    onMutate: (sessionId) => {
+      if (sessionId === currentSessionId) setMessages([])
+    },
+    onSuccess: (data, sessionId) => {
+      if (sessionId === currentSessionId) setMessages(data.messages)
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSession(sessionId)
+      })
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+      })
+      refreshContextBreakdown(sessionId)
+      toast.success(t('sessions.messagesCleared'))
+    },
+    onError: (err: unknown, sessionId) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(t('sessions.clearFailed'), {
+        description: getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.genericError')
+      })
+      if (sessionId === currentSessionId) void refetchCurrentSession()
+    }
+  })
 
   // Auto-create a session if none exists (shared by the single-run and
   // parallel send paths); returns null on failure after toasting.
@@ -249,8 +325,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
 
     try {
-      // Build context and send message
-      const context = await buildContext()
+      // Build context and send message (session id included so the breakdown
+      // reflects this session's history)
+      const context = await buildContext(sessionId)
 
       // Flow state as local variables (useState would stale-close inside
       // the SSE event callback).
@@ -324,11 +401,16 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       setStreamingContent(null)
       clearStreamTimeout()
       streamAbortRef.current = null
+      // History changed with this send: refresh the composition breakdown
+      // with the local session id (the closure-safe one, not the state that
+      // may still be null for a first-message auto-created session).
+      void refreshContextBreakdown(sessionId)
     }
   }, [
     currentSession,
     ensureSessionId,
     buildContext,
+    refreshContextBreakdown,
     refetchCurrentSession,
     t
   ])
@@ -345,7 +427,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const sendParallelMessage = useCallback(async (message: string, runs: string[]) => {
     const sessionId = await ensureSessionId(message)
     if (!sessionId) return
-    const context = await buildContext()
+    const context = await buildContext(sessionId)
     await parallel.start(sessionId, message, runs, context, refetchCurrentSession)
   }, [ensureSessionId, buildContext, parallel, refetchCurrentSession])
 
@@ -383,6 +465,16 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const deleteSession = useCallback((sessionId: string) => {
     return deleteSessionMutation.mutate(sessionId)
   }, [deleteSessionMutation])
+
+  // History editing (context breakdown dialog): delete selected messages /
+  // clear the whole history of a session.
+  const deleteMessages = useCallback((sessionId: string, messageIds: string[]) => {
+    return deleteMessagesMutation.mutate({ sessionId, messageIds })
+  }, [deleteMessagesMutation])
+
+  const clearMessages = useCallback((sessionId: string) => {
+    return clearMessagesMutation.mutate(sessionId)
+  }, [clearMessagesMutation])
 
   // Set model override - handles both existing sessions and pending state.
   // The backend clears the session's agent binding when a model is set
@@ -450,8 +542,13 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     // ChatPanel renders it as plain text + cursor while isSending is true.
     streamingMessage: streamingContent === null ? null : { content: streamingContent },
     loadingSessions,
+    isDeletingSession: deleteSessionMutation.isPending,
     tokenCount,
     charCount,
+    // Composition breakdown (null when the backend has no breakdown yet)
+    contextBreakdown,
+    isDeletingMessages: deleteMessagesMutation.isPending,
+    isClearingMessages: clearMessagesMutation.isPending,
     pendingModelOverride,
     pendingAgentOverride,
     pendingProjectEnv,
@@ -466,6 +563,9 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setModelOverride,
     setAgentOverride,
     setProjectEnv,
+    deleteMessages,
+    clearMessages,
+    refreshContextBreakdown,
     parallel,
     sendParallelMessage,
     synthesizeParallel,

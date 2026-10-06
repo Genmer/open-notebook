@@ -10,6 +10,8 @@ import {
   NotebookChatMessage,
   BuildContextRequest,
   BuildContextResponse,
+  DeleteChatMessagesRequest,
+  DeleteChatMessagesResponse,
 } from '@/lib/types/api'
 
 export interface ParallelRunStarted {
@@ -111,6 +113,23 @@ export const chatApi = {
     const response = await apiClient.post<BuildContextResponse>(
       `/chat/context`,
       data
+    )
+    return response.data
+  },
+
+  // History editing (checkpoint hard-delete behind the scenes). The response
+  // carries the full remaining message list for an authoritative replace.
+  deleteChatMessages: async (sessionId: string, data: DeleteChatMessagesRequest) => {
+    const response = await apiClient.post<DeleteChatMessagesResponse>(
+      `/chat/sessions/${sessionId}/messages/delete`,
+      data
+    )
+    return response.data
+  },
+
+  clearChatMessages: async (sessionId: string) => {
+    const response = await apiClient.post<DeleteChatMessagesResponse>(
+      `/chat/sessions/${sessionId}/messages/clear`
     )
     return response.data
   },

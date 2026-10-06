@@ -75,6 +75,15 @@ export default function SourceDetailPage() {
             onUpdateSession={(sessionId, title) => chat.updateSession(sessionId, { title })}
             onDeleteSession={chat.deleteSession}
             loadingSessions={chat.loadingSessions}
+            isDeletingSession={chat.isDeletingSession}
+            onDeleteMessage={(messageId) => {
+              if (chat.currentSessionId) chat.deleteMessages(chat.currentSessionId, [messageId])
+            }}
+            isDeletingMessage={chat.isDeletingMessages}
+            onClearMessages={() => {
+              if (chat.currentSessionId) chat.clearMessages(chat.currentSessionId)
+            }}
+            isClearingMessage={chat.isClearingMessages}
           />
         </div>
       </div>

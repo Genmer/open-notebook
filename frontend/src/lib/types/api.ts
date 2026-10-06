@@ -564,6 +564,59 @@ export interface BuildContextRequest {
     sources: Record<string, string>
     notes: Record<string, string>
   }
+  /**
+   * Optional chat session id: the backend includes the session's checkpoint
+   * history in the returned breakdown. Servers predating the breakdown
+   * endpoint ignore the extra field.
+   */
+  session_id?: string
+}
+
+/** One segment of the context breakdown, keyed by prompt part. */
+export type ContextSegmentKey = 'system_prompt' | 'history' | 'sources' | 'notes'
+
+/** A per-message entry of the history segment (message_id doubles as the delete key). */
+export interface ContextBreakdownHistoryItem {
+  message_id: string
+  role: 'human' | 'ai'
+  chars: number
+  percent: number
+}
+
+/** A per-source entry of the sources segment (mode mirrors the request status). */
+export interface ContextBreakdownSourceItem {
+  id: string
+  title: string
+  /** Request status string ("full content" | "insights"); null on the default path. */
+  mode?: string | null
+  chars: number
+  percent: number
+}
+
+/** A per-note entry of the notes segment. */
+export interface ContextBreakdownNoteItem {
+  id: string
+  title: string
+  chars: number
+  percent: number
+}
+
+/** One stacked-bar segment of the context composition breakdown. */
+export interface ContextBreakdownSegment {
+  key: ContextSegmentKey
+  chars: number
+  percent: number
+  message_count?: number | null
+  items?: Array<
+    ContextBreakdownHistoryItem | ContextBreakdownSourceItem | ContextBreakdownNoteItem
+  > | null
+}
+
+/** Char-based composition breakdown of the assembled chat context. */
+export interface ContextBreakdown {
+  total_chars: number
+  estimated_tokens: number
+  segments: ContextBreakdownSegment[]
 }
 
 export interface BuildContextResponse {
@@ -573,6 +626,20 @@ export interface BuildContextResponse {
   }
   token_count: number
   char_count: number
+  /** Present only when the backend assembles breakdowns (session-aware call). */
+  breakdown?: ContextBreakdown
+}
+
+/** Request body for the bulk history-message delete endpoint. */
+export interface DeleteChatMessagesRequest {
+  message_ids: string[]
+}
+
+/** Authoritative response after a history delete/clear: what remains. */
+export interface DeleteChatMessagesResponse {
+  session_id: string
+  deleted_count: number
+  messages: NotebookChatMessage[]
 }
 
 export interface RecentlyViewedResponse {

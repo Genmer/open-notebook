@@ -44,7 +44,10 @@ def _session(**overrides):
         model_override=None,
     )
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    nb = SimpleNamespace(**defaults)
+    # Session row deletion (DELETE endpoints call it after verification).
+    nb.delete = AsyncMock()
+    return nb
 
 
 def _source(**overrides):
@@ -397,3 +400,84 @@ async def test_stream_emits_only_the_new_ai_message(mock_graph):
         "context_indicators",
         "complete",
     ]
+
+
+# --- session DELETE: checkpoint cleanup (PDR-005) -------------------------------
+#
+# The DELETE endpoints keep their contract but now (a) refuse while a
+# generation is in flight (409) and (b) clean the LangGraph checkpoint after
+# the row delete, degrading to a warning on failure. Table-level assertions
+# live in tests/test_chat_history_api.py (real SqliteSaver); these pin the
+# call shape.
+
+
+@pytest.mark.asyncio
+@patch("api.routers.chat.chat_graph")
+@patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
+async def test_delete_chat_session_cleans_checkpoint(mock_get, mock_graph, client):
+    session = _session()
+    mock_get.return_value = session
+    response = client.delete("/api/chat/sessions/abc")
+
+    assert response.status_code == 200
+    session.delete.assert_awaited_once()
+    mock_graph.checkpointer.delete_thread.assert_called_once_with("chat_session:abc")
+
+
+@pytest.mark.asyncio
+@patch("api.routers.chat.chat_graph")
+@patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
+async def test_delete_chat_session_tolerates_checkpoint_failure(
+    mock_get, mock_graph, client
+):
+    """The row is already gone when checkpoint cleanup fails — the endpoint
+    must not turn that into an error response."""
+    session = _session()
+    mock_get.return_value = session
+    mock_graph.checkpointer.delete_thread.side_effect = RuntimeError("locked")
+
+    response = client.delete("/api/chat/sessions/abc")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "message": "Session deleted successfully",
+    }
+    session.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("api.routers.chat.session_in_generation")
+@patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
+async def test_delete_chat_session_409_while_generating(
+    mock_get, mock_inflight, client
+):
+    session = _session()
+    mock_get.return_value = session
+    mock_inflight.return_value = True
+
+    response = client.delete("/api/chat/sessions/abc")
+
+    assert response.status_code == 409
+    assert "already in progress" in response.json()["detail"]
+    session.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("api.routers.source_chat.chat_graph")
+@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
+async def test_delete_source_chat_session_cleans_checkpoint(
+    mock_source_get, mock_session_get, mock_repo, mock_graph, client
+):
+    mock_source_get.return_value = _source()
+    session = _session()
+    mock_session_get.return_value = session
+    mock_repo.return_value = [{"in": "chat_session:abc", "out": "source:xyz"}]
+
+    response = client.delete("/api/sources/xyz/chat/sessions/abc")
+
+    assert response.status_code == 200
+    session.delete.assert_awaited_once()
+    mock_graph.checkpointer.delete_thread.assert_called_once_with("chat_session:abc")

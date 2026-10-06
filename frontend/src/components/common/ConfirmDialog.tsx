@@ -22,6 +22,10 @@ interface ConfirmDialogProps {
   confirmVariant?: 'default' | 'destructive'
   onConfirm: () => void
   isLoading?: boolean
+  /** Disables the confirm button without the loading spinner — used to lock
+   * destructive actions behind an external guard (e.g. a running generation).
+   * Optional — every other usage renders exactly as before. */
+  confirmDisabled?: boolean
   /** Extra content between the description and the footer, e.g. the
    * annotation-cascade warning line on the sources page (F9). Optional —
    * every other usage renders exactly as before. */
@@ -37,6 +41,7 @@ export function ConfirmDialog({
   confirmVariant = 'default',
   onConfirm,
   isLoading = false,
+  confirmDisabled = false,
   children,
 }: ConfirmDialogProps) {
   const { t } = useTranslation()
@@ -54,7 +59,7 @@ export function ConfirmDialog({
           <AlertDialogCancel disabled={isLoading}>{t('common.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            disabled={isLoading}
+            disabled={isLoading || confirmDisabled}
             className={confirmVariant === 'destructive' ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
           >
             {isLoading ? (

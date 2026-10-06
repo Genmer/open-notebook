@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,21 +13,13 @@ import {
   Edit2,
   Check,
   X,
-  Clock
+  Clock,
+  Search
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { BaseChatSession } from '@/lib/types/api'
 import { useModels } from '@/lib/hooks/use-models'
 
@@ -39,6 +31,13 @@ interface SessionManagerProps {
   onUpdateSession: (sessionId: string, title: string) => void
   onDeleteSession: (sessionId: string) => void
   loadingSessions: boolean
+  /** Delete-mutation in-flight flag; drives the ConfirmDialog spinner. */
+  isDeletingSession?: boolean
+  /** Locks the delete entry while a generation is running (A12): notebook
+   * streaming, source streaming, or a parallel run — the parallel path has
+   * no backend 409 guard (chat_parallel.py is change-frozen), so the frontend
+   * must keep the session undeletable for its duration. */
+  deleteDisabled?: boolean
 }
 
 export function SessionManager({
@@ -48,14 +47,17 @@ export function SessionManager({
   onSelectSession,
   onUpdateSession,
   onDeleteSession,
-  loadingSessions
+  loadingSessions,
+  isDeletingSession = false,
+  deleteDisabled = false
 }: SessionManagerProps) {
   const { t, language } = useTranslation()
   const [isCreating, setIsCreating] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
+  const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<BaseChatSession | null>(null)
 
   const { data: models } = useModels()
 
@@ -67,6 +69,38 @@ export function SessionManager({
       return model?.name || customModelLabel
     }
   }, [models, customModelLabel])
+
+  // Normalize the list order to updated-desc here in the panel (A1): notebook
+  // sessions already arrive that way (domain query sorts by updated desc),
+  // while source sessions arrive created-desc (api/routers/source_chat.py
+  // sorts by created) — sorting locally makes both hosts read updated-desc
+  // without touching the backend endpoint. Pure presentational sort; the data
+  // source and fetch frequency are unchanged. Unparseable timestamps fall back
+  // to 0 and keep their relative order (stable sort).
+  const sortedSessions = useMemo(() => {
+    const toTime = (value?: string) => {
+      const parsed = value ? Date.parse(value) : NaN
+      return Number.isNaN(parsed) ? 0 : parsed
+    }
+    return [...sessions].sort((a, b) => toTime(b.updated) - toTime(a.updated))
+  }, [sessions])
+
+  // Case-insensitive client-side title filter (ZCode-style session search).
+  const filteredSessions = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return sortedSessions
+    return sortedSessions.filter(session =>
+      (session.title || '').toLowerCase().includes(query)
+    )
+  }, [sortedSessions, search])
+
+  // Dismiss the confirm dialog once the deleted session leaves the list
+  // (the parent's mutation invalidates the sessions cache on success).
+  useEffect(() => {
+    if (deleteTarget && !sessions.some(session => session.id === deleteTarget.id)) {
+      setDeleteTarget(null)
+    }
+  }, [sessions, deleteTarget])
 
   const handleCreateSession = () => {
     if (newSessionTitle.trim()) {
@@ -95,11 +129,15 @@ export function SessionManager({
   }
 
   const handleDeleteConfirm = () => {
-    if (deleteConfirmId) {
-      onDeleteSession(deleteConfirmId)
-      setDeleteConfirmId(null)
+    // Guard mirrors the disabled buttons: even if the dialog was already open
+    // when a generation started, the delete must not fire while locked.
+    if (deleteTarget && !deleteDisabled) {
+      onDeleteSession(deleteTarget.id)
     }
   }
+
+  const getSessionTitle = (session: BaseChatSession) =>
+    session.title?.trim() || t('sessions.untitled')
 
   return (
     <>
@@ -108,12 +146,13 @@ export function SessionManager({
           <CardTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
-              {t('chat.sessions')}
+              {t('sessions.managerTitle')}
             </span>
             <Button
               size="sm"
               variant="outline"
               onClick={() => setIsCreating(true)}
+              aria-label={t('common.create')}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -121,15 +160,29 @@ export function SessionManager({
         </CardHeader>
         <CardContent className="flex-1 p-0 min-h-0">
           <ScrollArea className="h-full px-4">
+            <div className="relative pt-1 pb-3">
+              <Search
+                className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('sessions.searchPlaceholder')}
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
             {isCreating && (
               <div className="p-3 border rounded-lg mb-3">
                 <Input
                   value={newSessionTitle}
                   onChange={(e) => setNewSessionTitle(e.target.value)}
-                  placeholder={t('chat.sessionTitlePlaceholder')}
+                  placeholder={t('sessions.newSessionPlaceholder')}
                   className="mb-2"
                   autoFocus
-                  onKeyPress={(e) => {
+                  onKeyDown={(e) => {
+                    // React 19 dropped onKeyPress — keydown is the supported
+                    // form event for Enter-to-submit inputs.
                     if (e.key === 'Enter') handleCreateSession()
                   }}
                 />
@@ -158,12 +211,17 @@ export function SessionManager({
             ) : sessions.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-sm">{t('chat.noSessions')}</p>
-                <p className="text-xs mt-2">{t('chat.createToStart')}</p>
+                <p className="text-sm">{t('sessions.empty')}</p>
+                <p className="text-xs mt-2">{t('sessions.emptyHint')}</p>
+              </div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-sm">{t('sessions.noResults')}</p>
               </div>
             ) : (
               <div className="space-y-2 pb-4">
-                {sessions.map((session) => (
+                {filteredSessions.map((session) => (
                   <div
                     key={session.id}
                     className={`p-3 rounded-lg border cursor-pointer transition-colors ${
@@ -178,7 +236,7 @@ export function SessionManager({
                         <Input
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
-                          onKeyPress={(e) => {
+                          onKeyDown={(e) => {
                             if (e.key === 'Enter') handleSaveEdit()
                             if (e.key === 'Escape') handleCancelEdit()
                           }}
@@ -201,7 +259,7 @@ export function SessionManager({
                       <>
                         <div className="flex items-start justify-between mb-1">
                           <h4 className="font-medium text-sm">
-                            {session.title}
+                            {getSessionTitle(session)}
                           </h4>
                           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                             <Button
@@ -209,6 +267,7 @@ export function SessionManager({
                               variant="ghost"
                               className="h-6 w-6 p-0"
                               onClick={() => handleStartEdit(session)}
+                              aria-label={t('sessions.rename')}
                             >
                               <Edit2 className="h-3 w-3" />
                             </Button>
@@ -216,7 +275,9 @@ export function SessionManager({
                               size="sm"
                               variant="ghost"
                               className="h-6 w-6 p-0"
-                              onClick={() => setDeleteConfirmId(session.id)}
+                              onClick={() => setDeleteTarget(session)}
+                              disabled={deleteDisabled}
+                              aria-label={t('sessions.deleteSession')}
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -231,7 +292,7 @@ export function SessionManager({
                         </div>
                         {session.message_count != null && session.message_count > 0 && (
                           <Badge variant="secondary" className="mt-2 text-xs">
-                            {t('chat.messagesCount', { count: session.message_count })}
+                            {t('sessions.messagesCount', { count: session.message_count })}
                           </Badge>
                         )}
                         {session.model_override && (
@@ -249,22 +310,22 @@ export function SessionManager({
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('chat.deleteSession')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('chat.deleteSessionDesc')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm}>
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title={t('sessions.deleteSession')}
+        description={t('sessions.deleteSessionDesc', {
+          title: deleteTarget ? getSessionTitle(deleteTarget) : '',
+          count: deleteTarget?.message_count ?? 0
+        })}
+        confirmText={t('common.delete')}
+        confirmVariant="destructive"
+        onConfirm={handleDeleteConfirm}
+        isLoading={isDeletingSession}
+        confirmDisabled={deleteDisabled}
+      />
     </>
   )
 }

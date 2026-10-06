@@ -411,6 +411,7 @@ export default function NotebookPage() {
             contextSelections={contextSelections}
             handleSourceContextModeChange={handleSourceContextModeChange}
             handleBulkSourceContext={handleBulkSourceContext}
+            handleNoteContextModeChange={handleNoteContextModeChange}
             setContextPickerOpen={setContextPickerOpen}
           />
         ) : (

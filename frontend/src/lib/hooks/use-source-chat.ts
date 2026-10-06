@@ -100,11 +100,58 @@ export function useSourceChat(sourceId: string) {
         setCurrentSessionId(null)
         setMessages([])
       }
-      toast.success(t('chat.sessionDeleted'))
+      toast.success(t('sessions.sessionDeleted'))
     },
     onError: (err: unknown) => {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToDeleteSession'))
+    }
+  })
+
+  // History editing (message-bubble delete / clear): same optimistic-then-
+  // authoritative flow as the notebook chat hook — the checkpoint response is
+  // the single source of truth, failures reconcile via a session refetch.
+  const deleteMessagesMutation = useMutation({
+    mutationFn: ({ sessionId, messageIds }: { sessionId: string; messageIds: string[] }) =>
+      sourceChatApi.deleteMessages(sessionId, { message_ids: messageIds }),
+    onMutate: ({ sessionId, messageIds }) => {
+      if (sessionId !== currentSessionId) return
+      const doomed = new Set(messageIds)
+      setMessages(prev => prev.filter(message => !doomed.has(message.id)))
+    },
+    onSuccess: (data, { sessionId }) => {
+      // Authoritative replace with what the checkpoint actually retains.
+      if (sessionId === currentSessionId) setMessages(data.messages)
+      queryClient.invalidateQueries({ queryKey: ['sourceChatSession', sourceId, sessionId] })
+      queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
+      toast.success(t('sessions.messageDeleted', { count: data.deleted_count }))
+    },
+    onError: (err: unknown, { sessionId }) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(t('sessions.messageDeleteFailed'), {
+        description: getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.genericError')
+      })
+      if (sessionId === currentSessionId) void refetchCurrentSession()
+    }
+  })
+
+  const clearMessagesMutation = useMutation({
+    mutationFn: (sessionId: string) => sourceChatApi.clearMessages(sessionId),
+    onMutate: (sessionId) => {
+      if (sessionId === currentSessionId) setMessages([])
+    },
+    onSuccess: (data, sessionId) => {
+      if (sessionId === currentSessionId) setMessages(data.messages)
+      queryClient.invalidateQueries({ queryKey: ['sourceChatSession', sourceId, sessionId] })
+      queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
+      toast.success(t('sessions.messagesCleared'))
+    },
+    onError: (err: unknown, sessionId) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(t('sessions.clearFailed'), {
+        description: getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.genericError')
+      })
+      if (sessionId === currentSessionId) void refetchCurrentSession()
     }
   })
 
@@ -291,6 +338,16 @@ export function useSourceChat(sourceId: string) {
     }
   }, [sourceId, queryClient, t])
 
+  // History editing: delete selected messages / clear the whole history of a
+  // session (checkpoint hard-delete behind the scenes).
+  const deleteMessages = useCallback((sessionId: string, messageIds: string[]) => {
+    return deleteMessagesMutation.mutate({ sessionId, messageIds })
+  }, [deleteMessagesMutation])
+
+  const clearMessages = useCallback((sessionId: string) => {
+    return clearMessagesMutation.mutate(sessionId)
+  }, [clearMessagesMutation])
+
   return {
     // State
     sessions,
@@ -301,11 +358,16 @@ export function useSourceChat(sourceId: string) {
     contextIndicators,
     loadingSessions,
     pendingProjectEnv,
+    isDeletingSession: deleteSessionMutation.isPending,
+    isDeletingMessages: deleteMessagesMutation.isPending,
+    isClearingMessages: clearMessagesMutation.isPending,
 
     // Actions
     createSession,
     updateSession,
     deleteSession,
+    deleteMessages,
+    clearMessages,
     switchSession,
     sendMessage,
     cancelStreaming,

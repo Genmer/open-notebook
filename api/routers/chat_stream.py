@@ -244,3 +244,8 @@ async def stream_chat(session_id: str, request: StreamChatRequest) -> StreamingR
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def inflight_session_ids() -> set[str]:
+    """Read-only snapshot of sessions with an active notebook stream."""
+    return set(_inflight)

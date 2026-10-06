@@ -106,3 +106,41 @@ describe('MessageActions', () => {
     expect(screen.queryByText('sources.copied')).not.toBeInTheDocument()
   })
 })
+
+describe('MessageActions delete entry (onDelete)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders a delete icon button when onDelete is given (icon branch)', () => {
+    const onDelete = vi.fn()
+    render(<MessageActions content="answer" onDelete={onDelete} />)
+
+    const deleteButton = screen.getByRole('button', {
+      name: 'sessions.deleteMessage',
+    })
+    fireEvent.click(deleteButton)
+    expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no delete button when onDelete is absent (icon branch)', () => {
+    render(<MessageActions content="answer" />)
+
+    expect(
+      screen.queryByRole('button', { name: 'sessions.deleteMessage' })
+    ).not.toBeInTheDocument()
+    // Save/copy actions are unaffected: same single copy button as before.
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(1)
+  })
+
+  it('renders a labelled delete button in the text-label branch', () => {
+    const onDelete = vi.fn()
+    render(
+      <MessageActions content="answer" notebookId="nb:1" onDelete={onDelete} />
+    )
+
+    fireEvent.click(screen.getByText('sessions.deleteMessage'))
+    expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+})

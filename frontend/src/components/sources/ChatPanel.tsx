@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles, Square } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles, Square, Trash2 } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
@@ -21,6 +21,7 @@ import {
 } from '@/lib/types/api'
 import type { ContextMode, ContextSelections } from '@/lib/types/notebook-context'
 import type { BulkContextHandler } from '@/lib/utils/source-context'
+import type { ContextBreakdown } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
 import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelector'
 import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
@@ -28,6 +29,7 @@ import { ParallelLiveCard } from '@/components/chat/ParallelLiveCard'
 import { groupParallelMessages } from '@/lib/utils/parallel-messages'
 import { filterStreamingContent } from '@/lib/utils/stream-text'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
+import { ContextBreakdownBar } from '@/components/common/ContextBreakdownBar'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 import { ArtifactViewDialog } from '@/app/(dashboard)/notebooks/components/ArtifactViewDialog'
 import { GeminiSourcesColumn } from '@/app/(dashboard)/notebooks/components/GeminiSourcesColumn'
@@ -36,6 +38,8 @@ import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 import { SessionManager } from '@/components/sources/SessionManager'
 import { MessageActions } from '@/components/sources/MessageActions'
 import { ChatProjectEnv } from '@/components/project-envs/ChatProjectEnv'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { excerpt } from '@/app/(dashboard)/notebooks/components/ContextBreakdownDialog'
 import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent, parseSourceReferences } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useSourceTitles } from '@/lib/hooks/use-sources'
@@ -94,6 +98,22 @@ interface ChatPanelProps {
   onDeleteSession?: (sessionId: string) => void
   onUpdateSession?: (sessionId: string, title: string) => void
   loadingSessions?: boolean
+  /** Delete-session mutation in-flight flag (ConfirmDialog spinner). */
+  isDeletingSession?: boolean
+  // Per-message delete entry (history editing): when provided, human bubbles
+  // grow a hover trash button and AI bubbles' action row grows a delete
+  // button — both behind a ConfirmDialog owned by this panel. Hidden while
+  // isStreaming/parallel-running and on temp-* optimistic bubbles.
+  onDeleteMessage?: (messageId: string) => void
+  /** Message-delete mutation in-flight flag (ConfirmDialog spinner). */
+  isDeletingMessage?: boolean
+  // Clear-conversation entry (history editing): header trash button behind a
+  // ConfirmDialog owned by this panel. Same lock as the per-message entries —
+  // without this prop the source detail page has no clear path at all (the
+  // breakdown dialog only mounts on the notebook chat).
+  onClearMessages?: () => void
+  /** Clear-history mutation in-flight flag (ConfirmDialog spinner). */
+  isClearingMessage?: boolean
   // Generic props for reusability
   title?: string
   contextType?: 'source' | 'notebook'
@@ -101,6 +121,11 @@ interface ChatPanelProps {
   onOpenContextPicker?: () => void
   // Notebook context stats (for notebook chat)
   notebookContextStats?: NotebookContextStats
+  // Composition breakdown (char shares per segment). When present (and some
+  // content segment is non-zero) the stacked bar renders above the composer;
+  // onOpenContextBreakdown opens the detail dialog mounted by the caller.
+  contextBreakdown?: ContextBreakdown | null
+  onOpenContextBreakdown?: () => void
   // Notebook ID for saving notes
   notebookId?: string
   // 当前来源分组浏览范围：原引用直传给保存弹窗预选默认文件夹
@@ -143,9 +168,16 @@ export function ChatPanel({
   onDeleteSession,
   onUpdateSession,
   loadingSessions = false,
+  isDeletingSession = false,
+  onDeleteMessage,
+  isDeletingMessage = false,
+  onClearMessages,
+  isClearingMessage = false,
   title,
   contextType = 'source',
   notebookContextStats,
+  contextBreakdown,
+  onOpenContextBreakdown,
   onOpenContextPicker,
   notebookId,
   sourceGrouping,
@@ -162,6 +194,13 @@ export function ChatPanel({
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Pending per-message delete (bubble entry): backs the ConfirmDialog; the
+  // message object (not just the id) is kept so the confirm copy carries the
+  // excerpt, same as the context-breakdown dialog's entries.
+  const [pendingDelete, setPendingDelete] = useState<SourceChatMessage | null>(null)
+  // Clear-conversation confirm (header trash entry): one flag backs the
+  // button and its dialog, same as the breakdown dialog's clear entry.
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   // Fullscreen slide-out panels (sources left / notes right) — notebook chat
   // only; the open/close flags live here so the layered Esc handler below can
   // see them, while the react-query data fetching stays inside the
@@ -172,6 +211,26 @@ export function ChatPanel({
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { openModal } = useModalManager()
+
+  // Session delete lock (A12): notebook/source streaming or a running parallel
+  // fan-out. The parallel path has no backend 409 (chat_parallel.py is
+  // change-frozen), so this guard is what keeps the session undeletable while
+  // its archived answers are still being written. Same combination as the
+  // message delete entries.
+  const sessionDeleteLocked =
+    isStreaming || parallelChat?.phase === 'running'
+
+  // Per-message delete lock: same combination as above (deleting mid-write
+  // would race the checkpoint writer; the backend also 409s the delete while a
+  // single-run stream is in flight).
+  const messageDeleteLocked =
+    isStreaming || parallelChat?.phase === 'running'
+
+  // Stable handler for the memoized message rows: resolves the id back to the
+  // message object for the confirm excerpt, then opens the ConfirmDialog.
+  const requestMessageDelete = useCallback((messageId: string) => {
+    setPendingDelete(messages.find(message => message.id === messageId) ?? null)
+  }, [messages])
 
   // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
   // 无需目标元素持有焦点；非全屏态不挂监听。分层退出：侧栏开着先收侧栏，
@@ -255,7 +314,7 @@ export function ChatPanel({
                 <span className="text-xs">{t('chat.sessions')}</span>
               </Button>
               <DialogContent className="sm:max-w-[420px] p-0 overflow-hidden">
-                <DialogTitle className="sr-only">{t('chat.sessionsTitle')}</DialogTitle>
+                <DialogTitle className="sr-only">{t('sessions.managerTitle')}</DialogTitle>
                 <SessionManager
                   sessions={sessions}
                   currentSessionId={currentSessionId ?? null}
@@ -267,9 +326,25 @@ export function ChatPanel({
                   onUpdateSession={(sessionId, title) => onUpdateSession?.(sessionId, title)}
                   onDeleteSession={(sessionId) => onDeleteSession?.(sessionId)}
                   loadingSessions={loadingSessions}
+                  isDeletingSession={isDeletingSession}
+                  deleteDisabled={sessionDeleteLocked}
                 />
               </DialogContent>
             </Dialog>
+          )}
+          {onClearMessages && messages.some((message) => !message.id.startsWith('temp-')) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => setClearConfirmOpen(true)}
+              disabled={messageDeleteLocked || isDeletingMessage || isClearingMessage}
+              aria-label={t('context.clearHistory')}
+              title={t('context.clearHistory')}
+              data-testid="chat-clear-history"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           )}
           <Button
             variant="ghost"
@@ -304,6 +379,13 @@ export function ChatPanel({
                     notebookId={notebookId}
                     onReferenceClick={handleReferenceClick}
                     sourceGrouping={sourceGrouping}
+                    onDeleteMessage={
+                      onDeleteMessage &&
+                      !messageDeleteLocked &&
+                      !item.message.id.startsWith('temp-')
+                        ? requestMessageDelete
+                        : undefined
+                    }
                   />
                 ) : (
                   <ParallelGroupView
@@ -428,6 +510,16 @@ export function ChatPanel({
           />
         )}
 
+        {/* Composition bar (notebook chat only): renders itself only when a
+            breakdown exists and some content segment is non-zero; the whole
+            bar opens the detail dialog. */}
+        {contextBreakdown && onOpenContextBreakdown && (
+          <ContextBreakdownBar
+            breakdown={contextBreakdown}
+            onOpen={onOpenContextBreakdown}
+          />
+        )}
+
         {/* Input Area */}
         <ChatComposer
           onSendMessage={onSendMessage}
@@ -471,6 +563,40 @@ export function ChatPanel({
       )}
     </Card>
 
+    {/* Delete one message from its bubble (destructive; excerpt in the copy,
+        sessions.* keys per the 2026-10 session-manager changeset) */}
+    <ConfirmDialog
+      open={!!pendingDelete}
+      onOpenChange={(next) => { if (!next) setPendingDelete(null) }}
+      title={t('sessions.deleteMessage')}
+      description={t('sessions.deleteMessageDesc', {
+        excerpt: pendingDelete ? excerpt(pendingDelete.content, 30) : '',
+      })}
+      confirmVariant="destructive"
+      isLoading={isDeletingMessage}
+      onConfirm={() => {
+        if (pendingDelete) onDeleteMessage?.(pendingDelete.id)
+        setPendingDelete(null)
+      }}
+    />
+
+    {/* Clear the whole conversation (destructive; same keys as the
+        context-breakdown dialog's clear entry). temp-* optimistic bubbles have
+        no checkpoint presence, so the count only covers persisted messages. */}
+    <ConfirmDialog
+      open={clearConfirmOpen}
+      onOpenChange={setClearConfirmOpen}
+      title={t('context.clearHistory')}
+      description={t('context.clearHistoryDesc', {
+        count: messages.filter((message) => !message.id.startsWith('temp-')).length,
+      })}
+      confirmVariant="destructive"
+      isLoading={isClearingMessage}
+      onConfirm={() => {
+        onClearMessages?.()
+        setClearConfirmOpen(false)
+      }}
+    />
     </>
   )
 }
@@ -807,6 +933,11 @@ function ParallelGroupView({
           notebookId={notebookId}
           onReferenceClick={onReferenceClick}
           sourceGrouping={sourceGrouping}
+          // A12: the group question is the anchor of the archived group —
+          // deleting it alone would strand the answer cards, so the bubble's
+          // delete entry is suppressed here (the breakdown dialog's per-id
+          // entries remain the surgical path).
+          suppressDelete
         />
       )}
       <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
@@ -866,17 +997,27 @@ interface ChatMessageProps {
   notebookId?: string
   onReferenceClick: (type: string, id: string) => void
   sourceGrouping?: NotebookSourceFilters
+  /** Per-message delete entry (history editing). Present only when the panel
+   *  unlocked it: not streaming, no parallel fan-out, not a temp-* bubble. */
+  onDeleteMessage?: (messageId: string) => void
+  /** Hide the delete entries even when onDeleteMessage is wired — parallel
+   *  group questions set this so a group can't lose its anchor message. */
+  suppressDelete?: boolean
 }
 
 const ChatMessage = memo(function ChatMessage({
   message,
   notebookId,
   onReferenceClick,
-  sourceGrouping
+  sourceGrouping,
+  onDeleteMessage,
+  suppressDelete = false,
 }: ChatMessageProps) {
+  const { t } = useTranslation()
+  const deletable = !!onDeleteMessage && !suppressDelete
   return (
     <div
-      className={`flex gap-3 ${
+      className={`flex gap-3 group/msg ${
         message.type === 'human' ? 'justify-end' : 'justify-start'
       }`}
     >
@@ -909,11 +1050,27 @@ const ChatMessage = memo(function ChatMessage({
             content={message.content}
             notebookId={notebookId}
             sourceGrouping={sourceGrouping}
+            onDelete={
+              deletable ? () => onDeleteMessage?.(message.id) : undefined
+            }
           />
         )}
       </div>
       {message.type === 'human' && (
-        <div className="flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {deletable && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover/msg:opacity-100 focus-visible:opacity-100 transition-opacity"
+              onClick={() => onDeleteMessage?.(message.id)}
+              aria-label={t('sessions.deleteMessage')}
+              title={t('sessions.deleteMessage')}
+              data-testid={`message-delete-${message.id}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <div className="h-8 w-8 rounded-full bg-muted border flex items-center justify-center">
             <User className="h-4 w-4 text-muted-foreground" />
           </div>
