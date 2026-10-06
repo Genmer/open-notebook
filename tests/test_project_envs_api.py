@@ -1162,3 +1162,81 @@ def test_verification_status_joins_run_and_job():
     assert body["summary"]["passed"] == 1
     assert body["progress"]["percent"] == 40
     assert body["points"][0]["point_id"] == "p1"
+
+
+def test_verification_status_self_heals_orphaned_pending():
+    """pending env whose job already ended must not pin the UI forever."""
+    client = _client()
+    env = _env(
+        status="pending",
+        active_job_id="command:job9",
+        verification_progress=None,
+    )
+    run = _run_row([])
+    save_mock = AsyncMock()
+
+    async def job_status(job_id):
+        return {"status": "canceled", "error_message": None}
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch(
+            "api.routers.project_envs.repo_query",
+            side_effect=_usage_dispatch(verification_rows=[run]),
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.get_command_status",
+            side_effect=job_status,
+        ),
+        # Instance-level patch.object trips pydantic's validate_assignment.
+        patch.object(ProjectEnv, "save", new=save_mock),
+    ):
+        response = client.get("/api/project-envs/project_env:e1/verification")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    assert "已取消" in body["progress"]["error"]
+    save_mock.assert_awaited_once()
+
+
+def test_verification_status_self_heal_unwraps_command_status_enum():
+    """CommandStatus.CANCELED (str-Enum) must match, not str() to 'CommandStatus.CANCELED'."""
+    from surreal_commands.core.client import CommandStatus
+
+    client = _client()
+    env = _env(
+        status="pending",
+        active_job_id="command:job9",
+        verification_progress=None,
+    )
+    save_mock = AsyncMock()
+
+    async def job_status(job_id):
+        return {"status": CommandStatus.CANCELED, "error_message": None}
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch(
+            "api.routers.project_envs.repo_query",
+            side_effect=_usage_dispatch(verification_rows=[_run_row([])]),
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.get_command_status",
+            side_effect=job_status,
+        ),
+        patch.object(ProjectEnv, "save", new=save_mock),
+    ):
+        response = client.get("/api/project-envs/project_env:e1/verification")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    save_mock.assert_awaited_once()

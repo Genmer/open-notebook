@@ -86,4 +86,24 @@ describe('EnvDetailDialog', () => {
     expect(screen.queryByTestId('env-detail-sections')).not.toBeInTheDocument()
     expect(screen.getByText('projectEnvs.detailEmpty')).toBeInTheDocument()
   })
+
+  it('offers a stop button while a verification run is pending', () => {
+    mockVerification.mockReturnValue({
+      data: {
+        status: 'pending',
+        summary: {},
+        degraded: {},
+        points: [],
+        progress: { stage: 'verifying', percent: 5 },
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+
+    render(
+      <EnvDetailDialog env={{ ...baseEnv, status: 'pending' } as unknown as ProjectEnv} open onOpenChange={vi.fn()} />
+    )
+
+    expect(screen.getByRole('button', { name: 'projectEnvs.cancelVerify' })).toBeInTheDocument()
+  })
 })

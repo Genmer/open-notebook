@@ -105,7 +105,10 @@ export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProp
             </div>
           )}
 
-          <VerificationPanel envId={env.id} />
+          {/* onCancel wires the panel's stop button: it cancels the active
+              verification job, then this dialog closes (the self-healing
+              status read turns the env into an actionable failed state). */}
+          <VerificationPanel envId={env.id} onCancel={() => onOpenChange(false)} />
         </div>
 
         <div className="flex justify-end border-t px-6 py-3">

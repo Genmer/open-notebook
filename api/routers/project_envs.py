@@ -7,7 +7,7 @@ the async verification job (decision ⑥).
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -428,6 +428,31 @@ async def get_verification_status(env_id: str):
                 }
             except Exception as e:
                 logger.warning(f"Command status lookup failed: {e}")
+
+        # Self-heal an orphaned "pending": a job that ended without writing
+        # back (worker restart, manual cancel, crash mid-run) would otherwise
+        # pin the UI on a spinning 0% with every action gated behind
+        # status === 'pending'. The read repairs it once, permanently.
+        # (.value: surreal_commands' CommandStatus is a str-Enum whose str()
+        # is "CommandStatus.CANCELED", which would never match here.)
+        raw_job_status = (job or {}).get("status")
+        job_status = str(getattr(raw_job_status, "value", raw_job_status) or "")
+        if env.status == "pending" and job_status in ("canceled", "failed", "completed"):
+            reason = {
+                "canceled": "验证任务已取消。请点重新验证。",
+                "failed": "验证任务执行失败。请点重新验证。",
+                "completed": "验证任务已结束但未写回结果。请点重新验证。",
+            }[job_status]
+            env.status = "failed"
+            env.verification_progress = {
+                "stage": "done",
+                "percent": 100,
+                "message": "",
+                "error": reason,
+                "updated": datetime.now(timezone.utc).isoformat(),
+            }
+            await env.save()
+
         return VerificationStatusResponse(
             status=env.status,
             job=job,
