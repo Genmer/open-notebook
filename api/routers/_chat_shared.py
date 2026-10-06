@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
-from open_notebook.exceptions import NotFoundError
+from open_notebook.exceptions import InvalidInputError, NotFoundError
 
 
 # Shared response models
@@ -133,8 +133,9 @@ async def resolve_agent_binding(agent_id: Optional[str]) -> Optional[Any]:
             logger.warning(f"Agent {agent_id} is disabled; using default assistant")
             return None
         return agent
-    except NotFoundError:
-        logger.warning(
-            f"Agent {agent_id} no longer exists; using default assistant"
-        )
+    except (NotFoundError, InvalidInputError):
+        # NotFoundError: agent deleted. InvalidInputError: a stored reference
+        # that no longer resolves to a table (schema drift / foreign garbage) —
+        # ObjectModel.get raises it instead of masking as NotFound (ADR-013).
+        logger.warning(f"Agent {agent_id} no longer exists; using default assistant")
         return None

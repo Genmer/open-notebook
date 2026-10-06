@@ -118,12 +118,22 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
             }
         ],
         "source_annotation": [
-            {"id": ANNOTATION_ID, "source": SOURCE_ID, "color": "gold",
-             "line_style": "wavy", "body": "易错点", "display_position": None,
-             "quote": "划线文字", "text_anchor": None,
-             "pdf_anchor": {"page": 3,
-                            "quads": [{"x1": 10, "y1": 700, "x2": 300, "y2": 715}]},
-             "page": 3, "start_offset": None},
+            {
+                "id": ANNOTATION_ID,
+                "source": SOURCE_ID,
+                "color": "gold",
+                "line_style": "wavy",
+                "body": "易错点",
+                "display_position": None,
+                "quote": "划线文字",
+                "text_anchor": None,
+                "pdf_anchor": {
+                    "page": 3,
+                    "quads": [{"x1": 10, "y1": 700, "x2": 300, "y2": 715}],
+                },
+                "page": 3,
+                "start_offset": None,
+            },
         ],
         "reference": [{"id": "reference:r1", "in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"id": "artifact:a1", "in": NOTE_ID, "out": NOTEBOOK_ID}],
@@ -175,33 +185,12 @@ def _default_rows() -> Dict[str, List[Dict[str, Any]]]:
                 "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
             }
         ],
-        "content_settings": [{
-            "id": "open_notebook:content_settings",
-            "default_content_processing_engine_doc": "auto",
-            "chunk_size": 800,
-            "chunk_overlap": 100,
-            "usage_tracking_enabled": True,
-            "internal_runtime_state": "must not be exported",
-        }],
-        "default_prompts": [{
-            "id": "open_notebook:default_prompts",
-            "transformation_instructions": "Custom prompt test",
-        }],
-        "annotation_settings": [{
-            "id": "open_notebook:annotation_settings",
-            "color_names": {"gold": "重点"},
-        }],
-        "credential": [{
-            "id": CREDENTIAL_ID,
-            "name": "Main",
-            "provider": "openai",
-            "modalities": ["language", "embedding"],
-            "api_key": CREDENTIAL_CIPHER,
-            "base_url": None,
-            "config": {"num_ctx": 8192},
-            "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
-            "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
-        }],
+        "annotation_settings": [
+            {
+                "id": "open_notebook:annotation_settings",
+                "color_names": {"gold": "重点"},
+            }
+        ],
         "model": [
             {
                 "id": MODEL_ID,
@@ -448,20 +437,50 @@ def _package_rows() -> Dict[str, List[Dict[str, Any]]]:
         ],
         "source_view": [{"id": VIEW_ID, "name": "Custom", "view_type": "custom"}],
         "source_group": [{"id": GROUP_ID, "name": "G", "source_view": VIEW_ID}],
-        "source": [{"id": SOURCE_ID, "title": "Report",
-                     "asset": {"file_path": "/source-env/uploads/report.pdf",
-                                "url": "https://example.com/report.pdf"},
-                     "embedding_status": "completed", "total_chunks": 2,
-                     "embedded_chunks": 2, "created": "2026-09-01T00:00:00+00:00"}],
-        "source_insight": [{"id": INSIGHT_ID, "source": SOURCE_ID,
-                             "insight_type": "Summary", "content": "insight",
-                             "embedding": [0.1, 0.2, 0.3]}],
-        "note": [{"id": NOTE_ID, "title": "N", "note_type": "human",
-                   "content": "note", "embedding": [0.4, 0.5, 0.6]}],
+        "source": [
+            {
+                "id": SOURCE_ID,
+                "title": "Report",
+                "asset": {
+                    "file_path": "/source-env/uploads/report.pdf",
+                    "url": "https://example.com/report.pdf",
+                },
+                "embedding_status": "completed",
+                "total_chunks": 2,
+                "embedded_chunks": 2,
+                "created": "2026-09-01T00:00:00+00:00",
+            }
+        ],
+        "source_insight": [
+            {
+                "id": INSIGHT_ID,
+                "source": SOURCE_ID,
+                "insight_type": "Summary",
+                "content": "insight",
+                "embedding": [0.1, 0.2, 0.3],
+            }
+        ],
+        "note": [
+            {
+                "id": NOTE_ID,
+                "title": "N",
+                "note_type": "human",
+                "content": "note",
+                "embedding": [0.4, 0.5, 0.6],
+            }
+        ],
         "source_annotation": [
-            {"id": ANNOTATION_ID, "source": SOURCE_ID, "color": "fern",
-             "line_style": "straight", "body": None, "display_position": None,
-             "quote": "quote text", "page": 2, "start_offset": 10},
+            {
+                "id": ANNOTATION_ID,
+                "source": SOURCE_ID,
+                "color": "fern",
+                "line_style": "straight",
+                "body": None,
+                "display_position": None,
+                "quote": "quote text",
+                "page": 2,
+                "start_offset": 10,
+            },
         ],
         "reference": [{"in": SOURCE_ID, "out": NOTEBOOK_ID}],
         "artifact": [{"in": NOTE_ID, "out": NOTEBOOK_ID}],
@@ -867,9 +886,17 @@ class TestImport:
         rows = _package_rows()
         # A minimal package: no views/groups/edges/insights at all. The
         # annotation member rides along because its source is present.
-        for missing in ("source_view", "source_group", "source_insight", "note",
-                        "reference", "artifact", "source_group_member",
-                        "source_embedding", "transformation"):
+        for missing in (
+            "source_view",
+            "source_group",
+            "source_insight",
+            "note",
+            "reference",
+            "artifact",
+            "source_group_member",
+            "source_embedding",
+            "transformation",
+        ):
             rows.pop(missing)
         package = tmp_path / "pkg.zip"
         _build_package(package, rows, {})

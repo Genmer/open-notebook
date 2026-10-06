@@ -295,9 +295,12 @@ describe('EmbedMissingPanel compact', () => {
     getStatusMock.mockResolvedValue(status())
     renderCompact()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
-    )
+    const cta = await screen.findByRole('button', {
+      name: 'sources.embedMissing.columnCta',
+    })
+    // The status query resolves a tick after mount; wait for pending > 0.
+    await waitFor(() => expect(cta).toBeEnabled())
+    fireEvent.click(cta)
     expect(
       await screen.findByText('sources.embedMissing.confirmTitle')
     ).toBeInTheDocument()
@@ -316,9 +319,11 @@ describe('EmbedMissingPanel compact', () => {
     })
     renderCompact()
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
-    )
+    const cta = await screen.findByRole('button', {
+      name: 'sources.embedMissing.columnCta',
+    })
+    await waitFor(() => expect(cta).toBeEnabled())
+    fireEvent.click(cta)
     fireEvent.click(
       await screen.findByRole('button', {
         name: 'sources.embedMissing.confirmCta',
@@ -351,6 +356,16 @@ describe('EmbedMissingPanel compact', () => {
     renderCompact()
 
     await screen.findByRole('button', { name: 'sources.embedMissing.columnCta' })
+    // Wait for the busy snapshot to render before forcing the refetch:
+    // react-query 5.10x batches observer notifications, so firing the
+    // invalidation earlier can coalesce busy->converged into one commit and
+    // the transition detector would never observe the busy state.
+    // The compact expander button only renders once the busy snapshot
+    // commits (showProgress && data) — a reliable busy-render signal that
+    // stays collapsed-independent.
+    await screen.findByRole('button', {
+      name: 'sources.embedMissing.progressTitle',
+    })
     // Simulate an external refetch (e.g. another mutation invalidating status)
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.embeddingStatus })
 

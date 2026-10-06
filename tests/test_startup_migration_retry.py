@@ -27,6 +27,12 @@ def no_retry_delay(monkeypatch):
     monkeypatch.setattr(api_main, "DATABASE_STARTUP_RETRY_ATTEMPTS", 3)
     monkeypatch.setattr(api_main, "DATABASE_STARTUP_RETRY_INITIAL_DELAY_SECONDS", 0)
     monkeypatch.setattr(api_main, "DATABASE_STARTUP_RETRY_MAX_DELAY_SECONDS", 0)
+    # The fixture patches the shared asyncio module, so ANY in-process sleep
+    # gets counted. refresh_embedding_params opens a real SurrealDB websocket
+    # when the dev database happens to be running, and the websockets
+    # keepalive loop then sleeps on its own schedule — mock it out so only
+    # the migration retry loop's sleeps are observable.
+    monkeypatch.setattr(api_main, "refresh_embedding_params", AsyncMock())
     monkeypatch.setattr(api_main.asyncio, "sleep", sleep)
     return sleep
 
