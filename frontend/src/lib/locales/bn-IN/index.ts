@@ -470,6 +470,12 @@ export const bnIN = {
     embeddingNeverDesc: "আপনার সেটিংস এমবেডিং এড়িয়ে যাওয়ার জন্য কনফিগার করা। এই উৎসের জন্য ভেক্টর সার্চ উপলব্ধ থাকবে না।",
     changeInSettings: "আপনি এটি সেটিংসে পরিবর্তন করতে পারেন",
     noContent: "কোন কন্টেন্ট উপলব্ধ নয়",
+    audioTranscript: {
+      playerUnavailable: "এই সোর্সের অডিও প্লে করা যাচ্ছে না।",
+      loadingPlayer: "অডিও লোড হচ্ছে…",
+      excerptSentence: "এই বাক্যটি নোটে উদ্ধৃত করুন",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "মডেল বিশ্লেষণ থেকে তৈরি অন্তর্দৃষ্টি",
     uploadedFile: "আপলোড করা ফাইল",
     fileUnavailableDesc: "স্টোরেজ সিস্টেমের কারণে এই ফাইল বর্তমানে উপলব্ধ নয়।",
@@ -1057,6 +1063,10 @@ export const bnIN = {
     briefing: "ব্রিফিং",
     noOutline: "কোন রূপরেখা উপলব্ধ নয়।",
     noTranscript: "কোন ট্রান্সক্রিপ্ট উপলব্ধ নয়।",
+    transcriptSync: {
+      copied: "সংলাপ ক্লিপবোর্ডে কপি হয়েছে",
+      copyEntry: "এই সংলাপটি কপি করুন",
+    },
     deleteEpisodeTitle: "এপিসোড মুছে ফেলবেন?",
     deleteEpisodeDesc: "এটি \"{{name}}\" এবং এর অডিও ফাইল স্থায়ীভাবে সরিয়ে দেবে।",
     audioUnavailable: "অডিও উপলব্ধ নয়",

@@ -473,6 +473,12 @@ export const deDE = {
     embeddingNeverDesc: "Deine Einstellungen sind so konfiguriert, dass Einbettung übersprungen wird. Die Vektorsuche ist für diese Quelle nicht verfügbar.",
     changeInSettings: "Du kannst das in den Einstellungen ändern",
     noContent: "Kein Inhalt verfügbar",
+    audioTranscript: {
+      playerUnavailable: "Die Wiedergabe des Audios ist für diese Quelle nicht verfügbar.",
+      loadingPlayer: "Audio wird geladen…",
+      excerptSentence: "Diesen Satz als Notiz auszuschneiden",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Erkenntnisse aus der Modellanalyse",
     uploadedFile: "Hochgeladene Datei",
     fileUnavailableDesc: "Diese Datei ist derzeit aus Gründen des Speichersystems nicht verfügbar.",
@@ -1060,6 +1066,10 @@ export const deDE = {
     briefing: "Briefing",
     noOutline: "Keine Gliederung verfügbar.",
     noTranscript: "Kein Transkript verfügbar.",
+    transcriptSync: {
+      copied: "Dialog in die Zwischenablage kopiert",
+      copyEntry: "Diesen Dialog kopieren",
+    },
     deleteEpisodeTitle: "Episode löschen?",
     deleteEpisodeDesc: "Dadurch werden „{{name}}“ und die zugehörige Audiodatei dauerhaft entfernt.",
     audioUnavailable: "Audio nicht verfügbar",

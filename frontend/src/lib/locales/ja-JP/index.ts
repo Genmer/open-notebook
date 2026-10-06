@@ -470,6 +470,12 @@ export const jaJP = {
     embeddingNeverDesc: "設定でEmbeddingをスキップするよう構成されています。このソースではベクトル検索は利用できません。",
     changeInSettings: "設定で変更できます",
     noContent: "コンテンツがありません",
+    audioTranscript: {
+      playerUnavailable: "このソースの音声は再生できません。",
+      loadingPlayer: "音声を読み込み中…",
+      excerptSentence: "この文をノートに抜粋",
+      excerptTemplate: "> {{quote}}\n\n—— 出典：{{source}}",
+    },
     insightsDesc: "モデル分析から生成されたインサイト",
     uploadedFile: "アップロードされたファイル",
     fileUnavailableDesc: "ストレージシステムの理由により、このファイルは現在利用できません。",
@@ -1057,6 +1063,10 @@ export const jaJP = {
     briefing: "ブリーフィング",
     noOutline: "アウトラインがありません。",
     noTranscript: "トランスクリプトがありません。",
+    transcriptSync: {
+      copied: "対話をクリップボードにコピーしました",
+      copyEntry: "この対話をコピー",
+    },
     deleteEpisodeTitle: "エピソードを削除しますか？",
     deleteEpisodeDesc: "「{{name}}」とその音声ファイルを完全に削除します。",
     audioUnavailable: "音声が利用できません",

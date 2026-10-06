@@ -470,6 +470,12 @@ export const plPL = {
     embeddingNeverDesc: "Twoje ustawienia są skonfigurowane tak, aby pomijać osadzanie. Wyszukiwanie wektorowe nie będzie dostępne dla tego źródła.",
     changeInSettings: "Możesz to zmienić w Ustawieniach",
     noContent: "Brak dostępnej treści",
+    audioTranscript: {
+      playerUnavailable: "Odtwarzanie audio dla tego źródła jest niedostępne.",
+      loadingPlayer: "Ładowanie audio…",
+      excerptSentence: "Wycytuj to zdanie do notatki",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Wglądy wygenerowane na podstawie analizy modelu",
     uploadedFile: "Przesłany plik",
     fileUnavailableDesc: "Ten plik jest obecnie niedostępny z powodów związanych z systemem magazynowania.",
@@ -1057,6 +1063,10 @@ export const plPL = {
     briefing: "Briefing",
     noOutline: "Brak dostępnego konspektu.",
     noTranscript: "Brak dostępnej transkrypcji.",
+    transcriptSync: {
+      copied: "Dialog skopiowany do schowka",
+      copyEntry: "Skopiuj ten dialog",
+    },
     deleteEpisodeTitle: "Usunąć odcinek?",
     deleteEpisodeDesc: "Spowoduje to trwałe usunięcie „{{name}}” i powiązanego pliku audio.",
     audioUnavailable: "Audio niedostępne",

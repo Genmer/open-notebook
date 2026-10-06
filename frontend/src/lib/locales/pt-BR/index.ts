@@ -470,6 +470,12 @@ export const ptBR = {
     embeddingNeverDesc: "Suas configurações estão definidas para pular incorporação. Busca vetorial não estará disponível para esta fonte.",
     changeInSettings: "Você pode alterar isso em Configurações",
     noContent: "Nenhum conteúdo disponível",
+    audioTranscript: {
+      playerUnavailable: "A reprodução do áudio não está disponível para esta fonte.",
+      loadingPlayer: "Carregando áudio…",
+      excerptSentence: "Extrair esta frase para uma nota",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Insights gerados a partir da análise do modelo",
     uploadedFile: "Arquivo enviado",
     fileUnavailableDesc: "Este arquivo está indisponível no momento por razões do sistema de armazenamento.",
@@ -1057,6 +1063,10 @@ export const ptBR = {
     briefing: "Briefing",
     noOutline: "Nenhum outline disponível.",
     noTranscript: "Nenhuma transcrição disponível.",
+    transcriptSync: {
+      copied: "Diálogo copiado para a área de transferência",
+      copyEntry: "Copiar este diálogo",
+    },
     deleteEpisodeTitle: "Excluir episódio?",
     deleteEpisodeDesc: "Isso removerá \"{{name}}\" e seu arquivo de áudio permanentemente.",
     audioUnavailable: "Áudio indisponível",

@@ -470,6 +470,12 @@ export const ruRU = {
     embeddingNeverDesc: "В ваших настройках отключено создание эмбеддинга. Векторный поиск будет недоступен для этого источника.",
     changeInSettings: "Вы можете изменить это в Настройках",
     noContent: "Содержимое недоступно",
+    audioTranscript: {
+      playerUnavailable: "Воспроизведение аудио для этого источника недоступно.",
+      loadingPlayer: "Загрузка аудио…",
+      excerptSentence: "Выписать это предложение в заметку",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Инсайты, сгенерированные анализом модели",
     uploadedFile: "Загруженный файл",
     fileUnavailableDesc: "Этот файл временно недоступен из-за проблем с хранилищем.",
@@ -1057,6 +1063,10 @@ export const ruRU = {
     briefing: "Брифинг",
     noOutline: "План недоступен.",
     noTranscript: "Транскрипт недоступен.",
+    transcriptSync: {
+      copied: "Реплика скопирована в буфер обмена",
+      copyEntry: "Скопировать эту реплику",
+    },
     deleteEpisodeTitle: "Удалить эпизод?",
     deleteEpisodeDesc: "Это навсегда удалит «{{name}}» и его аудиофайл.",
     audioUnavailable: "Аудио недоступно",

@@ -470,6 +470,12 @@ export const itIT = {
     embeddingNeverDesc: "Le tue impostazioni sono configurate per saltare l'indicizzazione. La ricerca vettoriale non sarà disponibile per questa fonte.",
     changeInSettings: "Puoi modificare questo nelle Impostazioni",
     noContent: "Nessun contenuto disponibile",
+    audioTranscript: {
+      playerUnavailable: "La riproduzione audio non è disponibile per questa fonte.",
+      loadingPlayer: "Caricamento dell'audio…",
+      excerptSentence: "Estrai questa frase in una nota",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Approfondimenti generati dall'analisi del modello",
     uploadedFile: "File caricato",
     fileUnavailableDesc: "Questo file non è attualmente disponibile per motivi di storage.",
@@ -1057,6 +1063,10 @@ export const itIT = {
     briefing: "Briefing",
     noOutline: "Nessun outline disponibile.",
     noTranscript: "Nessuna trascrizione disponibile.",
+    transcriptSync: {
+      copied: "Dialogo copiato negli appunti",
+      copyEntry: "Copia questo dialogo",
+    },
     deleteEpisodeTitle: "Eliminare l'episodio?",
     deleteEpisodeDesc: "Questo rimuoverà \"{{name}}\" e il suo file audio permanentemente.",
     audioUnavailable: "Audio non disponibile",

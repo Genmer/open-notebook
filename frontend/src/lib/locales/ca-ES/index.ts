@@ -470,6 +470,12 @@ export const caES = {
     embeddingNeverDesc: "La configuració actual omet la incrustació. La cerca vectorial no estarà disponible per a aquesta font.",
     changeInSettings: "Pots canviar-ho a la Configuració",
     noContent: "No hi ha contingut disponible",
+    audioTranscript: {
+      playerUnavailable: "La reproducció d'àudio no està disponible per a aquesta font.",
+      loadingPlayer: "Carregant l'àudio…",
+      excerptSentence: "Extreu aquesta frase a una nota",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Anàlisis generades per l'anàlisi del model",
     uploadedFile: "Fitxer carregat",
     fileUnavailableDesc: "Aquest fitxer no està disponible per raons del sistema d'emmagatzematge.",
@@ -1057,6 +1063,10 @@ export const caES = {
     briefing: "Presentació",
     noOutline: "No hi ha cap esquema disponible.",
     noTranscript: "No hi ha cap transcripció disponible.",
+    transcriptSync: {
+      copied: "Diàleg copiat al porta-retalls",
+      copyEntry: "Copia aquest diàleg",
+    },
     deleteEpisodeTitle: "Vols suprimir l'episodi?",
     deleteEpisodeDesc: "Això eliminarà «{{name}}» i el seu fitxer d'àudio de manera permanent.",
     audioUnavailable: "Àudio no disponible",

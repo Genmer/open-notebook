@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
-import { InfoIcon, RefreshCcw, Trash2 } from 'lucide-react'
+import { Copy, InfoIcon, RefreshCcw, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import apiClient from '@/lib/api/client'
 import { resolvePodcastAssetUrl } from '@/lib/api/podcasts'
@@ -158,9 +159,56 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   const [audioSrc, setAudioSrc] = useState<string | undefined>()
   const [audioError, setAudioError] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  // 详情弹窗内嵌播放器的播放联动（词句级高亮按对话字符占比映射，无时间戳数据）。
+  const dialogAudioRef = useRef<HTMLAudioElement | null>(null)
+  const activeCardRef = useRef<HTMLDivElement | null>(null)
+  const [dialogDuration, setDialogDuration] = useState<number | null>(null)
+  const [dialogTime, setDialogTime] = useState(0)
 
   const outlineSegments = useMemo(() => extractOutlineSegments(episode.outline), [episode.outline])
   const transcriptEntries = useMemo(() => extractTranscriptEntries(episode.transcript), [episode.transcript])
+
+  // Dialogue index the in-dialog player is on: cumulative dialogue character
+  // share ≈ playback share (speech pace is roughly uniform across speakers).
+  const activeDialogue = useMemo(() => {
+    if (!dialogDuration || transcriptEntries.length === 0) return -1
+    const weights = transcriptEntries.map(e => (e.dialogue ?? '').replace(/\s/g, '').length || 1)
+    const total = weights.reduce((a, b) => a + b, 0)
+    let acc = 0
+    const target = Math.min(1, Math.max(0, dialogTime / dialogDuration)) * total
+    for (let i = 0; i < weights.length; i += 1) {
+      acc += weights[i]
+      if (target <= acc) return i
+    }
+    return weights.length - 1
+  }, [dialogDuration, dialogTime, transcriptEntries])
+
+  useEffect(() => {
+    if (activeDialogue < 0) return
+    activeCardRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [activeDialogue])
+
+  const seekToDialogue = (index: number) => {
+    const audio = dialogAudioRef.current
+    if (!audio || !dialogDuration) return
+    const weights = transcriptEntries.map(e => (e.dialogue ?? '').replace(/\s/g, '').length || 1)
+    const total = weights.reduce((a, b) => a + b, 0)
+    let acc = 0
+    for (let i = 0; i < index; i += 1) acc += weights[i]
+    audio.currentTime = (acc / total) * dialogDuration
+    setDialogTime(audio.currentTime)
+  }
+
+  const copyDialogue = async (index: number) => {
+    const entry = transcriptEntries[index]
+    if (!entry?.dialogue) return
+    try {
+      await navigator.clipboard.writeText(`${entry.speaker ? entry.speaker + '：' : ''}${entry.dialogue}`)
+      toast.success(t('podcasts.transcriptSync.copied'))
+    } catch {
+      toast.error(t('common.error'))
+    }
+  }
 
   useEffect(() => {
     let revokeUrl: string | undefined
@@ -378,10 +426,51 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
 
                     <TabsContent value="transcript" className="flex-1 overflow-hidden">
                       <ScrollArea className="h-full pr-4 space-y-3">
+                        {audioSrc && !audioError ? (
+                          /* 弹窗内播放器驱动下方对话卡的播放联动高亮。 */
+                          <audio
+                            ref={dialogAudioRef}
+                            controls
+                            preload="metadata"
+                            src={audioSrc}
+                            className="mb-3 w-full"
+                            data-testid="transcript-sync-player"
+                            onTimeUpdate={(event) => setDialogTime(event.currentTarget.currentTime)}
+                            onLoadedMetadata={(event) => setDialogDuration(event.currentTarget.duration || null)}
+                            onDurationChange={(event) => setDialogDuration(event.currentTarget.duration || null)}
+                          />
+                        ) : null}
                         {transcriptEntries.length > 0 ? (
                           transcriptEntries.map((entry, index) => (
-                            <div key={index} className="rounded border bg-muted/20 p-3 text-xs space-y-1">
-                              <p className="font-semibold text-foreground">{entry.speaker ?? t('podcasts.speaker')}</p>
+                            <div
+                              key={index}
+                              ref={index === activeDialogue ? activeCardRef : undefined}
+                              data-testid={`transcript-entry-${index}`}
+                              data-active={index === activeDialogue || undefined}
+                              onClick={() => seekToDialogue(index)}
+                              className={cn(
+                                'cursor-pointer rounded border p-3 text-xs space-y-1 transition-colors',
+                                index === activeDialogue
+                                  ? 'border-amber-500/50 bg-amber-500/10'
+                                  : 'bg-muted/20 hover:border-border'
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-semibold text-foreground">{entry.speaker ?? t('podcasts.speaker')}</p>
+                                <button
+                                  type="button"
+                                  aria-label={t('podcasts.transcriptSync.copyEntry')}
+                                  title={t('podcasts.transcriptSync.copyEntry')}
+                                  data-testid={`transcript-copy-${index}`}
+                                  className="text-muted-foreground opacity-60 transition-opacity hover:opacity-100"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void copyDialogue(index)
+                                  }}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                               <p className="text-muted-foreground whitespace-pre-wrap">{entry.dialogue ?? ''}</p>
                             </div>
                           ))

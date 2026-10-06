@@ -470,6 +470,12 @@ export const zhTW = {
     embeddingNeverDesc: "您的設定已設定為跳過嵌入。此來源將無法進行向量搜尋。",
     changeInSettings: "您可以在此處更改設定：",
     noContent: "暫無內容",
+    audioTranscript: {
+      playerUnavailable: "該來源的音訊無法播放。",
+      loadingPlayer: "正在載入音訊…",
+      excerptSentence: "將這句話摘錄為筆記",
+      excerptTemplate: "> {{quote}}\n\n—— 摘自《{{source}}》",
+    },
     insightsDesc: "根據模型分析生成的見解",
     uploadedFile: "已上傳檔案",
     fileUnavailableDesc: "由於儲存系統原因，此檔案目前不可用。",
@@ -1057,6 +1063,10 @@ export const zhTW = {
     briefing: "內容簡報",
     noOutline: "暫無大綱。",
     noTranscript: "暫無腳本。",
+    transcriptSync: {
+      copied: "對話已複製到剪貼簿",
+      copyEntry: "複製這段對話",
+    },
     deleteEpisodeTitle: "刪除單集？",
     deleteEpisodeDesc: "這將永久移除 “{{name}}” 及其音訊檔案。",
     audioUnavailable: "音訊不可用",

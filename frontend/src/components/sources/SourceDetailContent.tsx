@@ -18,6 +18,7 @@ import { ContentUnavailable } from '@/components/common/ContentUnavailable'
 import { getApiErrorMessage, isNotFoundError } from '@/lib/utils/error-handler'
 import { displayTransformationTitle } from '@/lib/utils/transformation-display'
 import { InlineEdit } from '@/components/common/InlineEdit'
+import { AudioTranscriptViewer, isAudioFilePath } from '@/components/sources/AudioTranscriptViewer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -399,6 +400,10 @@ function SourceDetailContentInner({
     () => !!source?.asset?.file_path && /\.pdf$/i.test(source.asset.file_path),
     [source?.asset?.file_path]
   )
+  const isAudioFile = useMemo(
+    () => isAudioFilePath(source?.asset?.file_path),
+    [source?.asset?.file_path]
+  )
 
   // Citation jump: a PDF source positions the file view on the cited passage,
   // so open it automatically. Consumed once per source mount — later manual
@@ -665,6 +670,16 @@ function SourceDetailContentInner({
                   fullText={source.full_text}
                   quote={activeCite}
                   onDismiss={() => setActiveCite(undefined)}
+                />
+              ) : isAudioFile ? (
+                /* Uploaded-audio sources: player + structured transcript with
+                   playback-follow highlighting and per-sentence excerpts. */
+                <AudioTranscriptViewer
+                  sourceId={source.id}
+                  fullText={source.full_text || ''}
+                  notebookId={notebookId ?? null}
+                  fallbackNotebookId={source.notebooks?.[0] ?? null}
+                  sourceTitle={source.title}
                 />
               ) : (
                 <MarkdownRenderer>

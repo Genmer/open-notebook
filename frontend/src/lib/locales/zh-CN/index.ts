@@ -470,6 +470,12 @@ export const zhCN = {
     embeddingNeverDesc: "您的设置已配置为跳过嵌入。此来源将无法进行向量搜索。",
     changeInSettings: "您可以在此处更改设置：",
     noContent: "暂无内容",
+    audioTranscript: {
+      playerUnavailable: "该来源的音频无法播放。",
+      loadingPlayer: "正在加载音频…",
+      excerptSentence: "将这句话摘录为笔记",
+      excerptTemplate: "> {{quote}}\n\n—— 摘自《{{source}}》",
+    },
     insightsDesc: "根据模型分析生成的见解",
     uploadedFile: "已上传文件",
     fileUnavailableDesc: "由于存储系统原因，此文件目前不可用。",
@@ -1057,6 +1063,10 @@ export const zhCN = {
     briefing: "内容简报",
     noOutline: "暂无大纲。",
     noTranscript: "暂无脚本。",
+    transcriptSync: {
+      copied: "对话已复制到剪贴板",
+      copyEntry: "复制这段对话",
+    },
     deleteEpisodeTitle: "删除单集？",
     deleteEpisodeDesc: "这将永久移除 “{{name}}” 及其音频文件。",
     audioUnavailable: "音频不可用",

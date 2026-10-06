@@ -470,6 +470,12 @@ export const esES = {
     embeddingNeverDesc: "Tu configuración está establecida para omitir el embedding. La búsqueda vectorial no estará disponible para esta fuente.",
     changeInSettings: "Puedes cambiar esto en Configuración",
     noContent: "No hay contenido disponible",
+    audioTranscript: {
+      playerUnavailable: "La reproducción de audio no está disponible para esta fuente.",
+      loadingPlayer: "Cargando audio…",
+      excerptSentence: "Extraer esta frase a una nota",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Análisis generados a partir del análisis del modelo",
     uploadedFile: "Archivo subido",
     fileUnavailableDesc: "Este archivo no está disponible actualmente por razones del sistema de almacenamiento.",
@@ -1057,6 +1063,10 @@ export const esES = {
     briefing: "Briefing",
     noOutline: "No hay esquema disponible.",
     noTranscript: "No hay transcripción disponible.",
+    transcriptSync: {
+      copied: "Diálogo copiado al portapapeles",
+      copyEntry: "Copiar este diálogo",
+    },
     deleteEpisodeTitle: "¿Eliminar episodio?",
     deleteEpisodeDesc: "Esto eliminará \"{{name}}\" y su archivo de audio permanentemente.",
     audioUnavailable: "Audio no disponible",

@@ -470,6 +470,12 @@ export const trTR = {
     embeddingNeverDesc: "Ayarlarınız gömmeyi atlamak üzere yapılandırılmış. Bu kaynak için vektör arama kullanılamaz.",
     changeInSettings: "Bunu Ayarlar'dan değiştirebilirsiniz",
     noContent: "İçerik mevcut değil",
+    audioTranscript: {
+      playerUnavailable: "Bu kaynak için ses oynatma kullanılamıyor.",
+      loadingPlayer: "Ses yükleniyor…",
+      excerptSentence: "Bu cümleyi not olarak alıntıla",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Model analizinden oluşturulan içgörüler",
     uploadedFile: "Yüklenen dosya",
     fileUnavailableDesc: "Bu dosya şu anda depolama sistemi nedeniyle mevcut değil.",
@@ -1057,6 +1063,10 @@ export const trTR = {
     briefing: "Brifing",
     noOutline: "Ana hat mevcut değil.",
     noTranscript: "Transkript mevcut değil.",
+    transcriptSync: {
+      copied: "Diyalog panoya kopyalandı",
+      copyEntry: "Bu diyalogu kopyala",
+    },
     deleteEpisodeTitle: "Bölüm silinsin mi?",
     deleteEpisodeDesc: "Bu işlem \"{{name}}\" ve ses dosyasını kalıcı olarak kaldıracak.",
     audioUnavailable: "Ses mevcut değil",

@@ -468,6 +468,12 @@ export const enUS = {
     embeddingNeverDesc: "Your settings are configured to skip embedding. Vector search won't be available for this source.",
     changeInSettings: "You can change this in Settings",
     noContent: "No content available",
+    audioTranscript: {
+      playerUnavailable: "Audio playback is unavailable for this source.",
+      loadingPlayer: "Loading audio…",
+      excerptSentence: "Excerpt this sentence into a note",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Insights generated from model analysis",
     uploadedFile: "Uploaded file",
     fileUnavailableDesc: "This file is currently unavailable due to storage system reasons.",
@@ -1055,6 +1061,10 @@ export const enUS = {
     briefing: "Briefing",
     noOutline: "No outline available.",
     noTranscript: "No transcript available.",
+    transcriptSync: {
+      copied: "Dialogue copied to clipboard",
+      copyEntry: "Copy this dialogue",
+    },
     deleteEpisodeTitle: "Delete episode?",
     deleteEpisodeDesc: "This will remove “{{name}}” and its audio file permanently.",
     audioUnavailable: "Audio unavailable",

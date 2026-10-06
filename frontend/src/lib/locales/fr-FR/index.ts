@@ -470,6 +470,12 @@ export const frFR = {
     embeddingNeverDesc: "Vos paramètres sont configurés pour ignorer l'indexation. La recherche vectorielle ne sera pas disponible pour cette source.",
     changeInSettings: "Vous pouvez modifier cela dans les Paramètres",
     noContent: "Aucun contenu disponible",
+    audioTranscript: {
+      playerUnavailable: "La lecture audio n'est pas disponible pour cette source.",
+      loadingPlayer: "Chargement de l'audio…",
+      excerptSentence: "Extraire cette phrase vers une note",
+      excerptTemplate: "> {{quote}}\n\n— {{source}}",
+    },
     insightsDesc: "Aperçus générés par l'analyse du modèle",
     uploadedFile: "Fichier téléchargé",
     fileUnavailableDesc: "Ce fichier est actuellement indisponible pour des raisons liées au système de stockage.",
@@ -1057,6 +1063,10 @@ export const frFR = {
     briefing: "Briefing",
     noOutline: "Aucun plan disponible.",
     noTranscript: "Aucune transcription disponible.",
+    transcriptSync: {
+      copied: "Dialogue copié dans le presse-papiers",
+      copyEntry: "Copier ce dialogue",
+    },
     deleteEpisodeTitle: "Supprimer l'épisode ?",
     deleteEpisodeDesc: "Ceci supprimera définitivement “{{name}}” et son fichier audio.",
     audioUnavailable: "Audio indisponible",

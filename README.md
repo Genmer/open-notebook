@@ -404,6 +404,9 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 
 > 本节为本地 fork 的定制改动记录，合并上游时请保留本节。每批改动完成后在此追加一条。
 
+### 2026-10-06：README 待办四连发（断点续传/段落引用/对比脑图/音频批注）
+落地路线图剩余四项：①大包导入重构为分片上传（PUT /chunks 哈希校验+uploaded_chunks 断点续传+complete 校验），解除 100MB 单请求体限制；②AI 回答引用升级为段落级锚点：点击引用→GET /sources/{id}/locate-passage 免模型定位（全角折叠 6-gram 匹配）→`?cite=` 跳转详情页，PDF 逐页搜文本层高亮命中 span、文本路径段落锚点+banner；③新增 comparison/mindmap 两种学习产物（LLM 输出 markdown 大纲→确定性转树），MindmapViewer 纯 SVG 左右脑图（点节点折叠、+N 徽标、零新依赖），对比产物含并排差异表/共识/分歧/阅读建议，对比不足两源时禁用并提示；④音频源详情页新增 AudioTranscriptViewer（播放器+结构化分段排版+按字符占比的播放联动句级高亮+点击句子跳播+一键摘录进笔记），播客转写弹窗内嵌播放器联动高亮与一键复制。涉及：commands/{data_transfer,artifact}_commands.py、utils/passage_locate.py、text-locate.ts、transcript-sync.ts、mindmap-layout.ts、CiteHighlightedText.tsx、AudioTranscriptViewer.tsx、MindmapViewer.tsx、PdfSourceViewer.tsx 等，14 locale 全量补键。
+
 ### 2026-10-06：导出体验三件套（预估/流式下载/按笔记本课题包）
 落地路线图「数据管理与备份体验增强」前三项：①导出弹窗实时预估（GET /api/data-transfer/export/estimate，计数与附件字节精确统计、文本/向量采样均值×压缩系数估算 ~包体积与明细）；②导出包下载改 fetch 直连流式读取，实时显示已下载字节与百分比进度条；③新增 scope="notebooks" 按笔记本勾选导出课题包（经 reference/artifact 边与向量按笔记本过滤，共享表全量保留以保幂等导入），导出边集顺带补齐 refers_to（聊天会话引用边）。涉及：commands/data_transfer_commands.py、api/data_transfer_service.py、api/routers/data_transfer.py、ExportCard.tsx、dataTransfer.ts、14 locale。
 
@@ -505,4 +508,4 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 ### 2. 深度研读与知识探索体验
 - [x] **精确段落引用高亮与原文跳跃（Deep Citation Highlighting）**：将 AI 回答底部的文档级粗粒度引用升级为段落级引文锚点，点击引用标签直接在原 PDF 或文本对应页码精准高亮显示依据，大幅降低长文查证成本。
 - [x] **多来源对比研读与结构化脑图生成（Source Comparison & Mindmap）**：支持多选指定来源一键提取核心异同点、自动提炼结构化思维导图（Mindmap）与大纲，辅助论文精读与考试备考。
-- [ ] **音频速记与播客转写批注增强**：提升音频/播客转写文字的段落结构化排版，支持在播放时词句级高亮联动与一键摘录进笔记。
+- [x] **音频速记与播客转写批注增强**：提升音频/播客转写文字的段落结构化排版，支持在播放时词句级高亮联动与一键摘录进笔记。
