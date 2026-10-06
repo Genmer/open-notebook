@@ -1618,6 +1618,9 @@ class ProjectEnvResponse(BaseModel):
     problems_solutions: Optional[str] = None
     my_role: Optional[str] = None
     scale: Optional[str] = None
+    # Mock drafts live here until promotion; the detail dialog shows them
+    # while the environment is still pending verification.
+    draft_content: Optional[Dict[str, Any]] = None
     status: str
     ai_assisted: Optional[Dict[str, Any]] = None
     time_adjusted: Optional[Dict[str, Any]] = None

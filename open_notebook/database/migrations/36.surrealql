@@ -1,0 +1,4 @@
+-- keywords was defined as bare option<array>, which SurrealDB v2.6.5 silently
+-- coerces to [] on single-array-field writes; redefine as array<string>.
+REMOVE FIELD keywords ON TABLE project_env;
+DEFINE FIELD keywords ON TABLE project_env TYPE array<string>;

@@ -310,6 +310,7 @@ export interface ProjectEnv {
   problems_solutions: string | null
   my_role: string | null
   scale: string | null
+  draft_content: Record<string, unknown> | null
   status: ProjectEnvStatus | string
   ai_assisted: ProjectEnvAiAssisted | null
   time_adjusted: ProjectEnvTimeAdjusted | null

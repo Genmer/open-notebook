@@ -13,6 +13,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useDeleteProjectEnv,
   useDuplicateProjectEnv,
+  useRegenerateProjectEnv,
   useReverifyProjectEnv,
 } from '@/lib/hooks/use-project-envs'
 import type { ProjectEnv } from '@/lib/types/api'
@@ -22,6 +23,7 @@ interface ProjectEnvListProps {
   envs: ProjectEnv[]
   isLoading: boolean
   onOpenVerification: (envId: string) => void
+  onOpenDetail: (env: ProjectEnv) => void
 }
 
 function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
@@ -71,12 +73,13 @@ function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
   )
 }
 
-export function ProjectEnvList({ envs, isLoading, onOpenVerification }: ProjectEnvListProps) {
+export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDetail }: ProjectEnvListProps) {
   const { t } = useTranslation()
   const [deleteTarget, setDeleteTarget] = useState<ProjectEnv | null>(null)
   const deleteMutation = useDeleteProjectEnv()
   const duplicateMutation = useDuplicateProjectEnv()
   const reverifyMutation = useReverifyProjectEnv()
+  const regenerateMutation = useRegenerateProjectEnv()
   const [copyingId, setCopyingId] = useState<string | null>(null)
 
   if (isLoading) {
@@ -120,9 +123,15 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification }: ProjectE
         return (
           <Card key={env.id} className="py-3">
             <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4">
-              <span className="min-w-0 flex-1 truncate font-medium" title={env.name}>
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left font-medium hover:text-teal hover:underline underline-offset-4"
+                title={env.name}
+                onClick={() => onOpenDetail(env)}
+                data-testid={`env-open-detail-${env.id}`}
+              >
                 {env.name}
-              </span>
+              </button>
 
               {env.source_type === 'real' ? (
                 <Badge variant="secondary">{t('projectEnvs.sourceReal')}</Badge>
@@ -150,6 +159,24 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification }: ProjectE
               </span>
 
               <div className="flex items-center gap-1">
+                {env.source_type === 'mock' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={regenerateMutation.isPending || env.status === 'pending'}
+                    onClick={() => regenerateMutation.mutate(env.id)}
+                    aria-label={t('projectEnvs.regenerate')}
+                    title={t('projectEnvs.regenerate')}
+                  >
+                    {regenerateMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    {t('projectEnvs.regenerate')}
+                  </Button>
+                )}
                 {env.status === 'failed' && (
                   <Button
                     variant="ghost"

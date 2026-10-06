@@ -183,4 +183,54 @@ describe('VerificationPanel', () => {
     await waitFor(() => expect(mockCancel).toHaveBeenCalledWith('job:1'))
     await waitFor(() => expect(onCancel).toHaveBeenCalled())
   })
+
+  it('renders the expand → verify stepper highlighting the current phase and the detail line', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        status: 'pending',
+        job: { id: 'job:1' },
+        progress: {
+          stage: 'verifying',
+          percent: 55,
+          message: '三路验证 · 第 1 轮：8/12 个断言点已判定',
+        },
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    // drafting done (phase 0), verifying active (phase 1), converge pending
+    const phase0 = screen.getByTestId('verification-phase-0')
+    const phase1 = screen.getByTestId('verification-phase-1')
+    const phase2 = screen.getByTestId('verification-phase-2')
+    expect(phase0).toHaveTextContent('projectEnvs.phaseDraft')
+    expect(phase1).toHaveTextContent('projectEnvs.phaseVerify')
+    expect(phase2).toHaveTextContent('projectEnvs.phaseConverge')
+    expect(phase0.className).toContain('text-teal/70')
+    expect(phase1.className).toContain('font-medium')
+    expect(phase2.className).toContain('text-muted-foreground/60')
+    expect(screen.getByTestId('verification-progress-message')).toHaveTextContent(
+      '三路验证 · 第 1 轮：8/12 个断言点已判定'
+    )
+  })
+
+  it('highlights the expand phase while the AI drafts the material', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        status: 'pending',
+        job: { id: 'job:1' },
+        progress: { stage: 'drafting', percent: 10 },
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    expect(screen.getByText('projectEnvs.stageDrafting')).toBeDefined()
+    expect(screen.getByTestId('verification-phase-0').className).toContain('font-medium')
+    expect(screen.getByTestId('verification-phase-1').className).toContain(
+      'text-muted-foreground/60'
+    )
+  })
 })

@@ -11,12 +11,15 @@ import {
   ProjectEnvList,
 } from '@/components/project-envs/ProjectEnvList'
 import { CreateEnvWizard } from '@/components/project-envs/CreateEnvWizard'
+import { EnvDetailDialog } from '@/components/project-envs/EnvDetailDialog'
+import type { ProjectEnv } from '@/lib/types/api'
 
 export default function ProjectEnvironmentsPage() {
   const { t } = useTranslation()
   const { data: envs, isLoading, refetch } = useProjectEnvs('manage')
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardEnvId, setWizardEnvId] = useState<string | null>(null)
+  const [detailEnv, setDetailEnv] = useState<ProjectEnv | null>(null)
 
   const openVerification = (envId: string) => {
     setWizardEnvId(envId)
@@ -60,6 +63,7 @@ export default function ProjectEnvironmentsPage() {
               envs={envs}
               isLoading={isLoading}
               onOpenVerification={openVerification}
+              onOpenDetail={setDetailEnv}
             />
           ) : (
             <ProjectEnvEmptyState
@@ -74,6 +78,14 @@ export default function ProjectEnvironmentsPage() {
             open={wizardOpen}
             onOpenChange={setWizardOpen}
             initialEnvId={wizardEnvId}
+          />
+
+          <EnvDetailDialog
+            env={detailEnv}
+            open={!!detailEnv}
+            onOpenChange={(next) => {
+              if (!next) setDetailEnv(null)
+            }}
           />
         </div>
       </div>

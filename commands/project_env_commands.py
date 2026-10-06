@@ -162,7 +162,8 @@ async def _create_run(env: ProjectEnv, token: str, mode: str, degraded: Dict[str
             "points": [],
         },
     )
-    return created
+    # repo_create wraps SDK insert(), which returns a list of created rows
+    return created[0] if isinstance(created, list) else created
 
 
 async def _resume_run(env_id: str, token: str) -> Optional[Dict[str, Any]]:
@@ -170,9 +171,9 @@ async def _resume_run(env_id: str, token: str) -> Optional[Dict[str, Any]]:
     other tokens are marked aborted (stale by fencing)."""
     rows = await repo_query(
         "SELECT * FROM project_env_verification "
-        "WHERE project_env = $id AND token = $token AND status = 'running' "
+        "WHERE project_env = $id AND token = $fence AND status = 'running' "
         "ORDER BY created DESC LIMIT 1",
-        {"id": ensure_record_id(env_id), "token": token},
+        {"id": ensure_record_id(env_id), "fence": token},
     )
     return rows[0] if rows else None
 
@@ -182,8 +183,8 @@ async def _abort_stale_runs(env_id: str, token: str) -> None:
         await repo_query(
             "UPDATE project_env_verification SET status = 'aborted', "
             "reason = 'superseded' "
-            "WHERE project_env = $id AND status = 'running' AND token != $token",
-            {"id": ensure_record_id(env_id), "token": token},
+            "WHERE project_env = $id AND status = 'running' AND token != $fence",
+            {"id": ensure_record_id(env_id), "fence": token},
         )
     except Exception as e:
         logger.warning(f"Could not abort stale runs for {env_id}: {e}")
@@ -653,24 +654,47 @@ async def verify_project_env_command(
 
         if not points:
             if input_data.mode == "mock" and not env.draft_content:
+                await _set_progress(
+                    env_id,
+                    "drafting",
+                    10,
+                    "AI 扩充：根据关键词生成完整项目背景草稿",
+                    token=input_data.token,
+                )
                 await _prepare_mock_material(env, input_data.token, budget)
+            await _set_progress(
+                env_id, "extracting", 20, "提取技术断言点", token=input_data.token
+            )
             await _save_run(run, time_warnings=_time_warnings(env))
             points = await _extract_points(
                 env, input_data.mode, input_data.token, budget
             )
+            if not points:
+                # Empty material (or an extraction that found nothing) must
+                # not converge to verified on a vacuous "all zero passed".
+                await _fail_env(
+                    env_id,
+                    "未能从材料中提取到任何技术断言点：请检查环境内容是否为空",
+                    input_data.token,
+                )
+                raise ValueError("no claims extracted from material")
             await _save_run(run, points=points)
 
-        await _set_progress(
-            env_id,
-            "verifying",
-            30,
-            f"验证 {len(points)} 个断言点",
-            token=input_data.token,
-        )
+        total_points = max(len(points), 1)
+        round_no = 0
         sem = asyncio.Semaphore(LANE_CONCURRENCY)
         context = _lane_context(env)
         work = [p for p in points if p.get("state") not in FINAL_STATES]
         while work and not budget.exhausted:
+            round_no += 1
+            settled = sum(1 for p in points if p.get("state") in FINAL_STATES)
+            await _set_progress(
+                env_id,
+                "verifying",
+                min(30 + int(55 * settled / total_points), 85),
+                f"三路验证 · 第 {round_no} 轮：{settled}/{total_points} 个断言点已判定",
+                token=input_data.token,
+            )
             batches = await asyncio.gather(
                 *[
                     _process_point(
@@ -705,6 +729,13 @@ async def verify_project_env_command(
             env_id, "converging", 90, "收敛判定", token=input_data.token
         )
         status = await _converge(env, run, points, budget)
+        await _set_progress(
+            env_id,
+            status,
+            100,
+            "验证通过" if status == "verified" else "待人工复核",
+            token=input_data.token,
+        )
         logger.info(f"[verify_project_env:{env_id}] converged: {status}")
         return VerifyProjectEnvOutput(
             success=True, status=status, summary=_summarize(points)

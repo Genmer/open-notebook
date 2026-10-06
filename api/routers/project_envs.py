@@ -79,6 +79,7 @@ def _env_response(env: ProjectEnv, usage: Dict[str, int]) -> ProjectEnvResponse:
         problems_solutions=env.problems_solutions,
         my_role=env.my_role,
         scale=env.scale,
+        draft_content=env.draft_content or None,
         status=env.status,
         ai_assisted=env.ai_assisted,
         time_adjusted=env.time_adjusted,
@@ -477,7 +478,14 @@ async def reverify(env_id: str):
         env.status = "pending"
         env.pending_claims = None
         await env.save()
-        job_id = await _submit_verification(env, "material")
+        # A mock env that never produced a draft needs the mock pipeline again
+        # (draft generation + verification); otherwise verify the material.
+        mode = (
+            "mock"
+            if env.source_type == "mock" and not env.draft_content
+            else "material"
+        )
+        job_id = await _submit_verification(env, mode)
         return ReverifyResponse(job_id=job_id)
     except HTTPException:
         raise
@@ -486,6 +494,55 @@ async def reverify(env_id: str):
     except Exception as e:
         logger.error(f"Error re-verifying project env {env_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error re-verifying: {e}")
+
+
+@router.post("/project-envs/{env_id}/regenerate", response_model=ReverifyResponse)
+async def regenerate_mock(env_id: str):
+    """Mock-only: discard the current draft/fields and regenerate the whole
+    environment from its stored keywords (no delete-and-recreate needed).
+    Sessions bound to the old snapshot lose the injection (dangling banner)."""
+    try:
+        env = await _get_env_or_404(env_id)
+        if env.source_type != "mock":
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "仅 AI 模拟环境支持重新生成", "reason": "not_mock"},
+            )
+        if not (env.keywords or []):
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "关键词为空，无法重新生成", "reason": "no_keywords"},
+            )
+        age = _progress_age(env.verification_progress)
+        if env.status == "pending" and age is not None and age <= REVERIFY_GUARD:
+            raise HTTPException(
+                status_code=409,
+                detail="A verification run is already in progress for this project env",
+            )
+        await _cancel_active_job(env)
+        env.status = "pending"
+        env.pending_claims = None
+        env.draft_content = None
+        env.verified_snapshot = None
+        for field in (
+            "background",
+            "tech_background",
+            "tuning_process",
+            "problems_solutions",
+            "my_role",
+            "scale",
+        ):
+            setattr(env, field, "")
+        await env.save()
+        job_id = await _submit_verification(env, "mock")
+        return ReverifyResponse(job_id=job_id)
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error regenerating project env {env_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error regenerating: {e}")
 
 
 def _find_point(run: Dict[str, Any], point_id: str) -> Dict[str, Any]:

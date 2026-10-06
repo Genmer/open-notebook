@@ -166,6 +166,17 @@ async def _run(env, recorder, mode="material", token=TOKEN, **pipeline_overrides
 
 class TestConvergence:
     @pytest.mark.asyncio
+    async def test_empty_material_fails_instead_of_vacuous_verified(self):
+        """Zero extracted claims must fail the env — an all-pass on an empty
+        point set must never converge to verified (the lost-keywords bug)."""
+        env = _env(background="", tech_background="", keywords=[], tuning_process=None)
+        recorder = Recorder()
+        with pytest.raises(ValueError, match="no claims extracted"):
+            await _run(env, recorder)
+
+        assert "env_failed" in recorder.events
+
+    @pytest.mark.asyncio
     async def test_all_pass_converges_verified_with_frozen_snapshot(self):
         env = _env()
         recorder = Recorder()
@@ -182,7 +193,8 @@ class TestConvergence:
         assert "frozen_at" in snapshot
         progress = env.verification_progress
         assert progress and progress["stage"] == "done"
-        assert recorder.progress_updates[-1]["stage"] == "converging"
+        last = recorder.progress_updates[-1]
+        assert last["stage"] == "verified" and last["percent"] == 100
 
     @pytest.mark.asyncio
     async def test_mock_all_pass_promotes_draft_to_main_fields(self):
@@ -224,6 +236,10 @@ class TestConvergence:
         snapshot = env.verified_snapshot
         assert snapshot and snapshot["tech_background"] == "模拟技术栈。"
         assert snapshot["source_type"] == "mock"
+        # the UI stepper walks drafting → extracting → verifying → terminal
+        stages = [u["stage"] for u in recorder.progress_updates]
+        assert "drafting" in stages and "extracting" in stages
+        assert stages[-1] == "verified" and stages[-2] == "converging"
 
     @pytest.mark.asyncio
     async def test_rounds_exhausted_needs_review_with_lane_opinions(self, monkeypatch):

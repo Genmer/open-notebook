@@ -58,11 +58,34 @@ function reasonLabel(reason: string | undefined, t: (k: string) => string): stri
 function stageLabel(stage: string | undefined, t: (k: string) => string): string {
   switch (stage) {
     case 'preparing': return t('projectEnvs.stagePreparing')
+    case 'drafting': return t('projectEnvs.stageDrafting')
+    case 'extracting': return t('projectEnvs.stageExtracting')
     case 'verifying': return t('projectEnvs.stageVerifying')
     case 'converging': return t('projectEnvs.stageConverging')
     default: return t('projectEnvs.stageVerifying')
   }
 }
+
+// Stage → coarse phase for the expand → verify → converge stepper. Mock runs
+// draft first; material runs enter phase 1 right away (nothing to expand).
+function phaseIndex(stage: string | undefined): number {
+  switch (stage) {
+    case 'drafting':
+      return 0
+    case 'converging':
+      return 2
+    default:
+      // preparing / extracting / verifying (and unknown) all sit in phase 1
+      return 1
+  }
+}
+
+// Static literals so the locale unused-key scanner sees the references.
+const PHASE_LABEL_KEYS = [
+  'projectEnvs.phaseDraft',
+  'projectEnvs.phaseVerify',
+  'projectEnvs.phaseConverge',
+] as const
 
 function LaneBadge({ lane, result }: { lane: ProjectEnvLane; result?: ProjectEnvLanes[ProjectEnvLane] }) {
   const { t } = useTranslation()
@@ -336,6 +359,30 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
     <div className="space-y-4" data-testid="verification-panel">
       {pending && (
         <div className="space-y-2 rounded-lg border border-teal/40 bg-teal-tint/40 p-3">
+          <ol className="flex items-center gap-1.5 text-xs">
+            {PHASE_LABEL_KEYS.map((key, i) => {
+              const current = phaseIndex(progress?.stage)
+              const done = i < current
+              const active = i === current
+              return (
+                <li key={key} className="flex items-center gap-1.5 min-w-0">
+                  {i > 0 && <span className="text-muted-foreground/50">→</span>}
+                  <span
+                    data-testid={`verification-phase-${i}`}
+                    className={cn(
+                      'flex items-center gap-1 truncate rounded-full border px-2 py-0.5',
+                      active && 'border-teal/60 bg-teal/10 font-medium text-teal',
+                      done && 'border-teal/30 text-teal/70',
+                      !active && !done && 'border-border text-muted-foreground/60'
+                    )}
+                  >
+                    {done && <Check className="h-3 w-3 shrink-0" />}
+                    {t(key)}
+                  </span>
+                </li>
+              )
+            })}
+          </ol>
           <div className="flex items-center justify-between text-sm">
             <span className="flex items-center gap-2 text-teal">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -346,6 +393,11 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
             </span>
           </div>
           <Progress value={progress?.percent ?? 0} />
+          {progress?.message && (
+            <p className="text-xs text-muted-foreground" data-testid="verification-progress-message">
+              {progress.message}
+            </p>
+          )}
         </div>
       )}
 

@@ -1,0 +1,12 @@
+REMOVE FIELD draft_content ON TABLE project_env;
+DEFINE FIELD draft_content ON TABLE project_env FLEXIBLE TYPE option<object>;
+REMOVE FIELD verified_snapshot ON TABLE project_env;
+DEFINE FIELD verified_snapshot ON TABLE project_env FLEXIBLE TYPE option<object>;
+REMOVE FIELD time_adjusted ON TABLE project_env;
+DEFINE FIELD time_adjusted ON TABLE project_env FLEXIBLE TYPE option<object>;
+REMOVE FIELD ai_assisted ON TABLE project_env;
+DEFINE FIELD ai_assisted ON TABLE project_env FLEXIBLE TYPE option<object>;
+REMOVE FIELD pending_claims ON TABLE project_env;
+DEFINE FIELD pending_claims ON TABLE project_env FLEXIBLE TYPE option<object>;
+REMOVE FIELD verification_progress ON TABLE project_env;
+DEFINE FIELD verification_progress ON TABLE project_env FLEXIBLE TYPE option<object>;

@@ -78,6 +78,13 @@ export const projectEnvsApi = {
     return response.data
   },
 
+  regenerate: async (id: string): Promise<ReverifyResponse> => {
+    const response = await apiClient.post<ReverifyResponse>(
+      `/project-envs/${id}/regenerate`
+    )
+    return response.data
+  },
+
   dismissClaim: async (
     envId: string,
     pointId: string

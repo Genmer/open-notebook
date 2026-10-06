@@ -156,6 +156,22 @@ export function useReverifyProjectEnv() {
   })
 }
 
+// Mock envs only: discard the draft and rebuild everything from the keywords.
+export function useRegenerateProjectEnv() {
+  const invalidate = useInvalidateProjectEnvs()
+  const { t } = useTranslation()
+  return useMutation({
+    mutationFn: (id: string) => projectEnvsApi.regenerate(id),
+    onSuccess: () => {
+      invalidate()
+      toast.success(t('projectEnvs.regenerateStarted'))
+    },
+    onError: (error: unknown) => {
+      toast.error(getApiErrorMessage(error, (k) => t(k)) || t('projectEnvs.regenerateFailed'))
+    },
+  })
+}
+
 export function useDismissClaim() {
   const invalidate = useInvalidateProjectEnvs()
   const { t } = useTranslation()

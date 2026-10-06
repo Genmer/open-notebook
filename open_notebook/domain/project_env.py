@@ -59,6 +59,14 @@ class ProjectEnv(ObjectModel):
         "active_job_id",
     }
 
+    def _prepare_save_data(self) -> Dict[str, Any]:
+        # Progress is written only by the fenced conditional UPDATE in the
+        # verify command; a full-field save here would replay a stale in-memory
+        # {} over the live progress. Drop it from every save.
+        data = super()._prepare_save_data()
+        data.pop("verification_progress", None)
+        return data
+
     name: str
     background: str = ""
     period_start: str = ""

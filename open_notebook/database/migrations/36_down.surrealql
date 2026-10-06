@@ -1,0 +1,2 @@
+REMOVE FIELD keywords ON TABLE project_env;
+DEFINE FIELD keywords ON TABLE project_env TYPE option<array>;

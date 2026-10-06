@@ -709,6 +709,94 @@ def test_reverify_after_guard_resubmits():
     assert env.status == "pending"
 
 
+def test_regenerate_mock_env_resets_fields_and_uses_mock_mode():
+    """Regenerate keeps the keywords but discards draft/snapshot/promoted
+    fields, then submits the mock pipeline (draft generation included)."""
+    client = _client()
+    env = _env(
+        source_type="mock",
+        background="旧内容",
+        tech_background="旧技术栈",
+        draft_content={"background": "旧草稿"},
+        verified_snapshot={"background": "旧快照"},
+    )
+    submitted = []
+
+    async def _submit(*args, **kwargs):
+        submitted.append(args)
+        return "command:job1"
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+        patch("api.routers.project_envs.CommandService.cancel_command_job"),
+    ):
+        mock_submit.side_effect = _submit
+        response = client.post("/api/project-envs/project_env:e1/regenerate")
+
+    assert response.status_code == 200
+    assert submitted[0][2]["mode"] == "mock"
+    assert env.keywords == ["微服务"]  # kept
+    assert env.background == ""  # promoted fields cleared
+    assert env.draft_content is None
+    assert env.verified_snapshot is None
+    assert env.status == "pending"
+
+
+def test_regenerate_real_env_returns_422():
+    client = _client()
+    env = _env()  # real by default
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+    ):
+        response = client.post("/api/project-envs/project_env:e1/regenerate")
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "not_mock"
+
+
+def test_reverify_mock_env_without_draft_uses_mock_mode():
+    """A mock env whose draft was never generated must re-run the mock
+    pipeline (draft generation + verification), not verify empty material."""
+    client = _client()
+    env = _env(source_type="mock", background="", tech_background="", draft_content={})
+    submitted = []
+
+    async def _submit(*args, **kwargs):
+        submitted.append(args)
+        return "command:job1"
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+        patch("api.routers.project_envs.CommandService.cancel_command_job"),
+    ):
+        mock_submit.side_effect = _submit
+        response = client.post("/api/project-envs/project_env:e1/reverify")
+
+    assert response.status_code == 200
+    assert submitted[0][1] == "verify_project_env"
+    assert submitted[0][2]["mode"] == "mock"
+
+
 def _run_row(points):
     return {
         "id": "project_env_verification:r1",
