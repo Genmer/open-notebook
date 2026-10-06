@@ -712,11 +712,11 @@ export const trTR = {
     },
   },
   chat: {
+    streamStop: "Oluşturmayı durdur",
     streamBuilding: "Bağlam oluşturuluyor…",
     streamGenerating: "Model çıktı akışı",
     streamWaitingHint: "Model bağlamı hazırlamak için {{sources}} kaynak ve {{notes}} not alınıyor…",
     streamWaitingGeneric: "Modele bağlanılıyor…",
-    streamChars: "{{count}} karakter",
     sessions: "Oturumlar",
     sessionTitlePlaceholder: "Buraya bir başlık yazın...",
     noSessions: "Henüz sohbet oturumu yok",

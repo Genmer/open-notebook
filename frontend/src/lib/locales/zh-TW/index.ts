@@ -712,11 +712,11 @@ export const zhTW = {
     },
   },
   chat: {
+    streamStop: "停止生成",
     streamBuilding: "建構上下文中…",
     streamGenerating: "模型輸出流",
     streamWaitingHint: "正在檢索 {{sources}} 個來源、{{notes}} 條筆記，準備模型上下文…",
     streamWaitingGeneric: "正在連線模型…",
-    streamChars: "{{count}} 字元",
     sessions: "對話",
     sessionTitlePlaceholder: "在此輸入標題...",
     noSessions: "暫無對話",

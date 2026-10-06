@@ -712,11 +712,11 @@ export const esES = {
     },
   },
   chat: {
+    streamStop: "Detener la generación",
     streamBuilding: "Construyendo contexto…",
     streamGenerating: "Flujo de salida del modelo",
     streamWaitingHint: "Recuperando {{sources}} fuentes y {{notes}} notas para preparar el contexto…",
     streamWaitingGeneric: "Conectando con el modelo…",
-    streamChars: "{{count}} caracteres",
     sessions: "Sesiones",
     sessionTitlePlaceholder: "Escribe un título aquí...",
     noSessions: "Aún no hay sesiones de chat",

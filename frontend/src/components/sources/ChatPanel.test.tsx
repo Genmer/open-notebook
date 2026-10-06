@@ -636,22 +636,23 @@ describe('ChatPanel live stream window', () => {
     mockTitles([])
   })
 
-  it('shows the fixed-height terminal window with the waiting hint while no tokens arrived', () => {
+  it('shows the single-line streaming bar with the waiting hint while no tokens arrived', () => {
     render(
       <ChatPanel
         messages={[]}
         isStreaming={true}
         streamingMessage={{ content: '' }}
-        contextIndicators={{ sources: [{ id: 's1' }], insights: [], notes: [{ id: 'n1' }] }}
+        contextIndicators={{ sources: ['s1'], insights: [], notes: ['n1'] }}
         onSendMessage={vi.fn()}
       />
     )
 
     const win = screen.getByTestId('chat-stream-window')
-    // Fixed height + inner scrolling: the stream body never grows the bubble.
-    const body = win.querySelector('.h-40.overflow-y-auto')
-    expect(body).not.toBeNull()
-    expect(body).toHaveClass('font-mono')
+    // One-line bar: fixed single-row height, monospace tail-truncated text.
+    expect(win).toHaveClass('h-8')
+    const tail = win.querySelector('.truncate')
+    expect(tail).not.toBeNull()
+    expect(tail).toHaveClass('font-mono')
     // t is key-mocked: the localized waiting hint resolves to its key.
     expect(screen.getByText(/chat\.streamWaitingHint/)).toBeInTheDocument()
   })
@@ -671,21 +672,54 @@ describe('ChatPanel live stream window', () => {
     expect(screen.getByText(/chat\.streamWaitingGeneric/)).toBeInTheDocument()
   })
 
-  it('streams model text inside the monospace window with a char counter', () => {
+  it('shows only the tail of long stream text on the single line', () => {
+    const long = 'A'.repeat(200) + 'TAIL-VISIBLE'
     render(
       <ChatPanel
         messages={[]}
         isStreaming={true}
-        streamingMessage={{ content: 'SurrealDB 多模型架构：结合文档与图关系…' }}
+        streamingMessage={{ content: long }}
         contextIndicators={null}
         onSendMessage={vi.fn()}
       />
     )
 
     const win = screen.getByTestId('chat-stream-window')
-    expect(win).toHaveTextContent('SurrealDB 多模型架构')
+    expect(win).toHaveTextContent('TAIL-VISIBLE')
     expect(win).toHaveTextContent('chat.streamGenerating')
-    expect(win).toHaveTextContent('chat.streamChars')
+    // The head scrolled out of the fixed tail window.
+    expect(win.textContent).not.toContain('A'.repeat(130))
+  })
+
+  it('invokes onStopStreaming from the stop button', () => {
+    const onStopStreaming = vi.fn()
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: 'partial' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        onStopStreaming={onStopStreaming}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'chat.streamStop' }))
+    expect(onStopStreaming).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no stop button when interruption is not supported', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: 'partial' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'chat.streamStop' })).not.toBeInTheDocument()
   })
 
   it('removes the stream window once streaming ends', () => {

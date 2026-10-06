@@ -712,11 +712,11 @@ export const bnIN = {
     },
   },
   chat: {
+    streamStop: "তৈরি বন্ধ করুন",
     streamBuilding: "প্রসঙ্গ তৈরি হচ্ছে…",
     streamGenerating: "মডেল আউটপুট স্ট্রিম",
     streamWaitingHint: "মডেল প্রসঙ্গ তৈরি করতে {{sources}}টি সূত্র ও {{notes}}টি নোট আনা হচ্ছে…",
     streamWaitingGeneric: "মডেলের সাথে সংযোগ হচ্ছে…",
-    streamChars: "{{count}} অক্ষর",
     sessions: "সেশনগুলি",
     sessionTitlePlaceholder: "এখানে একটি শিরোনাম লিখুন...",
     noSessions: "এখনও কোন চ্যাট সেশন নেই",

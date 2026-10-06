@@ -715,11 +715,11 @@ export const deDE = {
     },
   },
   chat: {
+    streamStop: "Generierung stoppen",
     streamBuilding: "Kontext wird aufgebaut…",
     streamGenerating: "Modellausgabestrom",
     streamWaitingHint: "{{sources}} Quellen und {{notes}} Notizen werden abgerufen, um den Modellkontext aufzubauen…",
     streamWaitingGeneric: "Verbindung zum Modell wird hergestellt…",
-    streamChars: "{{count}} Zeichen",
     sessions: "Sitzungen",
     sessionTitlePlaceholder: "Titel hier eingeben...",
     noSessions: "Noch keine Chat-Sitzungen",

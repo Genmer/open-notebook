@@ -712,11 +712,11 @@ export const ruRU = {
     },
   },
   chat: {
+    streamStop: "Остановить генерацию",
     streamBuilding: "Подготовка контекста…",
     streamGenerating: "Поток вывода модели",
     streamWaitingHint: "Загрузка {{sources}} источников и {{notes}} заметок для подготовки контекста…",
     streamWaitingGeneric: "Подключение к модели…",
-    streamChars: "{{count}} симв.",
     sessions: "Сессии",
     sessionTitlePlaceholder: "Введите название...",
     noSessions: "Пока нет сессий чата",

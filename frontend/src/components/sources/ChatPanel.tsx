@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Maximize2, Minimize2, Sparkles, Square } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
@@ -58,6 +58,10 @@ interface ChatPanelProps {
   // Live token-stream text (notebook chat only). Absent on source chats —
   // the waiting bubble keeps its plain spinner there.
   streamingMessage?: { content: string } | null
+  // Stops the in-flight notebook-chat stream (rendered as the stop button on
+  // the streaming bar). Absent on source chats — that path has no abortable
+  // SSE request.
+  onStopStreaming?: () => void
   contextIndicators: SourceChatContextIndicator | null
   onSendMessage: (message: string, modelOverride?: string) => void
   modelOverride?: string
@@ -115,6 +119,7 @@ export function ChatPanel({
   messages,
   isStreaming,
   streamingMessage,
+  onStopStreaming,
   contextIndicators,
   onSendMessage,
   modelOverride,
@@ -157,13 +162,6 @@ export function ChatPanel({
   const [panelRightOpen, setPanelRightOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  // 流式终端窗的内层滚底：直接赋值 scrollTop 而非 scrollIntoView，后者会
-  // 连带滚动外层消息区（ScrollArea），用户上翻历史时会被强行拉回底部
-  const streamBoxRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = streamBoxRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [streamingMessage?.content])
   const { openModal } = useModalManager()
 
   // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
@@ -324,54 +322,48 @@ export function ChatPanel({
                     <Bot className="h-4 w-4 text-teal" />
                   </div>
                 </div>
-                {/* 固定高度的终端流窗口：等待期与生成期同尺寸，灰色等宽字体
-                    内部滚动（深色 zinc 系刻意不走主题 token，与任务检查器
-                    的终端窗保持同一视觉语言） */}
+                {/* 单行流式条：等宽灰字只展示尾部内容（最新 token 永远可见，
+                    旧内容从左侧滚出），Stop 按钮可中断本次生成 */}
                 <div
                   data-testid="chat-stream-window"
-                  className="max-w-[80%] min-w-0 flex-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-md"
+                  className="flex h-8 min-w-0 max-w-[80%] flex-1 items-center gap-2 rounded-md border bg-card px-3"
                 >
-                  <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-1.5">
-                    <span className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-400">
-                      <Loader2 className="h-3 w-3 animate-spin text-teal" />
-                      {(streamingMessage?.content ?? '') === ''
-                        ? t('chat.streamBuilding')
-                        : t('chat.streamGenerating')}
-                    </span>
-                    <span className="font-mono text-[10px] tabular-nums text-zinc-500">
-                      {streamingMessage?.content
-                        ? t('chat.streamChars', {
-                            count: filterStreamingContent(streamingMessage.content).length,
-                          })
-                        : '—'}
-                    </span>
-                  </div>
-                  <div
-                    ref={streamBoxRef}
-                    className="h-40 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed text-zinc-400"
-                  >
-                    {(streamingMessage?.content ?? '') === '' ? (
-                      <p className="whitespace-pre-wrap break-words text-zinc-500">
-                        {contextIndicators &&
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-teal" />
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                    {(streamingMessage?.content ?? '') === ''
+                      ? t('chat.streamBuilding')
+                      : t('chat.streamGenerating')}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/70">
+                    {(streamingMessage?.content ?? '') === ''
+                      ? contextIndicators &&
                         (contextIndicators.sources?.length || contextIndicators.notes?.length)
-                          ? t('chat.streamWaitingHint', {
-                              sources: contextIndicators.sources?.length ?? 0,
-                              notes: contextIndicators.notes?.length ?? 0,
-                            })
-                          : t('chat.streamWaitingGeneric')}
-                        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
-                      </p>
-                    ) : (
-                      // Plain text while streaming: token-level re-parsing via
-                      // MarkdownRenderer (KaTeX/highlight) would be too costly;
-                      // the authoritative message renders markdown once
-                      // complete arrives.
-                      <p className="whitespace-pre-wrap break-words">
-                        {filterStreamingContent(streamingMessage!.content)}
-                        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
-                      </p>
-                    )}
-                  </div>
+                        ? t('chat.streamWaitingHint', {
+                            sources: contextIndicators.sources?.length ?? 0,
+                            notes: contextIndicators.notes?.length ?? 0,
+                          })
+                        : t('chat.streamWaitingGeneric')
+                      : (() => {
+                          // Plain text while streaming: token-level re-parsing via
+                          // MarkdownRenderer would be too costly; the authoritative
+                          // message renders markdown once complete arrives.
+                          const text = filterStreamingContent(streamingMessage!.content)
+                          return text.length > 120 ? '…' + text.slice(-120) : text
+                        })()}
+                  </span>
+                  <span className="inline-block h-[1em] w-[2px] shrink-0 translate-y-[2px] bg-teal animate-pulse" />
+                  {onStopStreaming && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+                      onClick={onStopStreaming}
+                      aria-label={t('chat.streamStop')}
+                      title={t('chat.streamStop')}
+                    >
+                      <Square className="h-2.5 w-2.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

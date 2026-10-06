@@ -712,11 +712,11 @@ export const plPL = {
     },
   },
   chat: {
+    streamStop: "Zatrzymaj generowanie",
     streamBuilding: "Budowanie kontekstu…",
     streamGenerating: "Strumień wyjścia modelu",
     streamWaitingHint: "Pobieranie {{sources}} źródeł i {{notes}} notatek, aby przygotować kontekst…",
     streamWaitingGeneric: "Łączenie z modelem…",
-    streamChars: "{{count}} znaków",
     sessions: "Sesje",
     sessionTitlePlaceholder: "Wpisz tutaj tytuł...",
     noSessions: "Brak sesji czatu",

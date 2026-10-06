@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Chat replies stream inside a terminal-style window.** While the model is working, notebook chat shows a fixed-height dark window with grey monospace text: a "building context" line naming the retrieved sources and notes before the first token arrives, then the model's live output scrolling inside the window with a character counter (the same terminal visual language as the task inspector's live console). The authoritative markdown bubble renders once the reply completes. Localized in all 14 languages
+- **Chat replies stream on a single-line live bar with a stop button.** While the model is working, notebook chat shows a compact one-row card instead of a bare spinner: a spinning indicator with "building context" (naming the retrieved sources and notes) before the first token, then the model's live output in grey monospace — only the tail of the text is shown so the newest tokens are always visible — plus a blinking cursor and a stop button that aborts the generation mid-stream (the session reconciles to the backend's authoritative state). The authoritative markdown bubble renders once the reply completes. Localized in all 14 languages
 
 ### Changed
 - **Documentation rewritten against the code.** Every page under `docs/` was checked against v1.15.0 and rewritten where it described an older or imagined product (#1458, #1459, #1460, #1461):

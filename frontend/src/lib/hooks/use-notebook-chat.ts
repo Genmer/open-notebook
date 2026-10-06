@@ -293,7 +293,12 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         throw new Error(streamError || 'Chat stream ended without completing')
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User stop or idle watchdog: reconcile so the optimistic temp- user
+        // message is replaced by the backend's authoritative copy.
+        await refetchCurrentSession()
+        return
+      }
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
       const detail = error.response?.data?.detail || error.message || ''
@@ -323,6 +328,12 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     refetchCurrentSession,
     t
   ])
+
+  // User-visible stop for the in-flight stream (streaming bar's stop button);
+  // aborts the SSE fetch; the send path's AbortError branch reconciles state.
+  const stopStreaming = useCallback(() => {
+    streamAbortRef.current?.abort()
+  }, [])
 
   // Parallel answers (PDR-004): fan one question out to 2-5 participants.
   // The live cards come from the parallel hook; the archived group lands in
@@ -433,6 +444,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     deleteSession,
     switchSession,
     sendMessage,
+    stopStreaming,
     setModelOverride,
     setAgentOverride,
     parallel,
