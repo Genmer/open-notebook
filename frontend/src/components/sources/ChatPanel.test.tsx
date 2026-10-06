@@ -552,7 +552,7 @@ describe('ChatPanel streaming bubble', () => {
     expect(screen.queryByText(/hidden/)).not.toBeInTheDocument()
   })
 
-  it('keeps the spinner while no delta has arrived yet', () => {
+  it('shows the waiting stream window while no delta has arrived yet', () => {
     const { container } = render(
       <ChatPanel
         messages={[]}
@@ -564,11 +564,13 @@ describe('ChatPanel streaming bubble', () => {
     )
 
     const bubble = getBubble(container)
+    // header spinner + blinking waiting cursor, but no stream text yet
     expect(bubble?.querySelector('.animate-spin')).not.toBeNull()
-    expect(bubble?.querySelector('.animate-pulse')).toBeNull()
+    expect(bubble?.querySelector('.animate-pulse')).not.toBeNull()
+    expect(bubble).toHaveTextContent('chat.streamBuilding')
   })
 
-  it('falls back to the spinner when streamingMessage is not provided (source chat)', () => {
+  it('renders the generic waiting line when streamingMessage is not provided (source chat)', () => {
     const { container } = render(
       <ChatPanel
         messages={[]}
@@ -578,7 +580,9 @@ describe('ChatPanel streaming bubble', () => {
       />
     )
 
-    expect(getBubble(container)?.querySelector('.animate-spin')).not.toBeNull()
+    const bubble = getBubble(container)
+    expect(bubble?.querySelector('.animate-spin')).not.toBeNull()
+    expect(bubble).toHaveTextContent('chat.streamWaitingGeneric')
   })
 })
 
@@ -622,5 +626,89 @@ describe('ChatPanel message actions grouping hand-off', () => {
     )
 
     expect(screen.getByTestId('message-actions-probe')).toHaveAttribute('data-source-grouping', '')
+  })
+})
+
+describe('ChatPanel live stream window', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    mockTitles([])
+  })
+
+  it('shows the fixed-height terminal window with the waiting hint while no tokens arrived', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: '' }}
+        contextIndicators={{ sources: [{ id: 's1' }], insights: [], notes: [{ id: 'n1' }] }}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    const win = screen.getByTestId('chat-stream-window')
+    // Fixed height + inner scrolling: the stream body never grows the bubble.
+    const body = win.querySelector('.h-40.overflow-y-auto')
+    expect(body).not.toBeNull()
+    expect(body).toHaveClass('font-mono')
+    // t is key-mocked: the localized waiting hint resolves to its key.
+    expect(screen.getByText(/chat\.streamWaitingHint/)).toBeInTheDocument()
+  })
+
+  it('falls back to the generic waiting line without context indicators', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={null}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('chat-stream-window')).toBeInTheDocument()
+    expect(screen.getByText(/chat\.streamWaitingGeneric/)).toBeInTheDocument()
+  })
+
+  it('streams model text inside the monospace window with a char counter', () => {
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: 'SurrealDB 多模型架构：结合文档与图关系…' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    const win = screen.getByTestId('chat-stream-window')
+    expect(win).toHaveTextContent('SurrealDB 多模型架构')
+    expect(win).toHaveTextContent('chat.streamGenerating')
+    expect(win).toHaveTextContent('chat.streamChars')
+  })
+
+  it('removes the stream window once streaming ends', () => {
+    const { rerender } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={true}
+        streamingMessage={{ content: 'partial' }}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('chat-stream-window')).toBeInTheDocument()
+
+    rerender(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        streamingMessage={null}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+    expect(screen.queryByTestId('chat-stream-window')).not.toBeInTheDocument()
   })
 })

@@ -712,6 +712,11 @@ export const ptBR = {
     },
   },
   chat: {
+    streamBuilding: "Construindo contexto…",
+    streamGenerating: "Fluxo de saída do modelo",
+    streamWaitingHint: "Recuperando {{sources}} fontes e {{notes}} notas para montar o contexto…",
+    streamWaitingGeneric: "Conectando ao modelo…",
+    streamChars: "{{count}} caracteres",
     sessions: "Sessões",
     sessionTitlePlaceholder: "Digite um título aqui...",
     noSessions: "Nenhuma sessão de chat ainda",

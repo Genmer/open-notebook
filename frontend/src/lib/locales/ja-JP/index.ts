@@ -712,6 +712,11 @@ export const jaJP = {
     },
   },
   chat: {
+    streamBuilding: "コンテキストを構築中…",
+    streamGenerating: "モデル出力ストリーム",
+    streamWaitingHint: "{{sources}} 件のソースと {{notes}} 件のノートを取得し、モデルコンテキストを準備しています…",
+    streamWaitingGeneric: "モデルに接続中…",
+    streamChars: "{{count}} 文字",
     sessions: "セッション",
     sessionTitlePlaceholder: "タイトルを入力...",
     noSessions: "チャットセッションがまだありません",

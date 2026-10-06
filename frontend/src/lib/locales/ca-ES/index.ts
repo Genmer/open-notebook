@@ -712,6 +712,11 @@ export const caES = {
     },
   },
   chat: {
+    streamBuilding: "Construint el context…",
+    streamGenerating: "Flux de sortida del model",
+    streamWaitingHint: "Recuperant {{sources}} fonts i {{notes}} notes per preparar el context…",
+    streamWaitingGeneric: "Connectant al model…",
+    streamChars: "{{count}} caràcters",
     sessions: "Sessions",
     sessionTitlePlaceholder: "Escriu un títol aquí...",
     noSessions: "Encara no hi ha sessions de xat",

@@ -712,6 +712,11 @@ export const zhCN = {
     },
   },
   chat: {
+    streamBuilding: "构建上下文中…",
+    streamGenerating: "模型输出流",
+    streamWaitingHint: "正在检索 {{sources}} 个来源、{{notes}} 条笔记，准备模型上下文…",
+    streamWaitingGeneric: "正在连接模型…",
+    streamChars: "{{count}} 字符",
     sessions: "会话",
     sessionTitlePlaceholder: "在此输入标题...",
     noSessions: "暂无会话",

@@ -712,6 +712,11 @@ export const itIT = {
     },
   },
   chat: {
+    streamBuilding: "Costruzione del contesto…",
+    streamGenerating: "Flusso di output del modello",
+    streamWaitingHint: "Recupero di {{sources}} fonti e {{notes}} note per preparare il contesto…",
+    streamWaitingGeneric: "Connessione al modello…",
+    streamChars: "{{count}} caratteri",
     sessions: "Sessioni",
     sessionTitlePlaceholder: "Digita un titolo qui...",
     noSessions: "Ancora nessuna sessione chat",

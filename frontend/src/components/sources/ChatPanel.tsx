@@ -157,6 +157,13 @@ export function ChatPanel({
   const [panelRightOpen, setPanelRightOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // 流式终端窗的内层滚底：直接赋值 scrollTop 而非 scrollIntoView，后者会
+  // 连带滚动外层消息区（ScrollArea），用户上翻历史时会被强行拉回底部
+  const streamBoxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = streamBoxRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [streamingMessage?.content])
   const { openModal } = useModalManager()
 
   // ESC 还原：全屏态 Card 已 fixed 脱离 flex 流，监听 window keydown 即可，
@@ -317,19 +324,54 @@ export function ChatPanel({
                     <Bot className="h-4 w-4 text-teal" />
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-card border max-w-[80%]">
-                  {(streamingMessage?.content ?? '') === '' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    // Plain text while streaming: token-level re-parsing via
-                    // MarkdownRenderer (KaTeX/highlight) would be too costly;
-                    // the authoritative message renders markdown once
-                    // complete arrives.
-                    <p className="text-sm whitespace-pre-wrap break-words">
-                      {filterStreamingContent(streamingMessage!.content)}
-                      <span aria-hidden className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
-                    </p>
-                  )}
+                {/* 固定高度的终端流窗口：等待期与生成期同尺寸，灰色等宽字体
+                    内部滚动（深色 zinc 系刻意不走主题 token，与任务检查器
+                    的终端窗保持同一视觉语言） */}
+                <div
+                  data-testid="chat-stream-window"
+                  className="max-w-[80%] min-w-0 flex-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-md"
+                >
+                  <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/90 px-3 py-1.5">
+                    <span className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-400">
+                      <Loader2 className="h-3 w-3 animate-spin text-teal" />
+                      {(streamingMessage?.content ?? '') === ''
+                        ? t('chat.streamBuilding')
+                        : t('chat.streamGenerating')}
+                    </span>
+                    <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+                      {streamingMessage?.content
+                        ? t('chat.streamChars', {
+                            count: filterStreamingContent(streamingMessage.content).length,
+                          })
+                        : '—'}
+                    </span>
+                  </div>
+                  <div
+                    ref={streamBoxRef}
+                    className="h-40 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed text-zinc-400"
+                  >
+                    {(streamingMessage?.content ?? '') === '' ? (
+                      <p className="whitespace-pre-wrap break-words text-zinc-500">
+                        {contextIndicators &&
+                        (contextIndicators.sources?.length || contextIndicators.notes?.length)
+                          ? t('chat.streamWaitingHint', {
+                              sources: contextIndicators.sources?.length ?? 0,
+                              notes: contextIndicators.notes?.length ?? 0,
+                            })
+                          : t('chat.streamWaitingGeneric')}
+                        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
+                      </p>
+                    ) : (
+                      // Plain text while streaming: token-level re-parsing via
+                      // MarkdownRenderer (KaTeX/highlight) would be too costly;
+                      // the authoritative message renders markdown once
+                      // complete arrives.
+                      <p className="whitespace-pre-wrap break-words">
+                        {filterStreamingContent(streamingMessage!.content)}
+                        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] bg-teal animate-pulse" />
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

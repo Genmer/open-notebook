@@ -710,6 +710,11 @@ export const enUS = {
     },
   },
   chat: {
+    streamBuilding: "Building context…",
+    streamGenerating: "Model output stream",
+    streamWaitingHint: "Retrieving {{sources}} sources and {{notes}} notes to assemble model context…",
+    streamWaitingGeneric: "Connecting to the model…",
+    streamChars: "{{count}} chars",
     sessions: "Sessions",
     sessionTitlePlaceholder: "Type a title here...",
     noSessions: "No chat sessions yet",
