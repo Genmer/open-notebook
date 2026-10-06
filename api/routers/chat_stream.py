@@ -46,6 +46,7 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook
 from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils.text_utils import extract_text_content
+from open_notebook.utils.timestamps import utc_now_iso
 
 router = APIRouter()
 
@@ -189,7 +190,12 @@ async def stream_chat(session_id: str, request: StreamChatRequest) -> StreamingR
         getattr(session, "project_env", None)
     )
     state_values["project_env_context"] = env_context["text"] if env_context else None
-    state_values["messages"].append(HumanMessage(content=request.message))
+    # created_at stamps the message for the history time-grouping view.
+    state_values["messages"].append(
+        HumanMessage(
+            content=request.message, additional_kwargs={"created_at": utc_now_iso()}
+        )
+    )
 
     config = RunnableConfig(
         configurable={

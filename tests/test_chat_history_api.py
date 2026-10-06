@@ -855,3 +855,418 @@ def test_h20_real_stream_arms_merged_guard_and_cleans_up(tmp_path):
         assert response.status_code == 404
         assert "already in progress" not in response.json()["detail"]
         assert len(_get_messages(graph, NOTEBOOK_SESSION)) == len(seeded)
+
+
+# --- compression submit endpoint -----------------------------------------------
+#
+# The compress endpoint never touches a graph or an LLM itself: it validates,
+# rejects concurrent jobs and submits the async command. DB/worker seams are
+# stubbed; the command's own behavior is covered in test_compress_command.py.
+
+
+def _compress_endpoint_patches(session):
+    return [
+        patch(
+            "api.routers.chat_history.get_session_or_404",
+            new=AsyncMock(return_value=(NOTEBOOK_SESSION, session)),
+        ),
+        # the concurrent-job guard reads the command table through the
+        # router module's repo_query
+        patch(
+            "api.routers.chat_history.repo_query",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "api.routers.chat_history.CommandService.submit_command_job",
+            new_callable=AsyncMock,
+            return_value="job:compress1",
+        ),
+        patch.object(ChatSession, "save", new=AsyncMock()),
+    ]
+
+
+def test_h21_compress_submit_returns_job_id():
+    from api.routers import chat_history as chat_history_router
+
+    client = _client()
+    ids = [
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+    ]
+
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        submit_mock: Any = chat_history_router.CommandService.submit_command_job
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": ids},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_id": "job:compress1",
+        "session_id": NOTEBOOK_SESSION,
+        "status": "submitted",
+    }
+    submit_mock.assert_awaited_once_with(
+        "open_notebook",
+        "compress_chat_history",
+        {"session_id": NOTEBOOK_SESSION, "message_ids": ids},
+    )
+    # duplicate ids collapse to one entry and still pass the >=2 gate
+    ids_with_dup = [ids[0], ids[0], ids[1]]
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        submit_mock = chat_history_router.CommandService.submit_command_job
+        dedup = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": ids_with_dup},
+        )
+    assert dedup.status_code == 200
+    submit_mock.assert_awaited_once_with(
+        "open_notebook",
+        "compress_chat_history",
+        {"session_id": NOTEBOOK_SESSION, "message_ids": ids},
+    )
+
+
+def test_h22_compress_submit_validates_ids():
+    client = _client()
+
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        one = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": ["only-one"]},
+        )
+        too_many = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": [f"id-{i}" for i in range(501)]},
+        )
+
+    assert one.status_code == 400
+    assert "至少需要 2 条" in one.json()["detail"]
+    assert too_many.status_code == 400
+    assert "不能超过 500 条" in too_many.json()["detail"]
+
+
+def test_h23_compress_submit_409_while_stream_inflight():
+    from api.routers import chat_stream
+
+    client = _client()
+
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        chat_stream._inflight.add(NOTEBOOK_SESSION)
+        try:
+            response = client.post(
+                f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+                json={"message_ids": ["a", "b"]},
+            )
+        finally:
+            chat_stream._inflight.discard(NOTEBOOK_SESSION)
+
+    assert response.status_code == 409
+    assert "already in progress" in response.json()["detail"]
+
+
+def test_h24_compress_submit_409_on_concurrent_job():
+    from api.routers import chat_history as chat_history_router
+
+    client = _client()
+
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        submit_mock: Any = chat_history_router.CommandService.submit_command_job
+        repo_mock: Any = chat_history_router.repo_query  # type: ignore[attr-defined]
+        repo_mock.return_value = [{"args": {"session_id": NOTEBOOK_SESSION}}]
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": ["a", "b"]},
+        )
+
+    assert response.status_code == 409
+    assert "already queued or running" in response.json()["detail"]
+    submit_mock.assert_not_awaited()
+
+    # a job for a DIFFERENT session must not block this submission
+    with ExitStack() as stack:
+        for p in _compress_endpoint_patches(_session()):
+            stack.enter_context(p)
+        submit_mock = chat_history_router.CommandService.submit_command_job
+        repo_mock = chat_history_router.repo_query  # type: ignore[attr-defined]
+        repo_mock.return_value = [{"args": {"session_id": "chat_session:other"}}]
+        other = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/compress",
+            json={"message_ids": ["a", "b"]},
+        )
+    assert other.status_code == 200
+    submit_mock.assert_awaited_once()
+
+
+def test_h25_compress_submit_unknown_session_404():
+    client = _client()
+    with patch(
+        "api.routers.chat_history.get_session_or_404",
+        new=AsyncMock(side_effect=HTTPException(404)),
+    ):
+        response = client.post(
+            f"/api/chat/sessions/gone/messages/compress",
+            json={"message_ids": ["a", "b"]},
+        )
+    assert response.status_code == 404
+
+
+# --- topic classification endpoint ----------------------------------------------
+#
+# The LLM is always a stub returning canned JSON: no real provider call.
+
+
+def _classify_stubs(plan_content: str):
+    """Fake provisioned model whose ainvoke returns `plan_content`."""
+    prov = SimpleNamespace(
+        model_name="fake-model",
+        langchain_model=SimpleNamespace(
+            ainvoke=AsyncMock(return_value=SimpleNamespace(content=plan_content))
+        ),
+    )
+    return [
+        patch(
+            "api.routers.chat_history.provision_langchain_model_with_info",
+            new_callable=AsyncMock,
+            return_value=prov,
+        ),
+        patch("api.routers.chat_history.record_llm_usage", new_callable=AsyncMock),
+    ]
+
+
+def test_h26_classify_groups_messages_and_cleans_plan(tmp_path):
+    from api.routers import chat_history as chat_history_router
+
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)
+    _, seeded = _seed_messages(
+        graph,
+        NOTEBOOK_SESSION,
+        [
+            HumanMessage(content="question about retrieval"),
+            AIMessage(content="answer about retrieval"),
+            HumanMessage(content="how to import data?"),
+            AIMessage(content="import via csv"),
+        ],
+    )
+    plan = {
+        "groups": [
+            {
+                "name": "Retrieval",
+                "message_ids": [seeded[0].id, seeded[1].id],
+            },
+            {
+                # duplicates seeded[1] (first group wins) and adds an unknown id
+                "name": "Import",
+                "message_ids": [seeded[1].id, seeded[3].id, "unknown-id"],
+            },
+            {"name": "   ", "message_ids": [seeded[0].id]},  # blank name dropped
+            {"name": "Empty", "message_ids": []},  # empty group dropped
+        ]
+    }
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        for p in _classify_stubs(json.dumps(plan)):
+            stack.enter_context(p)
+        usage_mock: Any = chat_history_router.record_llm_usage  # type: ignore[attr-defined]
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == NOTEBOOK_SESSION
+    assert body["truncated"] is False
+    assert body["total_messages"] == 4
+    assert body["classified_messages"] == 3
+    assert body["groups"] == [
+        {"name": "Retrieval", "message_ids": [seeded[0].id, seeded[1].id]},
+        {"name": "Import", "message_ids": [seeded[3].id]},
+    ]
+    # one successful LLM call, usage recorded on the success arm
+    usage_mock.assert_awaited_once()
+    assert usage_mock.await_args.kwargs["call_type"] == "chat_classification"
+
+    # read-only: the checkpoint was not modified
+    assert [m.id for m in _get_messages(graph, NOTEBOOK_SESSION)] == [
+        m.id for m in seeded
+    ]
+
+
+def test_h27_classify_truncates_to_first_100(tmp_path):
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)
+    _, seeded = _seed_messages(
+        graph,
+        NOTEBOOK_SESSION,
+        [HumanMessage(content=f"m{i}") for i in range(105)],
+    )
+    plan = {
+        "groups": [
+            {"name": "All", "message_ids": [m.id for m in seeded[:100]]},
+        ]
+    }
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        for p in _classify_stubs(json.dumps(plan)):
+            stack.enter_context(p)
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["truncated"] is True
+    assert body["total_messages"] == 105
+    assert body["classified_messages"] == 100
+
+
+def test_h28_classify_retries_once_with_parser_feedback(tmp_path):
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)
+    _, seeded = _seed_messages(
+        graph, NOTEBOOK_SESSION, [HumanMessage(content="q"), AIMessage(content="a")]
+    )
+    plan = {"groups": [{"name": "G", "message_ids": [seeded[0].id]}]}
+    prompts: list[str] = []
+
+    async def fake_ainvoke(messages):
+        prompts.append(messages[0].content)
+        if len(prompts) == 1:
+            return SimpleNamespace(content="this is not JSON at all")
+        return SimpleNamespace(content=json.dumps(plan))
+
+    prov = SimpleNamespace(
+        model_name="fake-model",
+        langchain_model=SimpleNamespace(ainvoke=fake_ainvoke),
+    )
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch(
+                "api.routers.chat_history.provision_langchain_model_with_info",
+                new_callable=AsyncMock,
+                return_value=prov,
+            )
+        )
+        stack.enter_context(
+            patch("api.routers.chat_history.record_llm_usage", new_callable=AsyncMock)
+        )
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["groups"] == [{"name": "G", "message_ids": [seeded[0].id]}]
+    assert len(prompts) == 2
+    # the second attempt carries the parser feedback block
+    assert "previous attempt produced invalid output" in prompts[1]
+    assert "previous attempt produced invalid output" not in prompts[0]
+
+
+def test_h29_classify_unparseable_after_retry_returns_500(tmp_path):
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)
+    _seed_messages(graph, NOTEBOOK_SESSION, [HumanMessage(content="q")])
+    prov = SimpleNamespace(
+        model_name="fake-model",
+        langchain_model=SimpleNamespace(
+            ainvoke=AsyncMock(return_value=SimpleNamespace(content="still not JSON"))
+        ),
+    )
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch(
+                "api.routers.chat_history.provision_langchain_model_with_info",
+                new_callable=AsyncMock,
+                return_value=prov,
+            )
+        )
+        stack.enter_context(
+            patch("api.routers.chat_history.record_llm_usage", new_callable=AsyncMock)
+        )
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+        )
+
+    assert response.status_code == 500
+    assert "classifying chat messages" in response.json()["detail"]
+
+
+def test_h30_classify_409_while_stream_inflight(tmp_path):
+    from api.routers import chat_stream
+
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)
+    _seed_messages(graph, NOTEBOOK_SESSION, [HumanMessage(content="q")])
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        chat_stream._inflight.add(NOTEBOOK_SESSION)
+        try:
+            response = client.post(
+                f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+            )
+        finally:
+            chat_stream._inflight.discard(NOTEBOOK_SESSION)
+
+    assert response.status_code == 409
+
+
+def test_h31_classify_empty_history_skips_llm(tmp_path):
+    from api.routers import chat_history as chat_history_router
+
+    client = _client()
+    graph, _ = _make_graphs(tmp_path)  # nothing seeded
+
+    with ExitStack() as stack:
+        for p in _history_patches(graph, _session()):
+            stack.enter_context(p)
+        for p in _classify_stubs(json.dumps({"groups": []})):
+            stack.enter_context(p)
+        provision_mock: Any = (
+            chat_history_router.provision_langchain_model_with_info  # type: ignore[attr-defined]
+        )
+        response = client.post(
+            f"/api/chat/sessions/{NOTEBOOK_SESSION}/messages/classify"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["groups"] == []
+    assert body["truncated"] is False
+    assert body["total_messages"] == 0
+    assert body["classified_messages"] == 0
+    # no history -> no LLM spend
+    provision_mock.assert_not_awaited()
+
+
+def test_h32_classify_unknown_session_404():
+    client = _client()
+    with patch(
+        "api.routers.chat_history.get_session_or_404",
+        new=AsyncMock(side_effect=HTTPException(404)),
+    ):
+        response = client.post(f"/api/chat/sessions/gone/messages/classify")
+    assert response.status_code == 404

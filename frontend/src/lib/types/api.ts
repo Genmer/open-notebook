@@ -529,6 +529,8 @@ export interface NotebookChatMessage {
   agent_name?: string | null
   run_role?: string | null
   group_id?: string | null
+  // 'summary' on the message a compression job produced; null/absent otherwise.
+  message_kind?: string | null
 }
 
 export interface NotebookChatSessionWithMessages extends NotebookChatSession {
@@ -643,6 +645,50 @@ export interface DeleteChatMessagesResponse {
   session_id: string
   deleted_count: number
   messages: NotebookChatMessage[]
+}
+
+/** Body for the async history-compression submit endpoint (2..500 ids). */
+export interface CompressChatMessagesRequest {
+  message_ids: string[]
+}
+
+/** 200 body of the compression submit endpoint — a command job id to poll. */
+export interface CompressChatJobResponse {
+  job_id: string
+  session_id: string
+  status: string
+}
+
+/**
+ * Result payload a completed compress_chat_history job leaves on
+ * GET /commands/jobs/{job_id} → result. Only the status and counters are
+ * consumed client-side; the summary text arrives via the session refetch.
+ */
+export interface CompressChatHistoryResult {
+  success?: boolean
+  session_id?: string
+  summary_message_id?: string | null
+  compressed_count?: number
+  remaining_count?: number
+  chars_before?: number
+  chars_after?: number
+  processing_time?: number
+  error_message?: string | null
+}
+
+/** One AI-assigned topic group of the history classification. */
+export interface ChatTopicGroup {
+  name: string
+  message_ids: string[]
+}
+
+/** Response of the synchronous topic-classification endpoint. */
+export interface ChatTopicClassification {
+  session_id: string
+  groups: ChatTopicGroup[]
+  truncated: boolean
+  total_messages: number
+  classified_messages: number
 }
 
 export interface RecentlyViewedResponse {

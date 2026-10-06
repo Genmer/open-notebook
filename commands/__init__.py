@@ -9,6 +9,7 @@ from open_notebook.utils.proxy import ensure_internal_no_proxy
 ensure_internal_no_proxy()
 
 from .artifact_commands import generate_artifact_command
+from .chat_history_commands import compress_chat_history_command
 from .classification_commands import classify_sources_command
 from .data_transfer_commands import (
     export_data_command,
@@ -32,6 +33,8 @@ __all__ = [
     "rebuild_embeddings_command",
     # Classification commands
     "classify_sources_command",
+    # Chat history commands
+    "compress_chat_history_command",
     # Data transfer commands
     "export_data_command",
     "import_data_command",

@@ -22,6 +22,7 @@ from open_notebook.utils.context_builder import (
 )
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+from open_notebook.utils.timestamps import utc_now_iso
 
 
 class SourceChatState(TypedDict):
@@ -234,7 +235,17 @@ def _call_model_with_source_context_inner(
             "The model returned an empty response. Try again, or pick a "
             "different model if this keeps happening."
         )
-    cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
+    cleaned_message = ai_message.model_copy(
+        update={
+            "content": cleaned_content,
+            # created_at stamps the message for the history time-grouping view;
+            # merged into existing kwargs, not replacing them.
+            "additional_kwargs": {
+                **(ai_message.additional_kwargs or {}),
+                "created_at": utc_now_iso(),
+            },
+        }
+    )
 
     record_llm_usage_sync(
         model=prov,

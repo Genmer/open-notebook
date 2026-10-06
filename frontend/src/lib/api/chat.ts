@@ -12,6 +12,9 @@ import {
   BuildContextResponse,
   DeleteChatMessagesRequest,
   DeleteChatMessagesResponse,
+  ChatTopicClassification,
+  CompressChatJobResponse,
+  CompressChatMessagesRequest,
 } from '@/lib/types/api'
 
 export interface ParallelRunStarted {
@@ -130,6 +133,26 @@ export const chatApi = {
   clearChatMessages: async (sessionId: string) => {
     const response = await apiClient.post<DeleteChatMessagesResponse>(
       `/chat/sessions/${sessionId}/messages/clear`
+    )
+    return response.data
+  },
+
+  // Submit async history compression (worker-side command merges the selected
+  // messages into one summary). Poll GET /commands/jobs/{job_id} afterwards —
+  // see the compress mutation in use-notebook-chat.
+  compressChatMessages: async (sessionId: string, data: CompressChatMessagesRequest) => {
+    const response = await apiClient.post<CompressChatJobResponse>(
+      `/chat/sessions/${sessionId}/messages/compress`,
+      data
+    )
+    return response.data
+  },
+
+  // AI topic classification of the history (synchronous: one LLM call on the
+  // server; read-only, never writes the checkpoint).
+  classifyChatMessages: async (sessionId: string) => {
+    const response = await apiClient.post<ChatTopicClassification>(
+      `/chat/sessions/${sessionId}/messages/classify`
     )
     return response.data
   },

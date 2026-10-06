@@ -1,0 +1,28 @@
+You are organizing the message history of one research chat session into thematic groups. Group messages that discuss the same topic, task or question.
+
+<messages>
+{% for message in messages %}
+<message id="{{ message.message_id }}" index="{{ message.index }}" role="{{ message.role }}">
+{{ message.content }}
+</message>
+{% endfor %}
+</messages>
+
+{% if previous_error %}
+A previous attempt produced invalid output: {{ previous_error }}
+Correct that problem this time.
+{% endif %}
+
+Rules:
+1. Every group gets a short descriptive name in the same language as the messages (30 characters max).
+2. A message id may appear in at most one group.
+3. Messages that clearly belong to no group: leave them out of every group (the UI shows them as ungrouped).
+4. Prefer fewer, broader groups over many tiny ones; a single stray message does not need its own group.
+
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

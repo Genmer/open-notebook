@@ -1,0 +1,20 @@
+You are condensing part of an ongoing research chat. The messages below will be DELETED and REPLACED by your single summary, so the summary must let the conversation continue seamlessly as if nothing had been lost.
+
+<selected_messages>
+{% for message in messages %}
+<message index="{{ message.index }}" role="{{ message.role }}">
+{{ message.content }}
+</message>
+{% endfor %}
+</selected_messages>
+
+Rules:
+1. Preserve every fact, conclusion, decision, open question and unresolved thread established in these messages.
+2. Preserve citation markers (e.g. [source:...], [note:...]) wherever the underlying claim survives into your summary. Do not invent new citations.
+3. If a message asks a question that was never answered, say so explicitly so the conversation can return to it.
+4. Write the summary in the same language as the messages.
+5. Be concise: a few short paragraphs at most. Do not comment on the compression itself.
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Output ONLY the summary text itself: no preamble, no headings, no quotes around it

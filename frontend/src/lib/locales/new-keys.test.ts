@@ -954,3 +954,148 @@ describe('New i18n keys (2026-10 context breakdown)', () => {
     },
   )
 })
+
+// Pinned inventory of the i18n keys added by the 2026-10 context time-view /
+// batch-delete changeset (history view switch, calendar grouping, group
+// selection, delete-selected confirm in the breakdown dialog). Same guarding
+// contract as the blocks above.
+const CONTEXT_TIME_KEYS = [
+  'context.historyViewFlat',
+  'context.historyViewTime',
+  'context.timeToday',
+  'context.timeYesterday',
+  'context.timeThisWeek',
+  'context.timeEarlier',
+  'context.timeUnknown',
+  'context.checkMessage',
+  'context.selectGroup',
+  'context.selectedCount',
+  'context.deleteSelected',
+  'context.deleteSelectedDesc',
+]
+
+describe('New i18n keys (2026-10 context time view / batch delete)', () => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = CONTEXT_TIME_KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = CONTEXT_TIME_KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of CONTEXT_TIME_KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of CONTEXT_TIME_KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of CONTEXT_TIME_KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})
+
+// Pinned inventory of the i18n keys added by the 2026-10 context
+// compress/topic-view changeset (AI topic grouping, async compression flow,
+// summary badge, batch-select action bar in the breakdown dialog). Same
+// guarding contract as the blocks above.
+const CONTEXT_TOPIC_KEYS = [
+  'context.historyViewTopic',
+  'context.ungrouped',
+  'context.classifyTopics',
+  'context.classifyFailed',
+  'context.classifyTruncated',
+  'context.topicClassifyHint',
+  'context.compressSelected',
+  'context.compressTitle',
+  'context.compressDesc',
+  'context.compressSubmitted',
+  'context.compressFailed',
+  'context.compressSuccess',
+  'context.summaryBadge',
+]
+
+describe('New i18n keys (2026-10 context topic view / compress)', () => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = CONTEXT_TOPIC_KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = CONTEXT_TOPIC_KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of CONTEXT_TOPIC_KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of CONTEXT_TOPIC_KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of CONTEXT_TOPIC_KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})

@@ -31,6 +31,7 @@ from open_notebook.utils.graph_utils import (
     get_session_message_count,
     invoke_chat_turn,
 )
+from open_notebook.utils.timestamps import utc_now_iso
 
 router = APIRouter()
 
@@ -424,7 +425,12 @@ async def stream_source_chat_response(
 
         # Add user message to state
         # Explicit id so a failed turn can remove it from the checkpoint.
-        user_message = HumanMessage(content=message, id=str(uuid4()))
+        # created_at stamps the message for the history time-grouping view.
+        user_message = HumanMessage(
+            content=message,
+            id=str(uuid4()),
+            additional_kwargs={"created_at": utc_now_iso()},
+        )
         state_values["messages"].append(user_message)
 
         # Send user message event

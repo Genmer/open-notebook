@@ -42,6 +42,11 @@ class ChatMessage(BaseModel):
     group_id: Optional[str] = Field(
         None, description="Parallel-run group this message belongs to (PDR-004)"
     )
+    message_kind: Optional[str] = Field(
+        None,
+        description="Message kind marker, e.g. 'summary' for compression "
+        "artifacts; None for regular messages",
+    )
 
 
 class SuccessResponse(BaseModel):
@@ -96,6 +101,12 @@ async def get_verified_source_session(
 
 def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
     """Convert LangGraph/LangChain state messages into `ChatMessage` models."""
+
+    def _clean_str(value: Any) -> Optional[str]:
+        # Legacy messages carry neither key; malformed values (non-strings,
+        # empties) degrade to None instead of breaking history loading.
+        return value if isinstance(value, str) and value else None
+
     messages: List[ChatMessage] = []
     for msg in raw_messages:
         kwargs = getattr(msg, "additional_kwargs", None) or {}
@@ -106,11 +117,14 @@ def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
                 id=msg_id,
                 type=msg.type if hasattr(msg, "type") else "unknown",
                 content=msg.content if hasattr(msg, "content") else str(msg),
-                timestamp=None,  # LangChain messages don't have timestamps by default
+                # Written by the routers/graphs as additional_kwargs.created_at
+                # (UTC ISO); None for everything stored before that change.
+                timestamp=_clean_str(kwargs.get("created_at")),
                 model_name=kwargs.get("model_name"),
                 agent_name=kwargs.get("agent_name"),
                 run_role=kwargs.get("run_role"),
                 group_id=kwargs.get("group_id"),
+                message_kind=_clean_str(kwargs.get("message_kind")),
             )
         )
     return messages

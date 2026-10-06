@@ -7,6 +7,7 @@ import { buildChatContextConfig } from '@/lib/utils/source-context'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { chatApi, ChatStreamEvent } from '@/lib/api/chat'
+import { artifactsApi } from '@/lib/api/artifacts'
 import { useParallelChat } from '@/lib/hooks/use-parallel-chat'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import {
@@ -15,13 +16,24 @@ import {
   UpdateNotebookChatSessionRequest,
   SourceListResponse,
   NoteResponse,
-  ContextBreakdown
+  ContextBreakdown,
+  CompressChatHistoryResult
 } from '@/lib/types/api'
 import { ContextSelections } from '@/app/(dashboard)/notebooks/[id]/page'
 
 // Re-arm on every SSE event/byte chunk; only fires when the stream goes
 // genuinely silent (same technique as use-parallel-chat).
 const STREAM_IDLE_TIMEOUT_MS = 120_000
+
+// Compression job polling (same shape as use-artifacts). The 8-minute budget
+// is this hook's own constant: the command retries up to 5 times with 1-60s
+// jittered waits plus an LLM call per attempt, so the artifact hook's 5-minute
+// budget could run out under a retrying job. Should the timeout ever hit a
+// still-running job, resubmitting surfaces the backend's 409 conflict detail.
+const COMPRESS_POLL_INTERVAL_MS = 2000
+const COMPRESS_POLL_TIMEOUT_MS = 8 * 60 * 1000
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 interface UseNotebookChatParams {
   notebookId: string
@@ -257,6 +269,73 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     }
   })
 
+  // History compression (context breakdown dialog): submits the async command
+  // job, then polls GET /commands/jobs/{job_id} to terminal state. The
+  // checkpoint write happens entirely worker-side; failures reconcile against
+  // the session (originals untouched) instead of hand-rolling a rollback.
+  const compressMessagesMutation = useMutation({
+    mutationFn: async ({ sessionId, messageIds }: { sessionId: string; messageIds: string[] }) => {
+      const job = await chatApi.compressChatMessages(sessionId, { message_ids: messageIds })
+      toast.info(t('context.compressSubmitted'))
+      const deadline = Date.now() + COMPRESS_POLL_TIMEOUT_MS
+      while (Date.now() < deadline) {
+        await sleep(COMPRESS_POLL_INTERVAL_MS)
+        const status = await artifactsApi.getJobStatus(job.job_id)
+        if (status.status === 'completed') {
+          const result = (status.result ?? {}) as CompressChatHistoryResult
+          // A job whose command failed still reaches 'completed' with
+          // success=false — treat it as the failure it is.
+          if (result.success === false) {
+            throw new Error(result.error_message || t('context.compressFailed'))
+          }
+          return result
+        }
+        // Terminal non-success states stop the poll instead of timing out
+        // (same trio as use-artifacts).
+        if (
+          status.status === 'failed' ||
+          status.status === 'canceled' ||
+          status.status === 'unknown'
+        ) {
+          throw new Error(status.error_message || t('context.compressFailed'))
+        }
+      }
+      throw new Error(t('context.compressFailed'))
+    },
+    onSuccess: (result, { sessionId }) => {
+      // The summary lives in the checkpoint: refresh the message list, the
+      // composition breakdown AND the sessions list (its message counts).
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSession(sessionId)
+      })
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
+      })
+      if (sessionId === currentSessionId) void refetchCurrentSession()
+      void refreshContextBreakdown(sessionId)
+      toast.success(t('context.compressSuccess', { count: result.compressed_count ?? 0 }))
+    },
+    onError: (err: unknown, { sessionId }) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      // Backend detail passes through (notably the 409 "already queued or
+      // running" while a previous compression job is still in flight).
+      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'context.compressFailed'))
+      if (sessionId === currentSessionId) void refetchCurrentSession()
+    }
+  })
+
+  // AI topic classification of the history (context breakdown dialog). The
+  // endpoint is synchronous; errors are toasted here and rethrown so the
+  // caller can keep its previous classification state.
+  const classifyTopicsMutation = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string }) =>
+      chatApi.classifyChatMessages(sessionId),
+    onError: (err: unknown) => {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'context.classifyFailed'))
+    }
+  })
+
   // Auto-create a session if none exists (shared by the single-run and
   // parallel send paths); returns null on failure after toasting.
   const ensureSessionId = useCallback(async (message: string): Promise<string | null> => {
@@ -476,6 +555,18 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return clearMessagesMutation.mutate(sessionId)
   }, [clearMessagesMutation])
 
+  // Compress selected history messages into one summary (async job; resolves
+  // when polling reaches a terminal state).
+  const compressMessages = useCallback((sessionId: string, messageIds: string[]) => {
+    return compressMessagesMutation.mutateAsync({ sessionId, messageIds })
+  }, [compressMessagesMutation])
+
+  // Classify the history into topic groups (synchronous endpoint). Resolves
+  // with the classification or rejects after the error toast.
+  const classifyTopics = useCallback((sessionId: string) => {
+    return classifyTopicsMutation.mutateAsync({ sessionId })
+  }, [classifyTopicsMutation])
+
   // Set model override - handles both existing sessions and pending state.
   // The backend clears the session's agent binding when a model is set
   // (mutual exclusion); the pending branch mirrors that locally.
@@ -549,6 +640,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     contextBreakdown,
     isDeletingMessages: deleteMessagesMutation.isPending,
     isClearingMessages: clearMessagesMutation.isPending,
+    isCompressing: compressMessagesMutation.isPending,
+    isClassifying: classifyTopicsMutation.isPending,
     pendingModelOverride,
     pendingAgentOverride,
     pendingProjectEnv,
@@ -565,6 +658,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setProjectEnv,
     deleteMessages,
     clearMessages,
+    compressMessages,
+    classifyTopics,
     refreshContextBreakdown,
     parallel,
     sendParallelMessage,

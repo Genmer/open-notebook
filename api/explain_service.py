@@ -38,6 +38,11 @@ RETRYABLE_COMMANDS: frozenset[str] = frozenset(
         # effects beyond its own state record), so replaying it is safe.
         "analyze_source_section",
         "classify_sources",
+        # Compression writes only after every validation passes, so a failed
+        # attempt left the history untouched; a retry after the (rare)
+        # post-write crash fails permanently on the now-missing ids — a safe
+        # no-op instead of a double compression.
+        "compress_chat_history",
         "create_insight",
         "embed_insight",
         "embed_note",

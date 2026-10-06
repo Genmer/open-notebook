@@ -24,6 +24,7 @@ class CommandService:
             # This is needed because submit_command validates against local registry
             try:
                 import commands.artifact_commands  # noqa: F401
+                import commands.chat_history_commands  # noqa: F401
                 import commands.classification_commands  # noqa: F401
                 import commands.data_transfer_commands  # noqa: F401
                 import commands.podcast_commands  # noqa: F401

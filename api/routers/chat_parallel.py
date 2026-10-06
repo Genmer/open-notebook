@@ -46,6 +46,7 @@ from open_notebook.domain.notebook import Notebook
 from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.text_utils import extract_text_content
+from open_notebook.utils.timestamps import utc_now_iso
 
 router = APIRouter()
 
@@ -160,6 +161,7 @@ async def _answer_once(
             "model_name": prov.model_name,
             "run_role": "answer",
             "group_id": group_id,
+            "created_at": utc_now_iso(),
         }
     )
     if agent is not None:
@@ -258,7 +260,10 @@ async def _orchestrate(
         # Archive exactly once: the human message + every successful answer
         # carry the group_id so the UI can render them as one comparison block.
         archive_messages: List[BaseMessage] = [
-            HumanMessage(content=message, additional_kwargs={"group_id": group_id})
+            HumanMessage(
+                content=message,
+                additional_kwargs={"group_id": group_id, "created_at": utc_now_iso()},
+            )
         ]
         archive_messages.extend(a for a in answers if a is not None)
         await asyncio.to_thread(
@@ -485,6 +490,7 @@ async def synthesize_parallel(session_id: str, request: SynthesizeRequest):
                 "model_name": prov.model_name,
                 "run_role": "synthesis",
                 "group_id": request.group_id,
+                "created_at": utc_now_iso(),
                 **({"agent_name": agent.name} if agent else {}),
             },
         }

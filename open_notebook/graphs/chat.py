@@ -18,6 +18,7 @@ from open_notebook.exceptions import IncompleteGenerationError, OpenNotebookErro
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
+from open_notebook.utils.timestamps import utc_now_iso
 
 
 class ThreadState(TypedDict):
@@ -119,6 +120,8 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
         # the UI can badge it. Merged into existing kwargs, not replacing them.
         extra_kwargs = dict(ai_message.additional_kwargs or {})
         extra_kwargs.setdefault("model_name", prov.model_name)
+        # created_at stamps the message for the history time-grouping view.
+        extra_kwargs.setdefault("created_at", utc_now_iso())
         if state.get("agent_name"):
             extra_kwargs["agent_name"] = state["agent_name"]
         cleaned_message = ai_message.model_copy(

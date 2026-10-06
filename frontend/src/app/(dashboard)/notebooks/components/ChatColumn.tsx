@@ -89,9 +89,10 @@ export function ChatColumn({
   }, [contextSelections, chat.tokenCount, chat.charCount])
 
   // History/context editing locks up while a generation runs: the single-run
-  // stream or a parallel fan-out (deleting mid-generation would race the
-  // checkpoint writer). Same guard combination as the composer's entries.
-  const editLocked = chat.isSending || chat.parallel.phase === 'running'
+  // stream, a parallel fan-out, or a compression job about to rewrite the
+  // checkpoint (deleting mid-generation would race the checkpoint writer).
+  // Same guard combination as the composer's entries.
+  const editLocked = chat.isSending || chat.parallel.phase === 'running' || chat.isCompressing
 
   // Show loading state while sources/notes are being fetched
   if (sourcesLoading || notesLoading) {
@@ -187,6 +188,21 @@ export function ChatColumn({
       onRemoveMessages={(messageIds) => {
         if (chat.currentSessionId) chat.deleteMessages(chat.currentSessionId, messageIds)
       }}
+      onCompressMessages={(messageIds) => {
+        if (chat.currentSessionId) chat.compressMessages(chat.currentSessionId, messageIds)
+      }}
+      onClassifyTopics={async () => {
+        if (!chat.currentSessionId) return null
+        try {
+          // Rejections are already toasted in the hook; null keeps the
+          // dialog's previous classification state.
+          return await chat.classifyTopics(chat.currentSessionId)
+        } catch {
+          return null
+        }
+      }}
+      isCompressing={chat.isCompressing}
+      isClassifying={chat.isClassifying}
       onClearMessages={() => {
         if (chat.currentSessionId) chat.clearMessages(chat.currentSessionId)
       }}
