@@ -15,6 +15,7 @@ from commands.artifact_commands import (
     ARTIFACT_TYPES,
     ArtifactGenerationInput,
     _parse_flashcards,
+    _parse_mindmap,
     generate_artifact_command,
 )
 from open_notebook.domain.notebook import Note, Notebook
@@ -172,6 +173,65 @@ class TestParseFlashcards:
             _parse_flashcards("[]")
 
 
+class TestParseMindmap:
+    def test_two_space_outline(self):
+        raw = (
+            "# 系统可靠性\n"
+            "## 基本概念\n"
+            "- MTBF\n"
+            "  - 定义\n"
+            "  - 计算公式\n"
+            "## 冗余设计\n"
+            "- 并行冗余\n"
+        )
+        tree = json.loads(_parse_mindmap(raw))
+        assert tree["kind"] == "mindmap"
+        assert tree["root"]["label"] == "系统可靠性"
+        assert [b["label"] for b in tree["root"]["children"]] == ["基本概念", "冗余设计"]
+        assert [c["label"] for c in tree["root"]["children"][0]["children"]] == [
+            "MTBF",
+        ]
+        assert [c["label"] for c in tree["root"]["children"][0]["children"][0]["children"]] == [
+            "定义",
+            "计算公式",
+        ]
+
+    def test_four_space_outline_same_tree(self):
+        two = _parse_mindmap("# T\n## A\n- x\n  - y\n")
+        four = _parse_mindmap("# T\n## A\n- x\n    - y\n")
+        assert json.loads(two)["root"] == json.loads(four)["root"]
+
+    def test_dedents_back_to_parent_level(self):
+        raw = "# T\n## A\n- x\n  - y\n- z\n"
+        tree = json.loads(_parse_mindmap(raw))
+        branch = tree["root"]["children"][0]
+        assert [c["label"] for c in branch["children"]] == ["x", "z"]
+        assert [c["label"] for c in branch["children"][0]["children"]] == ["y"]
+
+    def test_ignores_prose_and_deeper_headings(self):
+        raw = "# T\nSome intro prose.\n## A\n### ignored heading\n- x\n"
+        tree = json.loads(_parse_mindmap(raw))
+        assert [b["label"] for b in tree["root"]["children"]] == ["A"]
+        assert [c["label"] for c in tree["root"]["children"][0]["children"]] == ["x"]
+
+    def test_truncates_runaway_branches(self):
+        raw = "# T\n## A\n" + "\n".join(f"- item{i}" for i in range(20))
+        tree = json.loads(_parse_mindmap(raw))
+        assert len(tree["root"]["children"][0]["children"]) == 8
+
+    def test_no_branches_raises(self):
+        with pytest.raises(ValueError):
+            _parse_mindmap("# Just a topic\n\nSome prose only.")
+
+    def test_branches_without_leaves_raises(self):
+        with pytest.raises(ValueError):
+            _parse_mindmap("# T\n## A\n## B\n")
+
+    def test_missing_h1_synthesizes_root(self):
+        tree = json.loads(_parse_mindmap("## A\n- x\n"))
+        assert tree["root"]["label"] == "Mindmap"
+
+
 class TestGenerateArtifactCommand:
     def _command_stubs(self, llm_content, context_data=None):
         """Return (llm_patcher, prov) plus a context manager stacking all the
@@ -298,6 +358,79 @@ class TestGenerateArtifactCommand:
                 ArtifactGenerationInput(
                     notebook_id=NOTEBOOK_ID,
                     artifact_type="flashcards",
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_comparison_creates_markdown_note(self):
+        llm_output = (
+            "# 比较\n\n| 维度 | A | B |\n|---|---|---|\n| 范围 | x | y |\n\n"
+            "## Shared Ground\n- both"
+        )
+        llm_patcher, stack = self._command_stubs(llm_output)
+        saved = {}
+
+        async def capture_note_save(self):
+            await _capture_save(self)
+            saved["note"] = self
+            return "embed_job:1"
+
+        with (
+            stack,
+            llm_patcher,
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
+        ):
+            result = await generate_artifact_command(
+                ArtifactGenerationInput(
+                    notebook_id=NOTEBOOK_ID,
+                    artifact_type="comparison",
+                )
+            )
+
+        assert result.success is True
+        assert saved["note"].title.startswith("Comparison:")
+        assert "Shared Ground" in saved["note"].content
+
+    @pytest.mark.asyncio
+    async def test_mindmap_content_stored_as_json(self):
+        llm_output = "# 可靠性\n## 概念\n- MTBF\n  - 定义\n"
+        llm_patcher, stack = self._command_stubs(llm_output)
+        saved = {}
+
+        async def capture_note_save(self):
+            await _capture_save(self)
+            saved["note"] = self
+            return "embed_job:1"
+
+        with (
+            stack,
+            llm_patcher,
+            patch.object(Note, "save", capture_note_save),
+            patch.object(Note, "add_to_notebook", new_callable=AsyncMock),
+        ):
+            result = await generate_artifact_command(
+                ArtifactGenerationInput(
+                    notebook_id=NOTEBOOK_ID,
+                    artifact_type="mindmap",
+                )
+            )
+
+        assert result.success is True
+        note = saved["note"]
+        assert note.title.startswith("Mindmap:")
+        tree = json.loads(note.content)
+        assert tree["kind"] == "mindmap"
+        assert tree["root"]["children"][0]["label"] == "概念"
+
+    @pytest.mark.asyncio
+    async def test_invalid_mindmap_output_fails_permanently(self):
+        llm_patcher, stack = self._command_stubs("# Topic\n\nNo branches, no bullets.")
+        with stack, llm_patcher, pytest.raises(ValueError):
+            await generate_artifact_command(
+                ArtifactGenerationInput(
+                    notebook_id=NOTEBOOK_ID,
+                    artifact_type="mindmap",
                 )
             )
 

@@ -5,11 +5,12 @@ import { FilePlus2, Maximize2, Minimize2, Pencil } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
-import { parseFlashcards } from '@/lib/utils/artifact-context'
+import { parseFlashcards, parseMindmap } from '@/lib/utils/artifact-context'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { NoteResponse } from '@/lib/types/api'
 import { cn } from '@/lib/utils'
 import { FlashcardViewer } from './FlashcardViewer'
+import { MindmapViewer } from './MindmapViewer'
 import { ArtifactSidePanels } from '@/components/common/ArtifactSidePanels'
 import { EdgePanelHandle } from '@/components/common/EdgePanelHandle'
 
@@ -55,6 +56,7 @@ export function ArtifactViewDialog({
   const [rightOpen, setRightOpen] = useState(false)
 
   const flashcards = useMemo(() => parseFlashcards(note?.content), [note?.content])
+  const mindmapRoot = useMemo(() => parseMindmap(note?.content), [note?.content])
 
   // 关闭时复位全屏与侧栏态，下次打开回到普通弹窗
   useEffect(() => {
@@ -123,9 +125,14 @@ export function ArtifactViewDialog({
         {isFullscreen ? (
           <div className="min-h-0 overflow-y-auto">
             {!!note?.content && (
-              <div className="max-w-prose mx-auto w-full" key={activeNoteId ?? note.title ?? 'note'}>
+              <div
+                className={cn('mx-auto w-full', !mindmapRoot && 'max-w-prose')}
+                key={activeNoteId ?? note.title ?? 'note'}
+              >
                 {flashcards ? (
                   <FlashcardViewer cards={flashcards} />
+                ) : mindmapRoot ? (
+                  <MindmapViewer root={mindmapRoot} />
                 ) : (
                   <MarkdownRenderer>{note.content}</MarkdownRenderer>
                 )}
@@ -136,6 +143,8 @@ export function ArtifactViewDialog({
           <div key={activeNoteId ?? note.title ?? 'note'}>
             {flashcards ? (
               <FlashcardViewer cards={flashcards} />
+            ) : mindmapRoot ? (
+              <MindmapViewer root={mindmapRoot} />
             ) : (
               <MarkdownRenderer>{note.content}</MarkdownRenderer>
             )}

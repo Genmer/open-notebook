@@ -31,11 +31,22 @@ from open_notebook.utils.context_builder import build_notebook_context
 from open_notebook.utils.text_utils import extract_text_content
 
 # artifact_type -> prompts/artifact/<type>.jinja. Keep in sync with the
-# Literal["study_guide", "faq", "flashcards", "essay_draft"] in the API
-# request model.
-ARTIFACT_TYPES = ("study_guide", "faq", "flashcards", "essay_draft")
+# Literal["study_guide", "faq", "flashcards", "essay_draft", "comparison",
+# "mindmap"] in the API request model.
+ARTIFACT_TYPES = (
+    "study_guide",
+    "faq",
+    "flashcards",
+    "essay_draft",
+    "comparison",
+    "mindmap",
+)
 
 MAX_FLASHCARDS = 100
+# Mindmap shape guards: the renderer collapses beyond these anyway, so a
+# runaway model output is truncated instead of blowing up the canvas.
+MAX_MINDMAP_NODES = 200
+MAX_MINDMAP_CHILDREN = 8
 
 
 class ArtifactGenerationInput(CommandInput):
@@ -123,6 +134,82 @@ def _parse_flashcards(raw: str) -> str:
     return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
+def _parse_mindmap(raw: str) -> str:
+    """Convert the model's Markdown outline into the canonical mindmap JSON
+    stored as the note content: {"kind": "mindmap", "root": {label, children}}.
+
+    The outline grammar is one "# " heading (central topic), "## " headings
+    (branches) and nested "- " bullets (2- or 4-space indents both accepted;
+    nesting is resolved relative to a stack of indent widths, not by counting
+    leading spaces / 2). Raises ValueError when no usable tree is recovered —
+    a permanent failure, like _parse_flashcards.
+    """
+
+    def _node(label: str) -> Dict[str, Any]:
+        return {"label": label, "children": []}
+
+    root: Optional[Dict[str, Any]] = None
+    node_count = 0
+
+    def _adopt(parent: Dict[str, Any], label: str) -> Optional[Dict[str, Any]]:
+        nonlocal node_count
+        if node_count >= MAX_MINDMAP_NODES:
+            return None
+        if len(parent["children"]) >= MAX_MINDMAP_CHILDREN:
+            return None
+        child = _node(label)
+        parent["children"].append(child)
+        node_count += 1
+        return child
+
+    # Stack of (indent_width, node) for the current branch's bullet levels.
+    stack: list[tuple[int, Dict[str, Any]]] = []
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("# ") and not stripped.startswith("##"):
+            if root is None:
+                root = _node(stripped[2:].strip())
+                node_count = 1
+            continue
+        if stripped.startswith("## ") and not stripped.startswith("###"):
+            if root is None:
+                root = _node("Mindmap")
+                node_count = 1
+            branch = _adopt(root, stripped[3:].strip())
+            if branch is not None:
+                stack = [(0, branch)]
+            else:
+                stack = []
+            continue
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            if root is None or not stack:
+                continue
+            label = stripped[2:].strip()
+            indent = len(line) - len(line.lstrip(" "))
+            # Pop to the nearest strictly-shallower level: equal indent means
+            # sibling, deeper means child (relative stack, so 2- and 4-space
+            # styles both work).
+            while len(stack) > 1 and indent <= stack[-1][0]:
+                stack.pop()
+            parent = stack[-1][1]
+            child = _adopt(parent, label)
+            if child is not None:
+                stack.append((indent, child))
+            continue
+        # Prose (including deeper headings): ignore — the outline is headings
+        # and bullets only.
+
+    if root is None or not root["children"]:
+        raise ValueError("Mindmap output has no branches under the central topic")
+    if not any(branch["children"] for branch in root["children"]):
+        raise ValueError("Mindmap output has no leaf nodes")
+
+    return json.dumps({"kind": "mindmap", "root": root}, ensure_ascii=False, indent=2)
+
+
 @command(
     "generate_artifact",
     app="open_notebook",
@@ -194,11 +281,15 @@ async def generate_artifact_command(
             "faq": "FAQ",
             "flashcards": "Flashcards",
             "essay_draft": "Essay Draft",
+            "comparison": "Comparison",
+            "mindmap": "Mindmap",
         }[input_data.artifact_type]
         title = f"{title_prefix}: {notebook.name}"
 
         if input_data.artifact_type == "flashcards":
             note_content = _parse_flashcards(content)
+        elif input_data.artifact_type == "mindmap":
+            note_content = _parse_mindmap(content)
         else:
             note_content = content.strip()
             if not note_content:

@@ -61,3 +61,62 @@ describe('GenerateArtifactDialog essay_draft', () => {
     expect(request.context_config.sources['source:s1']).toBe('full content')
   })
 })
+
+describe('GenerateArtifactDialog comparison & mindmap', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('offers the comparison and mindmap artifact types', () => {
+    render(<GenerateArtifactDialog {...baseProps} />)
+
+    expect(screen.getByTestId('artifact-type-comparison')).toBeInTheDocument()
+    expect(screen.getByText('artifacts.type.comparison')).toBeInTheDocument()
+    expect(screen.getByTestId('artifact-type-mindmap')).toBeInTheDocument()
+    expect(screen.getByText('artifacts.type.mindmap')).toBeInTheDocument()
+  })
+
+  it('blocks comparison while fewer than two sources are included', () => {
+    render(<GenerateArtifactDialog {...baseProps} />)
+
+    fireEvent.click(screen.getByTestId('artifact-type-comparison'))
+    expect(screen.getByTestId('artifact-generate')).toBeDisabled()
+    expect(screen.getByTestId('artifact-context-summary')).toHaveTextContent(
+      'artifacts.comparisonNeedsTwoSources'
+    )
+  })
+
+  it('submits comparison once two sources are included', async () => {
+    generateMock.mockResolvedValue({})
+    const props = {
+      ...baseProps,
+      contextSelections: {
+        sources: { 'source:s1': 'full', 'source:s2': 'insights' },
+        notes: {},
+      } as ContextSelections,
+      sources: [
+        { id: 'source:s1', title: 'A' },
+        { id: 'source:s2', title: 'B' },
+      ] as SourceListResponse[],
+    }
+    render(<GenerateArtifactDialog {...props} />)
+
+    fireEvent.click(screen.getByTestId('artifact-type-comparison'))
+    expect(screen.getByTestId('artifact-generate')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('artifact-generate'))
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1))
+    expect(generateMock.mock.calls[0][0].artifact_type).toBe('comparison')
+  })
+
+  it('submits mindmap with the selected context', async () => {
+    generateMock.mockResolvedValue({})
+    render(<GenerateArtifactDialog {...baseProps} />)
+
+    fireEvent.click(screen.getByTestId('artifact-type-mindmap'))
+    fireEvent.click(screen.getByTestId('artifact-generate'))
+
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1))
+    expect(generateMock.mock.calls[0][0].artifact_type).toBe('mindmap')
+  })
+})

@@ -40,9 +40,14 @@ class RecentlyViewedResponse(BaseModel):
 class ArtifactCreate(BaseModel):
     """Request to generate a study artifact (stored as an AI note)."""
 
-    artifact_type: Literal["study_guide", "faq", "flashcards", "essay_draft"] = Field(
-        ..., description="Kind of artifact to generate"
-    )
+    artifact_type: Literal[
+        "study_guide",
+        "faq",
+        "flashcards",
+        "essay_draft",
+        "comparison",
+        "mindmap",
+    ] = Field(..., description="Kind of artifact to generate")
     instruction: Optional[str] = Field(
         None, description="Optional free-text instructions for the generator"
     )

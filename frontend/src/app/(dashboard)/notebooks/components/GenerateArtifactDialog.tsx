@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { FileText, GraduationCap, HelpCircle, Layers } from 'lucide-react'
+import { FileText, GitCompareArrows, GraduationCap, HelpCircle, Layers, Network } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useGenerateArtifact } from '@/lib/hooks/use-artifacts'
 import {
@@ -60,6 +60,18 @@ const ARTIFACT_OPTIONS: Array<{
     titleKey: 'artifacts.type.essayDraft',
     descKey: 'artifacts.type.essayDraftDesc',
   },
+  {
+    type: 'comparison',
+    icon: GitCompareArrows,
+    titleKey: 'artifacts.type.comparison',
+    descKey: 'artifacts.type.comparisonDesc',
+  },
+  {
+    type: 'mindmap',
+    icon: Network,
+    titleKey: 'artifacts.type.mindmap',
+    descKey: 'artifacts.type.mindmapDesc',
+  },
 ]
 
 /**
@@ -89,6 +101,10 @@ export function GenerateArtifactDialog({
 
   const includedSources = Object.values(contextConfig.sources).filter(s => s !== 'not in').length
   const includedNotes = Object.values(contextConfig.notes).filter(s => s !== 'not in').length
+  // Comparison contrasts sources against each other, so a single source (or
+  // notes only) can't produce one.
+  const comparisonNeedsMore = artifactType === 'comparison' && includedSources < 2
+  const canGenerate = hasContext && !comparisonNeedsMore
 
   const handleSubmit = async () => {
     try {
@@ -147,17 +163,19 @@ export function GenerateArtifactDialog({
           data-testid="artifact-instruction"
         />
 
-        <p className="text-xs text-muted-foreground">
-          {hasContext
-            ? t('artifacts.contextSummary', { sources: includedSources, notes: includedNotes })
-            : t('artifacts.emptyContext')}
+        <p className="text-xs text-muted-foreground" data-testid="artifact-context-summary">
+          {comparisonNeedsMore
+            ? t('artifacts.comparisonNeedsTwoSources')
+            : hasContext
+              ? t('artifacts.contextSummary', { sources: includedSources, notes: includedNotes })
+              : t('artifacts.emptyContext')}
         </p>
 
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generate.isPending}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={!hasContext || generate.isPending} data-testid="artifact-generate">
+          <Button onClick={handleSubmit} disabled={!canGenerate || generate.isPending} data-testid="artifact-generate">
             {generate.isPending ? (
               <>
                 <LoadingSpinner size="sm" className="mr-2" />

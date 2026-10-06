@@ -7,7 +7,13 @@ import type { ContextSelections } from '@/lib/types/notebook-context'
  * useNotebookChat's buildContext exactly ("insights" / "full content" / "not in").
  */
 
-export type ArtifactType = 'study_guide' | 'faq' | 'flashcards' | 'essay_draft'
+export type ArtifactType =
+  | 'study_guide'
+  | 'faq'
+  | 'flashcards'
+  | 'essay_draft'
+  | 'comparison'
+  | 'mindmap'
 
 export interface ArtifactContextConfig {
   sources: Record<string, string>
@@ -100,4 +106,48 @@ export function parseFlashcards(content: string | null | undefined): Flashcard[]
     if (front && back) cards.push({ front, back })
   }
   return cards.length > 0 ? cards : null
+}
+
+/** One node of a generated mindmap tree. */
+export interface MindmapNode {
+  label: string
+  children?: MindmapNode[]
+}
+
+const MAX_MINDMAP_DEPTH = 6
+
+function sanitizeMindmapNode(raw: unknown, depth: number): MindmapNode | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const label = String((raw as Record<string, unknown>).label ?? '').trim()
+  if (!label) return null
+  const node: MindmapNode = { label }
+  const children = (raw as Record<string, unknown>).children
+  if (Array.isArray(children) && depth < MAX_MINDMAP_DEPTH) {
+    const sanitized = children
+      .map(child => sanitizeMindmapNode(child, depth + 1))
+      .filter((child): child is MindmapNode => child !== null)
+    if (sanitized.length > 0) node.children = sanitized
+  }
+  return node
+}
+
+/**
+ * Parse a mindmap note ({"kind":"mindmap","root":{label,children}} written by
+ * the generate_artifact command) into a renderable tree. Returns null for
+ * anything else so callers fall back to regular note rendering.
+ */
+export function parseMindmap(content: string | null | undefined): MindmapNode | null {
+  if (!content) return null
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{')) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const record = parsed as Record<string, unknown>
+  if (record.kind !== 'mindmap') return null
+  return sanitizeMindmapNode(record.root, 0)
 }

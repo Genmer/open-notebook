@@ -24,6 +24,8 @@ import {
   Loader2,
   ListTodo,
   ExternalLink,
+  GitCompareArrows,
+  Network,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
@@ -182,6 +184,28 @@ export function GeminiStudioColumn({
       action: 'artifact',
       artifactType: 'flashcards',
       defaultInstruction: t('geminiStudio.tools.flashcards.instruction'),
+    },
+    {
+      id: 'comparison',
+      name: 'Comparison',
+      desc: t('geminiStudio.tools.comparison.desc'),
+      icon: GitCompareArrows,
+      tag: t('geminiStudio.tagArtifact'),
+      tagColor: 'bg-primary/10 text-primary border-primary/20',
+      action: 'artifact',
+      artifactType: 'comparison',
+      defaultInstruction: t('geminiStudio.tools.comparison.instruction'),
+    },
+    {
+      id: 'mindmap',
+      name: 'Mindmap',
+      desc: t('geminiStudio.tools.mindmap.desc'),
+      icon: Network,
+      tag: t('geminiStudio.tagArtifact'),
+      tagColor: 'bg-primary/10 text-primary border-primary/20',
+      action: 'artifact',
+      artifactType: 'mindmap',
+      defaultInstruction: t('geminiStudio.tools.mindmap.instruction'),
     },
   ]
 

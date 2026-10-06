@@ -3,6 +3,7 @@ import {
   buildArtifactContextConfig,
   hasIncludedContext,
   parseFlashcards,
+  parseMindmap,
 } from './artifact-context'
 import type { ContextSelections } from '@/lib/types/notebook-context'
 
@@ -90,5 +91,52 @@ describe('parseFlashcards', () => {
     expect(parseFlashcards('[{"front":"Q",}')).toBeNull()
     expect(parseFlashcards('[]')).toBeNull()
     expect(parseFlashcards('[{"front":"","back":""}]')).toBeNull()
+  })
+})
+
+describe('parseMindmap', () => {
+  const payload = JSON.stringify({
+    kind: 'mindmap',
+    root: {
+      label: '可靠性',
+      children: [
+        { label: '概念', children: [{ label: 'MTBF' }] },
+        { label: '冗余' },
+      ],
+    },
+  })
+
+  it('parses a mindmap note into a tree', () => {
+    const root = parseMindmap(payload)
+    expect(root).toEqual({
+      label: '可靠性',
+      children: [
+        { label: '概念', children: [{ label: 'MTBF' }] },
+        { label: '冗余' },
+      ],
+    })
+  })
+
+  it('returns null for non-mindmap content', () => {
+    expect(parseMindmap('# Markdown outline')).toBeNull()
+    expect(parseMindmap('{"front":"Q","back":"A"}')).toBeNull()
+    expect(parseMindmap('{"kind":"other"}')).toBeNull()
+    expect(parseMindmap(null)).toBeNull()
+  })
+
+  it('drops empty labels and caps runaway depth', () => {
+    let deep: Record<string, unknown> = { label: 'leaf' }
+    for (let i = 0; i < 10; i += 1) {
+      deep = { label: `n${i}`, children: [deep] }
+    }
+    const root = parseMindmap(JSON.stringify({ kind: 'mindmap', root: deep }))
+    expect(root).not.toBeNull()
+    let node = root!
+    let depth = 0
+    while (node.children?.length) {
+      node = node.children[0]
+      depth += 1
+    }
+    expect(depth).toBeLessThanOrEqual(6)
   })
 })
