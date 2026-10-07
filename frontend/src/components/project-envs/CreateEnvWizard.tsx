@@ -129,7 +129,7 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
   const [tuning, setTuning] = useState('')
   const [problems, setProblems] = useState('')
   const [myRole, setMyRole] = useState('')
-  const [scale, setScale] = useState('')
+  // scale 输入已移除（人员/规模/资金三层禁令）：关闭用户手填规模的入口
   const [polish, setPolish] = useState<PolishState>({ phase: 'idle' })
   const [polishAdopted, setPolishAdopted] = useState(false)
   // Token fence: a canceled polish may still resolve later; the stale
@@ -198,7 +198,6 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
       setTuning('')
       setProblems('')
       setMyRole('')
-      setScale('')
       setPolish({ phase: 'idle' })
       setPolishAdopted(false)
       setMockName('')
@@ -314,7 +313,6 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
         tuning_process: tuning.trim() || null,
         problems_solutions: problems.trim() || null,
         my_role: myRole.trim() || null,
-        scale: scale.trim() || null,
         background_ai_polished: polishAdopted,
       },
       {
@@ -619,16 +617,6 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
                         value={myRole}
                         onChange={(event) => setMyRole(event.target.value)}
                         placeholder={t('projectEnvs.myRolePlaceholder')}
-                        rows={2}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="env-scale">{t('projectEnvs.scaleLabel')}</Label>
-                      <Textarea
-                        id="env-scale"
-                        value={scale}
-                        onChange={(event) => setScale(event.target.value)}
-                        placeholder={t('projectEnvs.scalePlaceholder')}
                         rows={2}
                       />
                     </div>

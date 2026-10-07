@@ -4,6 +4,7 @@ import { EnvTimeline } from './EnvTimeline'
 import { StatTiles } from './StatTiles'
 import { TechStackCards } from './TechStackCards'
 import { accentOf } from './env-accent'
+import { isForbiddenStat } from '@/lib/utils/env-structure'
 import type { TechItem } from '@/lib/utils/env-structure'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string)
@@ -33,7 +34,7 @@ describe('StatTiles', () => {
     render(
       <StatTiles
         items={[
-          { value: '15', unit: '人', label: '项目团队' },
+          { value: '96%', unit: '', label: '问答准确率' },
           { value: '92%', unit: '', label: '准确率', trendFrom: '78%', direction: 'up' },
         ]}
       />
@@ -47,9 +48,31 @@ describe('StatTiles', () => {
     expect(trend.textContent).toContain('92%')
   })
 
+  it('卡容器挂完整语境 title：静态卡=label，趋势卡=from → to label', () => {
+    render(
+      <StatTiles
+        items={[
+          { value: '96%', unit: '', label: '问答准确率' },
+          { value: '2.1秒', unit: '', label: 'P99降至', trendFrom: '9秒', direction: 'down' },
+        ]}
+      />
+    )
+    expect(screen.getByTestId('env-detail-metric-card').getAttribute('title')).toBe('问答准确率')
+    expect(screen.getByTestId('env-detail-metric-trend').getAttribute('title')).toBe(
+      '9秒 → 2.1秒 P99降至'
+    )
+  })
+
   it('fewer than 2 tiles → renders nothing', () => {
-    render(<StatTiles items={[{ value: '15', unit: '人', label: 'x' }]} />)
+    render(<StatTiles items={[{ value: '96%', unit: '', label: 'x' }]} />)
     expect(screen.queryByTestId('env-detail-metrics')).not.toBeInTheDocument()
+  })
+
+  it('人员 label + 人单位不出卡（三层禁令的卡级谓词直接断言）', () => {
+    // 实况样例「项目团队共18人」在 extractEnvStats 的 item 级谓词被拦
+    expect(isForbiddenStat({ value: '18', unit: '人', label: '项目团队共' })).toBe(true)
+    // 容量卡不误杀：数字+人但无人员语境词
+    expect(isForbiddenStat({ value: '2000', unit: '人', label: '压测同时在线' })).toBe(false)
   })
 })
 

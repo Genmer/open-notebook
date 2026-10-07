@@ -412,18 +412,32 @@ _INDUSTRY_TEMPLATE_IDS = [
     "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
 )
 def test_mock_templates_render_industry_and_forbidden_topics(template, model, base):
-    """契约 1：COMPANY CONTEXT 必须携带行业名并点名禁写内容。行业名缺失时
-    模型只能编造行业；禁写清单不点名则合同金额/团队人数叙事照常出现。"""
+    """契约 1：COMPANY CONTEXT 必须携带行业名并点名「人员/规模/资金」三类禁写
+    与可保留边界。行业名缺失时模型只能编造行业；禁写清单不点名则团队人数/
+    金额数字/用户规模叙事照常出现。"""
     text = _render(template, model, {"industry": "物流行业", **base, **_WINDOW})
 
     # COMPANY CONTEXT 携带行业名（自研视角）
     assert "「物流行业」" in text
     assert "自研" in text
-    # 负面约束点名：合同金额等金额数字、交付方叙事、团队规模
+    # 三分类禁令逐类点名
+    assert "① 人员类" in text
+    assert "② 资金类" in text
+    assert "③ 规模类" in text
+    # 人员类：团队人数/团队规模
+    assert "团队人数" in text and "团队规模" in text
+    # 资金类：金额数字与交付方叙事
     assert "合同金额" in text
     assert "甲方" in text and "乙方" in text
     assert "外包" in text
-    assert "团队人数" in text and "团队规模" in text
+    assert "成本下降" in text  # 成本类效果数据也禁写
+    # 规模类：用户规模数字与「项目规模」式段落
+    assert "用户量" in text and "注册用户" in text
+    assert "项目规模" in text
+    # 可保留边界与清洗器放过口径一致（避免「生成即被清洗」内耗）
+    assert "带领团队完成攻关" in text
+    assert "自筹资金" in text
+    assert "并发量、吞吐量、数据规模" in text
 
 
 @pytest.mark.parametrize(
@@ -453,18 +467,25 @@ def test_mock_templates_background_guidance_never_directs_client_narrative(
 @pytest.mark.parametrize(
     "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
 )
-def test_mock_templates_scale_guidance_never_directs_team_size(template, model, base):
-    """契约 1：scale 字段指导不得引导团队人数/团队规模，只写数据量/用户量。"""
+def test_mock_templates_scale_guidance_keeps_technical_capacity(template, model, base):
+    """契约 1：scale 字段指导改口径为「技术容量」——点名并发量/数据规模，
+    显式禁写用户量，且旧「项目规模」口径退场。（过滤条件 100-200/技术容量
+    用于跳过 draft_from_route 里原样回显的「- scale: {{ route.scale }}」行，
+    那是用户所选路线的数据，不是字段指导。）"""
     text = _render(template, model, {"industry": "物流行业", **base, **_WINDOW})
 
     guidance = [
         line.strip()
         for line in text.splitlines()
-        if line.lstrip().startswith("- scale:") and ("规模" in line)
+        if line.lstrip().startswith("- scale:")
+        and ("100-200" in line or "技术容量" in line)
     ]
     assert guidance, "scale 字段指导行必须存在"
     for line in guidance:
-        assert "团队" not in line
+        assert "技术容量" in line
+        assert "不写用户量" in line
+        assert "项目规模" not in line
+        assert "用户量、注册用户" not in line  # 旧「数据量、用户量」指导退场
 
 
 # --- pipeline 层行业兜底（契约 2 的空/空白→默认） ---

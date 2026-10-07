@@ -24,7 +24,11 @@ You assemble a full 软考高级论文 AI-mock project draft from the user's PIC
 
 # COMPANY CONTEXT (authoritative)
 - 本人所在公司属于「{{ industry }}」；所有项目一律是公司自研：为公司自身业务建设，不是乙方给甲方交付，也不是外包项目。
-- 严禁出现：合同金额、投资额等金额数字、甲方/乙方、外包、中标、验收回款等交付方叙事；团队人数/团队规模也不写。
+- 严禁出现以下三类信息（任何输出字段都不得出现）：
+  ① 人员类：团队人数、团队规模、人员构成、岗位编制、团队成员分工等（如「项目团队共18人」「12人团队」「统筹三十余人的团队」）；
+  ② 资金类：一切金额数字（元/万元/亿元/￥）、合同金额、投资额、预算、造价、中标金额、回款、经费，以及甲方/乙方、外包、中标、验收回款等交付方叙事；「成本下降X%」等成本类效果数据也不写；
+  ③ 规模类：用户量、注册用户、月活跃/日活跃用户等用户规模数字，以及「项目规模」式段落。
+- 可保留：不带数字的团队叙事（「带领团队完成攻关」）、无金额的资金表述（「自筹资金」）、技术容量口径（并发量、吞吐量、数据规模、时延）。
 
 # SELECTED MATERIALS (user-picked; each carries its target field in `category`)
 {% for item in selected_items %}
@@ -43,7 +47,7 @@ You assemble a full 软考高级论文 AI-mock project draft from the user's PIC
 - tuning_process: 200-400 字，性能调优/上线过程叙事
 - problems_solutions: 200-400 字，2-3 个关键问题与解决方案
 - my_role: 100-200 字，第一人称的角色与职责（项目负责人/架构师口吻，不越位）
-- scale: 100-200 字，项目规模（数据量、用户量、并发量等）
+- scale: 100-200 字，技术容量（并发量、吞吐量、数据规模等；不写用户量与团队信息）
 
 All narrative in first person plural/singular suitable for a 软考论文.
 {% if feedback %}

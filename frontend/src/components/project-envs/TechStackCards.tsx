@@ -81,6 +81,7 @@ export function TechStackCards({ items, accent, narrative }: TechStackCardsProps
         )}
       </div>
       <p
+        title={narrative}
         className={cn(
           'mt-2 text-xs leading-relaxed text-muted-foreground',
           narrative.length > 480 && 'line-clamp-4'

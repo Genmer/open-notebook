@@ -20,7 +20,10 @@ export interface TuningFlowProps {
 function OutcomeChip({ chip }: { chip: TrendChip }) {
   const Icon = chip.direction === 'up' ? TrendingUp : TrendingDown
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-fern/40 bg-card px-2 py-0.5 font-mono text-xs tabular-nums text-fern">
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-fern/40 bg-card px-2 py-0.5 font-mono text-xs tabular-nums text-fern"
+      title={chip.context}
+    >
       <Icon className="size-3" aria-hidden />
       {chip.label && <span>{chip.label}</span>}
       <span>{chip.from}</span>
@@ -106,7 +109,10 @@ export function TuningFlow({ steps, accent, original }: TuningFlowProps) {
                       </div>
                     )}
                     {node.body && (
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-3 break-words">
+                      <p
+                        title={node.body}
+                        className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-3 break-words"
+                      >
                         {node.body}
                       </p>
                     )}
@@ -124,7 +130,10 @@ export function TuningFlow({ steps, accent, original }: TuningFlowProps) {
                       </p>
                     )}
                     {node.body && (
-                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground line-clamp-3 break-words">
+                      <p
+                        title={node.body}
+                        className="mt-0.5 text-xs leading-relaxed text-muted-foreground line-clamp-3 break-words"
+                      >
                         {node.body}
                       </p>
                     )}

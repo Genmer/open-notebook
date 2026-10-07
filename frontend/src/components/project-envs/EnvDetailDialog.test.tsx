@@ -264,10 +264,10 @@ describe('EnvDetailDialog', () => {
   it('renders the structured visual blocks for dense mock material', () => {
     render(<EnvDetailDialog env={tmsEnv} open onOpenChange={vi.fn()} />)
 
-    // Metric tiles
+    // Metric tiles — scale 退出扫描源后仅 background 容量卡（15人 卡废除）
     const metrics = screen.getByTestId('env-detail-metrics')
-    expect(metrics.textContent).toContain('15')
     expect(metrics.textContent).toContain('6000')
+    expect(metrics.textContent).not.toContain('15')
 
     // Tech stack cards
     const tech = screen.getByTestId('env-detail-tech')
@@ -296,8 +296,9 @@ describe('EnvDetailDialog', () => {
     expect(roleCard.textContent).toContain('项目负责人兼系统架构师')
     expect(roleCard.textContent).toContain('立项论证')
 
-    // Scale card keeps the full prose
-    expect(screen.getByTestId('env-detail-scale-card').textContent).toContain('2.8万条')
+    // Scale 卡退场：即使存量数据仍带 scale 文本也不渲染
+    expect(screen.queryByTestId('env-detail-scale-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('env-detail-sections').textContent).not.toContain('2.8万条')
   })
 
   it('falls back to the plain text sections when no structure can be extracted', () => {

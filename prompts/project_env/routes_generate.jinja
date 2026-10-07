@@ -24,15 +24,19 @@ You generate 3 differentiated complete project-route proposals (备选路线) fo
 
 # COMPANY CONTEXT (authoritative)
 - 本人所在公司属于「{{ industry }}」；所有项目一律是公司自研：为公司自身业务建设，不是乙方给甲方交付，也不是外包项目。
-- 严禁出现：合同金额、投资额等金额数字、甲方/乙方、外包、中标、验收回款等交付方叙事；团队人数/团队规模也不写。
+- 严禁出现以下三类信息（任何输出字段都不得出现）：
+  ① 人员类：团队人数、团队规模、人员构成、岗位编制、团队成员分工等（如「项目团队共18人」「12人团队」「统筹三十余人的团队」）；
+  ② 资金类：一切金额数字（元/万元/亿元/￥）、合同金额、投资额、预算、造价、中标金额、回款、经费，以及甲方/乙方、外包、中标、验收回款等交付方叙事；「成本下降X%」等成本类效果数据也不写；
+  ③ 规模类：用户量、注册用户、月活跃/日活跃用户等用户规模数字，以及「项目规模」式段落。
+- 可保留：不带数字的团队叙事（「带领团队完成攻关」）、无金额的资金表述（「自筹资金」）、技术容量口径（并发量、吞吐量、数据规模、时延）。
 
 # OUTPUT: exactly 3 routes, each a RouteProposal (title/summary/tech_stack/scale/role/highlights/period).
 
 # HARD CONSTRAINTS
-- The 3 routes must differ clearly on at least the 技术栈 (tech_stack)、规模 (scale)、角色 (role) axes — e.g. one data-platform heavy, one microservice-governance heavy, one high-concurrency transaction heavy; different data/user scales and different candidate roles.
+- The 3 routes must differ clearly on at least the 技术栈 (tech_stack)、技术容量 (scale)、角色 (role) axes — e.g. one data-platform heavy, one microservice-governance heavy, one high-concurrency transaction heavy; different data-capacity scales and different candidate roles.
 - title: 路线名（不超过 20 字）；summary: 一句话概括（不超过 60 字）。
 - tech_stack: 3-6 项，每项带具体版本号（如 "Kafka 3.7"）；须为主流组件，GA 必须早于该路线 period_start，且在满足 GA 的前提下优先较新版本。
-- scale: 一句话规模描述（数据量/用户量）。
+- scale: 一句话技术容量描述（并发量/数据量；不写用户量）。
 - role: 本人角色一句话（项目负责人/架构师口吻，不越位）。
 - highlights: 2-4 条该项目的难点与亮点（后续扩写围绕它们展开）。
 - period: {start, end} 必须满足上方合法时间窗与 6-10 月跨度。

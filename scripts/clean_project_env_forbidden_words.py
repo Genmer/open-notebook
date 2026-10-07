@@ -1,12 +1,13 @@
 """One-off maintainer script: strip banned exam-essay phrases from stored
 project_env legacy texts (README item 4, 软考项目环境体验优化).
 
-The prompt-layer ban (合同金额/团队规模/团队人数, prompts/project_env/*.jinja)
+The prompt-layer ban (人员/规模/资金 三类禁写, prompts/project_env/*.jinja)
 only constrains newly generated content, so environments produced before the
-ban can still carry the phrases in their main fields, mock drafts
-(draft_content) and verified snapshots (verified_snapshot — the chat
-injection source). This script removes every offending sentence via the
-deterministic, idempotent cleaner in open_notebook/domain/project_env_cleaner.py.
+ban can still carry it in their main fields, mock drafts (draft_content) and
+verified snapshots (verified_snapshot — the chat injection source). This
+script removes every offending sentence — and clears any non-empty scale
+field whole — via the deterministic, idempotent cleaner in
+open_notebook/domain/project_env_cleaner.py.
 
 DEFAULT IS DRY-RUN: without --apply it only prints the per-field diff and
 never writes to the database.
@@ -80,7 +81,7 @@ def _backup_payload(envs: List[ProjectEnv]) -> Dict[str, Any]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Remove banned phrases (合同金额/团队规模/团队人数) from "
+        description="Remove banned phrases (人员/规模/资金 三类禁写) from "
         "stored project_env legacy texts. DRY-RUN unless --apply is given."
     )
     parser.add_argument(

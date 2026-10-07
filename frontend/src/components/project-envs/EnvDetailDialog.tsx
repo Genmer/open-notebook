@@ -50,6 +50,7 @@ function asText(value: unknown): string {
 
 // Pending mock environments keep their generated material in draft_content;
 // once promoted the main fields carry it. Show whichever has text.
+// scale 退场（人员/规模/资金三层禁令）：整字段不展示，draft→main 回退链仅覆盖其余字段。
 function materialOf(env: ProjectEnv): Record<string, string> {
   const draft = env.draft_content ?? {}
   const pick = (key: string, main: string | null): string =>
@@ -60,7 +61,6 @@ function materialOf(env: ProjectEnv): Record<string, string> {
     tuning_process: pick('tuning_process', env.tuning_process),
     problems_solutions: pick('problems_solutions', env.problems_solutions),
     my_role: pick('my_role', env.my_role),
-    scale: pick('scale', env.scale),
   }
 }
 
@@ -127,7 +127,7 @@ export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProp
 
   // One extraction pass feeds the visual blocks; each block falls back to the
   // plain text card whenever the structure could not be recovered.
-  const stats = extractEnvStats(material.scale, material.background)
+  const stats = extractEnvStats(material.background)
   const techs = extractTechs(material.tech_background)
   const steps = splitTuningSteps(material.tuning_process)
   const pairBlock = splitProblemPairs(material.problems_solutions)
@@ -197,7 +197,9 @@ export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProp
               months={span}
               accent={accent}
             />
-            <span>{t('projectEnvs.sessionsCount', { count: env.session_ref_count })}</span>
+            <span title={t('projectEnvs.sessionsHint')}>
+              {t('projectEnvs.sessionsCount', { count: env.session_ref_count })}
+            </span>
           </div>
         </DialogHeader>
 
@@ -235,56 +237,38 @@ export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProp
                   openSection(t('projectEnvs.fieldTechBackground'), material.tech_background)
                 )
               ) : null}
-              {(material.my_role || material.scale) && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {material.my_role ? (
-                    roleTitle ? (
-                      <section
-                        data-testid="env-detail-role-card"
-                        className="rounded-lg border bg-card p-3"
+              {material.my_role &&
+                (roleTitle ? (
+                  <section
+                    data-testid="env-detail-role-card"
+                    className="rounded-lg border bg-card p-3"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'flex size-8 shrink-0 items-center justify-center rounded-md',
+                          accent.tile
+                        )}
                       >
-                        <div className="flex items-start gap-2.5">
-                          <span
-                            aria-hidden
-                            className={cn(
-                              'flex size-8 shrink-0 items-center justify-center rounded-md',
-                              accent.tile
-                            )}
-                          >
-                            <User className="size-4" strokeWidth={1.5} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-medium text-muted-foreground">
-                              {t('projectEnvs.fieldMyRole')}
-                            </h4>
-                            <p className="mt-0.5 break-words text-sm font-medium text-foreground">
-                              {roleTitle}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
-                          {material.my_role}
+                        <User className="size-4" strokeWidth={1.5} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-medium text-muted-foreground">
+                          {t('projectEnvs.fieldMyRole')}
+                        </h4>
+                        <p className="mt-0.5 break-words text-sm font-medium text-foreground">
+                          {roleTitle}
                         </p>
-                      </section>
-                    ) : (
-                      openSection(t('projectEnvs.fieldMyRole'), material.my_role)
-                    )
-                  ) : null}
-                  {material.scale ? (
-                    <section
-                      data-testid="env-detail-scale-card"
-                      className="rounded-lg border bg-card p-3"
-                    >
-                      <h4 className="mb-1 text-xs font-medium text-muted-foreground">
-                        {t('projectEnvs.fieldScale')}
-                      </h4>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
-                        {material.scale}
-                      </p>
-                    </section>
-                  ) : null}
-                </div>
-              )}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
+                      {material.my_role}
+                    </p>
+                  </section>
+                ) : (
+                  openSection(t('projectEnvs.fieldMyRole'), material.my_role)
+                ))}
               {material.tuning_process ? (
                 steps.length >= 2 ? (
                   <TuningFlow steps={steps} accent={accent} original={material.tuning_process} />

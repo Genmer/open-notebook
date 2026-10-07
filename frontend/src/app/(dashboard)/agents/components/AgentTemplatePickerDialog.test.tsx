@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AgentTemplatePickerDialog } from './AgentTemplatePickerDialog'
 import {
@@ -6,6 +6,16 @@ import {
   AGENT_TEMPLATE_CATEGORIES,
   pickTemplateText,
 } from '@/lib/agent-templates'
+
+// Mock Tooltip components to avoid Radix UI async issues in tests
+// (project precedent: AgentsList.test.tsx) — this keeps TooltipContent
+// children mounted so the badge tooltip copy is assertable.
+vi.mock('@/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
 
 // useTranslation is mocked globally in setup.ts (t returns the key string,
 // language is 'en-US' — so pickTemplateText resolves to the English variant).
@@ -97,5 +107,42 @@ describe('AgentTemplatePickerDialog', () => {
     )
     fireEvent.click(screen.getByText('common.cancel'))
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  // 金标「专业深化」徽章：仅 deepened 模板（两个软考论文模板）挂载。
+  describe('gold deepened badge', () => {
+    it('renders the badge on exactly the two deepened templates', () => {
+      render(
+        <AgentTemplatePickerDialog open onOpenChange={vi.fn()} onConfirm={vi.fn()} />
+      )
+      expect(
+        screen.getByTestId('agent-template-gold-ruankao-essay-coach')
+      ).toBeInTheDocument()
+      expect(
+        screen.getByTestId('agent-template-gold-ruankao-essay-examiner')
+      ).toBeInTheDocument()
+      // no other card carries the badge (spot-check a non-ruankao card)
+      const plainCard = screen.getByTestId('agent-template-card-senior-software-engineer')
+      expect(
+        within(plainCard).queryByTestId(/^agent-template-gold-/)
+      ).not.toBeInTheDocument()
+      // and the whole grid holds exactly two badges
+      expect(screen.getAllByTestId(/^agent-template-gold-/)).toHaveLength(2)
+    })
+
+    it('badge is a gold Sparkles icon with a two-line tooltip', () => {
+      render(
+        <AgentTemplatePickerDialog open onOpenChange={vi.fn()} onConfirm={vi.fn()} />
+      )
+      const badge = screen.getByTestId('agent-template-gold-ruankao-essay-coach')
+      // amber token, dark-mode safe; svg carries the size-4 icon
+      expect(badge).toHaveClass('text-gold')
+      expect(badge.querySelector('svg')).toHaveClass('size-4')
+      // accessible name comes from the i18n key (t returns the key in tests)
+      expect(badge).toHaveAttribute('aria-label', 'agents.templateGoldBadge')
+      // tooltip copy: title + description, one pair per badge (t returns the key)
+      expect(screen.getAllByText('agents.templateGoldBadge')).toHaveLength(2)
+      expect(screen.getAllByText('agents.templateGoldBadgeDesc')).toHaveLength(2)
+    })
   })
 })

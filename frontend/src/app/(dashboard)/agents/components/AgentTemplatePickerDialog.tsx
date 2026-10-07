@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AGENT_TEMPLATES,
   AGENT_TEMPLATE_CATEGORIES,
@@ -30,6 +31,7 @@ import {
   Palette,
   PenLine,
   Shapes,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -102,6 +104,35 @@ const templateCardClass = (isSelected: boolean) =>
     'flex cursor-pointer flex-col gap-2 rounded-lg border p-3 text-left outline-none transition-colors',
     isSelected ? 'border-primary ring-1 ring-primary' : 'hover:bg-accent/50'
   )
+
+/**
+ * 金色「专业深化」徽章：标记提示词经专业备考资料深化过的模板。
+ * 金色用本仓库 amber 系令牌 text-gold（双主题自动切换），不用 Tailwind 原生
+ * amber-*（会绕过暗色令牌）；图标选 Sparkles 而非 Award——ruankao 分类图标
+ * 已用 Award，避免混淆（Sparkles 已在 ParallelLiveCard 承担「AI 增强」金标语义）。
+ * 位于卡片 <label> 内：点击徽章会联动选中该模板，与点名称行为一致。
+ */
+function GoldDeepenedBadge({ tplKey }: { tplKey: string }) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="img"
+          aria-label={t('agents.templateGoldBadge')}
+          data-testid={`agent-template-gold-${tplKey}`}
+          className="shrink-0 text-gold"
+        >
+          <Sparkles className="size-4" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="font-semibold">{t('agents.templateGoldBadge')}</p>
+        <p>{t('agents.templateGoldBadgeDesc')}</p>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function AgentTemplatePickerDialog({
   open,
@@ -198,6 +229,7 @@ export function AgentTemplatePickerDialog({
                                     <span className="font-semibold truncate">
                                       {pickTemplateText(tpl.name, language)}
                                     </span>
+                                    {tpl.deepened && <GoldDeepenedBadge tplKey={tpl.key} />}
                                     <RadioGroupItem value={tpl.key} className="mt-0.5" />
                                   </span>
                                   <p className="text-sm text-muted-foreground line-clamp-2">

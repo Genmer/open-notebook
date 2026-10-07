@@ -35,6 +35,38 @@ const LANE_LABEL_KEYS: Record<ProjectEnvLane, string> = {
   C: 'projectEnvs.laneC',
 }
 
+// Lane semantics (verify_a/b/c.jinja): A=KB-evidence fact check, B=GA-vs-window
+// time check, C=logic-coherence check. Static table for the scanner.
+const LANE_HINT_KEYS: Record<ProjectEnvLane, string> = {
+  A: 'projectEnvs.laneAHint',
+  B: 'projectEnvs.laneBHint',
+  C: 'projectEnvs.laneCHint',
+}
+
+// 验证历史 action/verdict 是后端枚举原值，直接渲染会中英混杂；映射为 locale
+// 文案，未知值回退原串。error/off_table 复用 reason 语义键。
+const VERIFY_ACTION_KEYS: Record<string, string> = {
+  verify: 'projectEnvs.historyVerify',
+  correct: 'projectEnvs.historyCorrect',
+}
+const VERDICT_KEYS: Record<string, string> = {
+  pass: 'projectEnvs.historyPass',
+  fail: 'projectEnvs.historyFail',
+  corrected: 'projectEnvs.historyCorrected',
+}
+
+function historyActionLabel(action: string, t: (k: string) => string): string {
+  const key = VERIFY_ACTION_KEYS[action]
+  return key ? t(key) : action
+}
+
+function historyVerdictLabel(verdict: string, t: (k: string) => string): string {
+  if (verdict === 'off_table') return t('projectEnvs.reasonOffTable')
+  if (verdict === 'error') return t('projectEnvs.reasonLlmError')
+  const key = VERDICT_KEYS[verdict]
+  return key ? t(key) : verdict
+}
+
 function fieldLabel(field: string, t: (k: string) => string): string {
   switch (field) {
     case 'background': return t('projectEnvs.fieldBackground')
@@ -98,10 +130,18 @@ const MOCK_PHASE_KEYS = [
   'projectEnvs.phaseConverge',
 ] as const
 
+// 中段验证胶囊（三路/双路）的 hover 解释；静态字面量表供扫描器识别引用。
+const PHASE_HINT_KEYS: Record<string, string> = {
+  'projectEnvs.phaseVerify': 'projectEnvs.modeThreeLaneHint',
+  'projectEnvs.phaseVerifyMock': 'projectEnvs.modeDualLaneHint',
+}
+
 function LaneBadge({ lane, result }: { lane: ProjectEnvLane; result?: ProjectEnvLanes[ProjectEnvLane] }) {
   const { t } = useTranslation()
   const name = t(LANE_LABEL_KEYS[lane])
+  const hint = t(LANE_HINT_KEYS[lane])
   const verdict = result?.verdict
+  const issues = result?.issues ?? []
   return (
     <Badge
       variant="outline"
@@ -112,7 +152,8 @@ function LaneBadge({ lane, result }: { lane: ProjectEnvLane; result?: ProjectEnv
         (verdict === 'error' || verdict === 'off_table') && 'border-warn/60 text-warn',
         !verdict && 'text-muted-foreground'
       )}
-      title={result?.issues?.join('\n')}
+      // 通道语义恒挂 title；已有 issues 时附在其后（更具体的信息优先展示）
+      title={issues.length ? `${issues.join('\n')}\n${hint}` : hint}
     >
       {verdict === 'pass' && <Check className="h-3 w-3" />}
       {verdict === 'fail' && <X className="h-3 w-3" />}
@@ -136,7 +177,7 @@ function RoundsHistory({ rounds }: { rounds: ProjectEnvClaimRound[] }) {
           {rounds.map((round) => (
             <li key={round.round} className="text-xs text-muted-foreground">
               <span className="font-mono">#{round.round}</span>{' '}
-              {round.action} · {round.verdict}
+              {historyActionLabel(round.action, t)} · {historyVerdictLabel(round.verdict, t)}
               {round.corrected_text && (
                 <p className="mt-0.5 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1">
                   {round.corrected_text}
@@ -448,6 +489,7 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
                   {i > 0 && <span className="text-muted-foreground/50">→</span>}
                   <span
                     data-testid={`verification-phase-${i}`}
+                    title={PHASE_HINT_KEYS[key] ? t(PHASE_HINT_KEYS[key]) : undefined}
                     className={cn(
                       'flex items-center gap-1 truncate rounded-full border px-2 py-0.5',
                       active && 'border-teal/60 bg-teal/10 font-medium text-teal',
@@ -487,7 +529,11 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
         </div>
       )}
       {data.status === 'needs_review' && (
-        <div className="rounded-lg border border-warn/40 bg-warn-tint/60 p-3 text-sm text-warn" data-testid="verification-review-banner">
+        <div
+          className="rounded-lg border border-warn/40 bg-warn-tint/60 p-3 text-sm text-warn"
+          data-testid="verification-review-banner"
+          title={t('projectEnvs.claimsConcept')}
+        >
           {t('projectEnvs.needsReviewBanner', {
             count: summary.manual ?? 0,
           })}
@@ -504,7 +550,7 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
+        <span title={t('projectEnvs.claimsConcept')}>
           {t('projectEnvs.summaryLine', {
             passed: summary.passed ?? 0,
             total: summary.total ?? 0,
@@ -513,12 +559,20 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
           })}
         </span>
         {!!degraded.kb_empty && (
-          <Badge variant="outline" className="border-warn/60 text-warn">
+          <Badge
+            variant="outline"
+            className="border-warn/60 text-warn"
+            title={t('projectEnvs.degradedKbEmptyHint')}
+          >
             {t('projectEnvs.degradedKbEmpty')}
           </Badge>
         )}
         {!!degraded.single_model && (
-          <Badge variant="outline" className="border-warn/60 text-warn">
+          <Badge
+            variant="outline"
+            className="border-warn/60 text-warn"
+            title={t('projectEnvs.degradedSingleModelHint')}
+          >
             {t('projectEnvs.degradedSingleModel')}
           </Badge>
         )}

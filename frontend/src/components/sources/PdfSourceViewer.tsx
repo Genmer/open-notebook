@@ -53,6 +53,7 @@ import {
   sortPageAnnotations,
   useAnnotations,
 } from '@/lib/hooks/use-annotations'
+import { useCtrlWheelZoom } from '@/lib/hooks/use-ctrl-wheel-zoom'
 import { useNotes } from '@/lib/hooks/use-notes'
 import type { NoteResponse } from '@/lib/types/api'
 import { useSectionAnalysis } from '@/lib/hooks/use-section-analysis'
@@ -177,6 +178,10 @@ export default function PdfSourceViewer({
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pageWrapperRef = useRef<HTMLDivElement | null>(null)
+  // Scroll container of the page area — the Ctrl+wheel zoom listener's only
+  // target (toolbar, outline overlay and analysis panel live outside it, so
+  // wheel events there never zoom).
+  const viewerScrollRef = useRef<HTMLDivElement | null>(null)
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'notPdf' | 'failed'>('loading')
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
@@ -617,6 +622,18 @@ export default function PdfSourceViewer({
   const zoomIn = () => setScale((s) => ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, ZOOM_STEPS.indexOf(s) + 1)] ?? s)
   const zoomOut = () => setScale((s) => ZOOM_STEPS[Math.max(0, ZOOM_STEPS.indexOf(s) - 1)] ?? s)
 
+  // Ctrl+wheel / trackpad-pinch zoom on the page scroll area. The hook owns
+  // the non-passive listener and the delta accumulator (one notch = one step,
+  // pinch paced by the same accumulator); clamping stays in zoomIn/zoomOut, so
+  // at min/max the browser page zoom is still suppressed but nothing steps.
+  // Disabled outside the ready state — loading/error shells keep the browser's
+  // native behavior.
+  useCtrlWheelZoom({
+    containerRef: viewerScrollRef,
+    enabled: status === 'ready',
+    onStep: (direction) => (direction === 'in' ? zoomIn() : zoomOut()),
+  })
+
   const entryKey = useCallback((entry: PdfOutlineEntry, index: number) => `${index}:${entry.pageNumber}:${entry.title}`, [])
 
   const activeEntryIndex = useMemo(
@@ -981,7 +998,7 @@ export default function PdfSourceViewer({
               onClick={zoomOut}
               disabled={status !== 'ready' || scale <= ZOOM_STEPS[0]}
               aria-label={t('sources.pdfViewer.zoomOut')}
-              title={t('sources.pdfViewer.zoomOut')}
+              title={t('sources.pdfViewer.zoomOutShortcut')}
               data-testid="pdf-zoom-out"
             >
               <ZoomOut className="h-4 w-4" />
@@ -993,7 +1010,7 @@ export default function PdfSourceViewer({
               onClick={zoomIn}
               disabled={status !== 'ready' || scale >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
               aria-label={t('sources.pdfViewer.zoomIn')}
-              title={t('sources.pdfViewer.zoomIn')}
+              title={t('sources.pdfViewer.zoomInShortcut')}
               data-testid="pdf-zoom-in"
             >
               <ZoomIn className="h-4 w-4" />
@@ -1140,7 +1157,10 @@ export default function PdfSourceViewer({
           )}
 
           {/* Canvas / status area */}
-          <div className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-muted/30 p-4">
+          <div
+            ref={viewerScrollRef}
+            className="flex min-w-0 flex-1 items-start justify-center overflow-auto bg-muted/30 p-4"
+          >
             {status === 'loading' && (
               <div className="flex h-full w-full items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />

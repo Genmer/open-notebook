@@ -151,7 +151,6 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
         tuning_process: env.tuning_process,
         problems_solutions: env.problems_solutions,
         my_role: env.my_role,
-        scale: env.scale,
         generic_paragraph: env.generic_paragraph ?? null,
         background_ai_polished: (env.ai_assisted?.polish_count ?? 0) > 0,
       },
@@ -262,7 +261,9 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
 
               <div className="flex items-center justify-between border-t pt-2">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{t('projectEnvs.sessionsCount', { count: env.session_ref_count })}</span>
+                  <span title={t('projectEnvs.sessionsHint')}>
+                    {t('projectEnvs.sessionsCount', { count: env.session_ref_count })}
+                  </span>
                   {env.generic_paragraph && (
                     <span title={t('projectEnvs.genericParagraph')} className="inline-flex items-center text-fern">
                       <ScrollText className="size-3" aria-hidden />

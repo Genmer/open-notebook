@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   extractEnvStats,
   extractTechs,
+  isForbiddenStat,
   splitTuningSteps,
   splitProblemPairs,
   extractRoleTitle,
@@ -41,83 +42,102 @@ const ENV2 = {
 const vals = (stats: ReturnType<typeof extractEnvStats>) => stats.map((s) => s.value + s.unit)
 
 describe('extractEnvStats', () => {
-  it('ENV1（TMS）：5 个候选按 scale 优先取 4 张静态卡，无伪趋势', () => {
-    const stats = extractEnvStats(ENV1.scale, ENV1.background)
-    expect(vals(stats)).toEqual(['15人', '2.8万条', '6000家', '2小时'])
+  it('ENV1（TMS）：scale 退出扫描源，仅 background 出容量卡，无伪趋势', () => {
+    const stats = extractEnvStats(ENV1.background)
+    expect(vals(stats)).toEqual(['6000家', '2小时', '68%'])
     expect(stats.every((s) => !s.trendFrom)).toBe(true)
-    expect(stats[0].label).toBe('我组建并带领项目团队')
-    expect(stats[1].label).toBe('日均处理配送订单')
+    expect(stats[0].label).toBe('该企业在全国拥有门店')
+    expect(stats[1].label).toBe('单次排线耗时')
   })
 
-  it('ENV2（内部助手）：合同金额句整卡消失，仅 17人 成行', () => {
-    const stats = extractEnvStats(ENV2.scale, ENV2.background)
-    expect(vals(stats)).toEqual(['17人'])
+  it('ENV2（内部助手）：人员/规模/资金内容不再出任何卡', () => {
+    // 旧样例的 17人/360万元 卡全部废除；合规 background 无量化点 → 空
+    expect(extractEnvStats(ENV2.background)).toEqual([])
   })
 
   it('抽取 X→Y 改善型趋势卡（复合单位），终点不重复出静态卡', () => {
-    const stats = extractEnvStats('', '成本由360万元压缩至120万元，团队15人。')
-    expect(stats[0]).toMatchObject({ trendFrom: '360万元', value: '120万元', direction: 'down' })
-    expect(vals(stats)).toEqual(['120万元', '15人'])
-    expect(extractEnvStats('', '从300万元降到90万元。')).toHaveLength(1)
+    const stats = extractEnvStats('耗时由9秒降至2.1秒，日均处理2.8万条订单。')
+    expect(stats[0]).toMatchObject({ trendFrom: '9秒', value: '2.1秒', direction: 'down' })
+    expect(vals(stats)).toEqual(['2.1秒', '2.8万条'])
+    expect(extractEnvStats('从300条降到90条。')).toHaveLength(1)
   })
 
-  it('P99 由 9秒降至 2.1秒：出 1 张趋势卡且 9/2.1 不再出静态卡', () => {
-    const stats = extractEnvStats('', 'P99由9秒降至2.1秒，团队共15人。')
-    expect(stats).toHaveLength(2)
+  it('P99 由 9秒降至 2.1秒：趋势卡保留，同句 15人 人员卡废除', () => {
+    const stats = extractEnvStats('P99由9秒降至2.1秒，团队共15人。')
+    expect(stats).toHaveLength(1)
     expect(stats[0]).toMatchObject({ trendFrom: '9秒', value: '2.1秒', label: 'P99', direction: 'down' })
-    expect(stats.slice(1).some((s) => s.value === '9' || s.value === '2.1')).toBe(false)
   })
 
-  it('千分位：剥逗号显示；畸形分组不抽', () => {
-    expect(vals(extractEnvStats('团队规模12,000人。', ''))).toEqual([])
-    expect(vals(extractEnvStats('旗下1,200家门店。', ''))).toEqual(['1200家'])
-    expect(vals(extractEnvStats('', '年营业额达到1,200万元。'))).toEqual(['1200万元'])
-    expect(extractEnvStats('规模12,00人。', '')).toEqual([])
+  it('千分位：剥逗号显示；畸形分组不抽；金额值不出卡', () => {
+    expect(vals(extractEnvStats('团队规模12,000人。'))).toEqual([])
+    expect(vals(extractEnvStats('旗下1,200家门店。'))).toEqual(['1200家'])
+    // 资金类：万元/亿元值整卡丢弃（新三层禁令）
+    expect(vals(extractEnvStats('年营业额达到1,200万元。'))).toEqual([])
+    expect(extractEnvStats('规模12,00人。')).toEqual([])
   })
 
-  it('年份守卫：裸年份区间无卡；年份夹金额无伪趋势但静态数据正确', () => {
-    expect(extractEnvStats('', '用户数从2019增长到2024。')).toEqual([])
-    const stats = extractEnvStats('', '营收从2019年的1万元增长到2024年的5万元。')
+  it('年份守卫：裸年份区间无卡；年份夹金额无伪趋势且金额静态卡废除', () => {
+    expect(extractEnvStats('用户数从2019增长到2024。')).toEqual([])
+    const stats = extractEnvStats('营收从2019年的1万元增长到2024年的5万元。')
     expect(stats.some((s) => s.trendFrom)).toBe(false)
-    expect(vals(stats)).toEqual(['1万元', '5万元'])
+    expect(vals(stats)).toEqual([])
   })
 
   it('年月日期不抽（单位白名单天然排除）', () => {
-    expect(extractEnvStats('', '2024年12月开工，2025年9月验收。')).toEqual([])
+    expect(extractEnvStats('2024年12月开工，2025年9月验收。')).toEqual([])
   })
 
   it('空串与无结构文本安全', () => {
-    expect(extractEnvStats('', '')).toEqual([])
-    expect(extractEnvStats('We serve 5000 users daily.', '')).toEqual([])
-    expect(() => extractEnvStats('好'.repeat(3000), '坏'.repeat(3000))).not.toThrow()
+    expect(extractEnvStats('')).toEqual([])
+    expect(extractEnvStats('We serve 5000 users daily.')).toEqual([])
+    expect(() => extractEnvStats('好'.repeat(3000))).not.toThrow()
   })
 
-  it('禁词兜底：合同金额/团队规模/团队人数 所在子句整卡丢弃，窗口外禁词也拦住', () => {
+  it('禁词兜底：三类禁词所在子句整卡丢弃，窗口外禁词也拦住', () => {
     // 禁词在 label 截断窗口之外（前 10 字容不下「项目合同金额约」），子句窗口仍命中
-    expect(vals(extractEnvStats('项目合同金额约360万元。我带领17人团队完成建设。', ''))).toEqual([
-      '17人',
-    ])
-    expect(vals(extractEnvStats('团队规模12,000人。', ''))).toEqual([])
+    expect(vals(extractEnvStats('项目合同金额约360万元。我带领项目团队完成建设。'))).toEqual([])
+    expect(vals(extractEnvStats('团队规模12,000人。'))).toEqual([])
     // 趋势整条滤：合同金额句中的 X→Y 不再出趋势卡
-    expect(extractEnvStats('', '合同金额由360万元压缩至120万元。')).toEqual([])
+    expect(extractEnvStats('合同金额由360万元压缩至120万元。')).toEqual([])
+    // 实况反例「项目团队共18人」：子句禁词层直接拦下
+    expect(vals(extractEnvStats('项目团队共18人，涵盖多个岗位。'))).toEqual([])
   })
 
-  it('禁词兜底无误杀：不含禁词的团队/成本表述照常出卡', () => {
-    // 「团队15人」「成本由360万元压缩至120万元」不含禁词（README 本项只点名两词）
-    expect(vals(extractEnvStats('', '成本由360万元压缩至120万元，团队15人。'))).toEqual([
-      '120万元',
-      '15人',
+  it('item 级谓词兜底：无精确禁词的人员卡由 label/值语义拦下', () => {
+    // 子句无精确禁词，但 label 窗口（前10后6）含「团队」→ 人员卡不出
+    expect(vals(extractEnvStats('项目合同金额约360万元。我带领17人团队完成建设。'))).toEqual([])
+  })
+
+  it('三层禁令下容量卡不误杀：语境过滤先行', () => {
+    // 换行是子句边界：禁词子句外的容量数字照常出卡
+    expect(vals(extractEnvStats('团队规模18人。\n日均订单2.8万条'))).toEqual(['2.8万条'])
+    // 数字+人但无人员语境词：并发/在线容量是论文量化骨架，保留
+    expect(vals(extractEnvStats('压测支持2000人同时在线，500并发下P95稳定2.6秒。'))).toEqual([
+      '2000人',
+      '2.6秒',
     ])
-    // 换行是子句边界：禁词子句外的数字照常出卡
-    expect(vals(extractEnvStats('团队规模18人。\n日均订单2.8万条', ''))).toEqual(['2.8万条'])
-    // 禁词在独立子句（冒号隔开）时，另一子句的数字不受牵连
-    expect(vals(extractEnvStats('背景：无禁词。团队规模: 18人', ''))).toEqual(['18人'])
   })
 
   it('禁词兜底：纯函数幂等，重复抽取结果一致', () => {
-    const scale = '项目合同金额约360万元。我带领17人团队完成建设。'
-    const background = '合同金额由360万元压缩至120万元。门店6000家。'
-    expect(extractEnvStats(scale, background)).toEqual(extractEnvStats(scale, background))
+    const background = '项目合同金额约360万元。门店6000家。单次排线耗时超过2小时。'
+    expect(extractEnvStats(background)).toEqual(extractEnvStats(background))
+  })
+})
+
+describe('isForbiddenStat', () => {
+  it('人员/资金/用户规模卡整卡丢弃，容量卡保留', () => {
+    // 实况样例：人员 label + 人单位
+    expect(isForbiddenStat({ value: '15', unit: '人', label: '项目团队' })).toBe(true)
+    // 资金值（万元/￥/unit=元）无论 label 一律丢弃
+    expect(isForbiddenStat({ value: '120万元', unit: '', label: '压缩至' })).toBe(true)
+    expect(isForbiddenStat({ value: '92%', unit: '', label: '准确率', trendFrom: '360万元' })).toBe(true)
+    // 静态金额卡：元 在 unit 上
+    expect(isForbiddenStat({ value: '1200万', unit: '元', label: '年营业额达到' })).toBe(true)
+    // 用户规模 label
+    expect(isForbiddenStat({ value: '6500', unit: '人', label: '月活跃用户达' })).toBe(true)
+    // 容量卡：数字+人但无人员语境词；普通百分比卡
+    expect(isForbiddenStat({ value: '2000', unit: '人', label: '压测同时在线' })).toBe(false)
+    expect(isForbiddenStat({ value: '96%', unit: '', label: '问答准确率' })).toBe(false)
   })
 })
 
@@ -185,7 +205,9 @@ describe('splitTuningSteps', () => {
       '开启并行搜索',
     ])
     const outcome = steps[4]
-    expect(outcome.metrics).toEqual([{ label: 'P99', from: '9秒', to: '2.1秒', direction: 'down' }])
+    expect(outcome.metrics?.[0]).toMatchObject({ label: 'P99', from: '9秒', to: '2.1秒', direction: 'down' })
+    // chip 溯源：context=前文命中句（「P99 高达 9秒」所在原句）
+    expect(outcome.metrics?.[0]?.context).toContain('P99响应时间高达9秒')
     expect(outcome.body).toContain('P99降至2.1秒')
     expect(outcome.body).toContain('灰度上线')
   })
@@ -197,7 +219,9 @@ describe('splitTuningSteps', () => {
       '首Token延迟偏高',
       '知识问答准确率不足',
     ])
-    expect(steps[3].metrics).toEqual([{ label: '', from: '78%', to: '92%', direction: 'up' }])
+    expect(steps[3].metrics?.[0]).toMatchObject({ label: '', from: '78%', to: '92%', direction: 'up' })
+    // chip 溯源：context=成果数字所在来源句
+    expect(steps[3].metrics?.[0]?.context).toContain('78%提升到92%')
   })
 
   it('多行/半角枚举（H2）：换行列点不整体回退', () => {

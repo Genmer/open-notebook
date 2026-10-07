@@ -162,3 +162,7 @@ history.txt
 # oss-maintainer local state
 .maintainer/profile.local.toml
 .maintainer/state/
+
+# 工作流临时产物与本地清理备份（不入库）
+.zcode-tmp/
+project_env_backup_*.json

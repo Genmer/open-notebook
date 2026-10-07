@@ -36,6 +36,8 @@ export interface TrendChip {
   from: string
   to: string
   direction: 'up' | 'down'
+  /** 成果溯源：chip 数字所在的来源句原文（跨句对=前文命中句），供 title 展示 */
+  context?: string
 }
 
 export interface FlowStep {
@@ -61,7 +63,7 @@ export interface ProblemPairBlock {
   pairs: ProblemPair[]
 }
 
-// ---------- 指标（只扫 scale + background） ----------
+// ---------- 指标（只扫 background；scale 整字段按「规模段落」退出展示与扫描） ----------
 
 const UNIT = '(%|秒|小时|分钟|人|条|家|元|个|张|次|台|辆|单|字|页|核|卡)'
 // 千分位分组允许（产出 value 时剥逗号）；(?<!\d,) 杀「12,00人」这类畸形组尾巴
@@ -111,10 +113,35 @@ function labelOf(text: string, start: number, end: number): string {
   return pre + post
 }
 
-// 存量环境禁词兜底（README 第 4 项）：提示词禁写「合同金额/团队规模/团队人数」
+// 存量环境禁词兜底（人员/规模/资金三层禁令的卡级防线）：提示词禁写三类信息
 // 只约束新生成，改造前生成的存量文本仍可能带禁词。含禁词的子句不再出指标卡。
-// 与后端 open_notebook/domain/project_env_cleaner.py 的 FORBIDDEN_PHRASES 同集。
-export const FORBIDDEN_STAT_PHRASES = ['合同金额', '团队规模', '团队人数'] as const
+// 与后端 open_notebook/domain/project_env_cleaner.py 的 FORBIDDEN_PHRASES
+// 口径对齐、机制不同（那边句级清洗、这边卡级过滤），故此表更宽：
+// 「项目团队」等在清洗层是语境词（保护无数字团队叙事），在卡层直接禁出。
+export const FORBIDDEN_STAT_PHRASES = [
+  '合同金额',
+  '合同额',
+  '中标金额',
+  '投资额',
+  '团队规模',
+  '团队人数',
+  '人员规模',
+  '人员数量',
+  '人员构成',
+  '团队成员',
+  '岗位编制',
+  '项目团队',
+  '项目规模',
+  '用户规模',
+  '用户量',
+  '用户数',
+  '注册用户',
+  '月活跃用户',
+  '日活跃用户',
+  '月活',
+  '日活',
+  '在线用户',
+] as const
 
 // 子句窗口比 labelOf 的前10后6截断宽：禁词落在 label 窗口外时仍要整卡丢弃
 const CLAUSE_SEPS = SEPS + '\n,;:'
@@ -132,6 +159,25 @@ function clauseForbidden(text: string, start: number, end: number): boolean {
   return FORBIDDEN_STAT_PHRASES.some((p) => clause.includes(p))
 }
 
+// 卡级兜底谓词（子句窗口之外的语义复核）：label 词表 / 资金值 / 人员值。
+// 不做 unit=人 整体封杀——「2000人同时在线压测」这类容量卡是论文量化骨架
+// （语境过滤先行）；人员值仅在与人员语境 label 同卡时丢弃。
+const FORBIDDEN_LABEL_RE =
+  /(团队|人员|员工|成员|岗位|编制|合同|投资|预算|造价|中标|回款|经费|成本|规模|用户量|用户数|注册用户|月活|日活)/
+const PERSONNEL_LABEL_RE = /(团队|人员|员工|成员|岗位|编制)/
+const FUNDS_VALUE_RE = /[￥¥]|(万|亿)元/
+
+export function isForbiddenStat(item: StatItem): boolean {
+  if (FORBIDDEN_LABEL_RE.test(item.label)) return true
+  if (FUNDS_VALUE_RE.test(item.value) || FUNDS_VALUE_RE.test(item.trendFrom ?? '')) {
+    return true
+  }
+  // 静态金额卡的「元」落在 unit 上（value='1200万' + unit='元'），补一刀
+  if (item.unit === '元') return true
+  if (item.unit === '人' && PERSONNEL_LABEL_RE.test(item.label)) return true
+  return false
+}
+
 function scanTrends(text: string): { range: [number, number]; item: StatItem }[] {
   const out: { range: [number, number]; item: StatItem }[] = []
   for (const m of text.matchAll(TREND_RE)) {
@@ -142,16 +188,15 @@ function scanTrends(text: string): { range: [number, number]; item: StatItem }[]
     const end = start + m[0].length
     // 禁词子句内的趋势命中整体丢弃；同子句的静态命中也按同一规则丢弃
     if (clauseForbidden(text, start, end)) continue
-    out.push({
-      range: [start, end],
-      item: {
-        trendFrom: stripComma(from) + (m[2] ?? ''),
-        value: stripComma(to) + (m[6] ?? ''),
-        unit: '',
-        label: labelOf(text, start, end),
-        direction: m[3] ? 'up' : 'down',
-      },
-    })
+    const item: StatItem = {
+      trendFrom: stripComma(from) + (m[2] ?? ''),
+      value: stripComma(to) + (m[6] ?? ''),
+      unit: '',
+      label: labelOf(text, start, end),
+      direction: m[3] ? 'up' : 'down',
+    }
+    if (isForbiddenStat(item)) continue
+    out.push({ range: [start, end], item })
   }
   return out
 }
@@ -165,46 +210,37 @@ function scanStatics(text: string, trendRanges: [number, number][]): StatItem[] 
     if (trendRanges.some(([a, b]) => start < b && end > a)) continue
     // 禁词子句内的静态命中整体丢弃（数字本身含禁词语义时连同子句消失）
     if (clauseForbidden(text, start, end)) continue
-    out.push({
+    const item: StatItem = {
       value: stripComma(m[2] ?? '') + (m[3] ?? ''),
       unit: m[4] ?? '',
       label: labelOf(text, start, end),
-    })
+    }
+    if (isForbiddenStat(item)) continue
+    out.push(item)
   }
   return out
 }
 
-export function extractEnvStats(scale: string, background: string): StatItem[] {
-  const s = (scale || '').slice(0, SCAN_LIMIT)
-  const b = (background || '').slice(0, SCAN_LIMIT)
+export function extractEnvStats(background: string): StatItem[] {
+  const src = (background || '').slice(0, SCAN_LIMIT)
   const picked: StatItem[] = []
   const seenT = new Set<string>()
   const seenV = new Set<string>()
-  const trendRanges: Record<'s' | 'b', [number, number][]> = { s: [], b: [] }
-  for (const [src, key] of [
-    [s, 's'],
-    [b, 'b'],
-  ] as const) {
-    for (const { range, item } of scanTrends(src)) {
-      trendRanges[key].push(range)
-      if (picked.filter((p) => p.trendFrom).length >= 2) continue
-      const k = (item.trendFrom ?? '') + item.value
-      if (seenT.has(k)) continue
-      seenT.add(k)
-      picked.push(item)
-    }
+  const trendRanges: [number, number][] = []
+  for (const { range, item } of scanTrends(src)) {
+    trendRanges.push(range)
+    if (picked.filter((p) => p.trendFrom).length >= 2) continue
+    const k = (item.trendFrom ?? '') + item.value
+    if (seenT.has(k)) continue
+    seenT.add(k)
+    picked.push(item)
   }
-  for (const [src, key] of [
-    [s, 's'],
-    [b, 'b'],
-  ] as const) {
-    for (const item of scanStatics(src, trendRanges[key])) {
-      if (picked.length >= 4) break
-      const k = item.value + item.unit
-      if (seenV.has(k)) continue
-      seenV.add(k)
-      picked.push(item)
-    }
+  for (const item of scanStatics(src, trendRanges)) {
+    if (picked.length >= 4) break
+    const k = item.value + item.unit
+    if (seenV.has(k)) continue
+    seenV.add(k)
+    picked.push(item)
   }
   return picked
 }
@@ -295,6 +331,17 @@ function splitTitle(seg: string): { title: string; body: string } {
   return { title: capTitle(first), body: first.slice(TITLE_CAP) + rest }
 }
 
+// 句子边界与 splitTuningSteps 的 MAJOR_SPLIT 同集（。；：！？!?\n），供 chip 溯源
+const MAJOR_CHARS = '。；：！？!?\n'
+
+function enclosingSentence(text: string, index: number): string {
+  let start = index
+  while (start > 0 && !MAJOR_CHARS.includes(text[start - 1])) start--
+  let end = index
+  while (end < text.length && !MAJOR_CHARS.includes(text[end])) end++
+  return text.slice(start, end)
+}
+
 function trendChipsSameSentence(body: string): TrendChip[] {
   const out: TrendChip[] = []
   for (const m of body.matchAll(TREND_RE)) {
@@ -306,6 +353,7 @@ function trendChipsSameSentence(body: string): TrendChip[] {
       from: stripComma(from) + (m[2] ?? ''),
       to: stripComma(to) + (m[6] ?? ''),
       direction: m[3] ? 'up' : 'down',
+      context: enclosingSentence(body, m.index ?? 0),
     })
   }
   return out
@@ -328,6 +376,7 @@ function crossSentenceChips(priorText: string, outcomeBody: string): TrendChip[]
         from: (before[2] ?? '') + (before[3] ?? '') + (before[4] ?? ''),
         to: (after[2] ?? '') + (after[3] ?? '') + (after[4] ?? ''),
         direction: /降|压缩/.test(after[1] ?? '') ? 'down' : 'up',
+        context: enclosingSentence(priorText, before.index ?? 0),
       })
     }
     if (chips.length >= 2) break

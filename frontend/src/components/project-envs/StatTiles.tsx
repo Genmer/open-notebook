@@ -22,6 +22,12 @@ export function StatTiles({ items }: StatTilesProps) {
           <div
             key={`${item.value}-${i}`}
             data-testid={item.trendFrom ? 'env-detail-metric-trend' : 'env-detail-metric-card'}
+            // label 有前10后6截断，完整语境挂 title（趋势卡带完整 from→to）
+            title={
+              item.trendFrom
+                ? `${item.trendFrom} → ${item.value} ${item.label}`
+                : item.label
+            }
             className="rounded-lg border bg-card p-2.5"
           >
             {item.trendFrom ? (
