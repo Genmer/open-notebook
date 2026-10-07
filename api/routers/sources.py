@@ -1590,7 +1590,9 @@ async def delete_source(source_id: str):
 
 
 @router.get("/sources/{source_id}/locate-passage", response_model=PassageLocateResponse)
-async def locate_passage(source_id: str, passage: str = Query(..., min_length=8, max_length=2000)):
+async def locate_passage(
+    source_id: str, passage: str = Query(..., min_length=8, max_length=2000)
+):
     """Find which passage of a source backs a clicked inline citation.
 
     The passage is the answer text around the citation marker; matching is
@@ -1606,7 +1608,8 @@ async def locate_passage(source_id: str, passage: str = Query(..., min_length=8,
         chunks = await SourceEmbedding.get_passage_chunks(source.id or source_id)
         located = (
             locate_passage_in_chunks(
-                passage, [(c.order if c.order is not None else 0, c.content) for c in chunks]
+                passage,
+                [(c.order if c.order is not None else 0, c.content) for c in chunks],
             )
             if chunks
             else None

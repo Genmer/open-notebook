@@ -252,9 +252,7 @@ async def complete_chunk_session(
             with suppress(OSError):
                 os.unlink(merged_tmp)
             raise InvalidInputError("Package integrity check failed (sha256 mismatch)")
-    await asyncio.to_thread(
-        os.replace, merged_tmp, pending_zip_path()
-    )
+    await asyncio.to_thread(os.replace, merged_tmp, pending_zip_path())
     shutil.rmtree(_chunk_session_dir(upload_id), ignore_errors=True)
     return await scan_import_package(pending_zip_path())
 
@@ -356,9 +354,7 @@ async def _scope_where(
         return {}
     selected = await _resolve_notebook_scope_ids(notebook_ids or [])
     if not selected:
-        raise InvalidInputError(
-            "scope='notebooks' requires at least one notebook id"
-        )
+        raise InvalidInputError("scope='notebooks' requires at least one notebook id")
     selected_rids = [ensure_record_id(v) for v in selected]
     # The notebook→source membership edge is `reference` (in=source,
     # out=notebook — see Notebook.get_sources); SELECT VALUE yields bare
@@ -384,9 +380,7 @@ async def _scope_where(
     return _notebook_scope_filters(selected, sources, notes)
 
 
-async def _count_where(
-    table: str, where: tuple = ("", None)
-) -> int:
+async def _count_where(table: str, where: tuple = ("", None)) -> int:
     clause, params = where
     # GROUP ALL is what makes count() aggregate: without it SurrealDB emits
     # one {count: 1} per row and the first row lies (see _count_table).
@@ -414,9 +408,7 @@ async def estimate_export(
 
     source_count = await _count_where("source", filters.get("source", ("", None)))
     note_count = await _count_where("note", filters.get("note", ("", None)))
-    notebook_count = await _count_where(
-        "notebook", filters.get("notebook", ("", None))
-    )
+    notebook_count = await _count_where("notebook", filters.get("notebook", ("", None)))
     insight_count = await _count_where(
         "source_insight", filters.get("source_insight", ("", None))
     )
@@ -436,11 +428,7 @@ async def estimate_export(
         found = 0
         for row in asset_rows:
             asset = row.get("asset")
-            path = (
-                asset.get("file_path", "").strip()
-                if isinstance(asset, dict)
-                else ""
-            )
+            path = asset.get("file_path", "").strip() if isinstance(asset, dict) else ""
             if not path:
                 continue
             try:
@@ -456,10 +444,7 @@ async def estimate_export(
     # Text volume: mean sampled length x count (a full scan of every
     # full_text would dominate the endpoint's runtime for large libraries).
     chars_where, chars_params = filters.get("source", ("", None))
-    chars_sql = (
-        "SELECT string::len(full_text) AS l FROM source "
-        "WHERE full_text != NONE"
-    )
+    chars_sql = "SELECT string::len(full_text) AS l FROM source WHERE full_text != NONE"
     if chars_where:
         chars_sql += f" AND {chars_where}"
     chars_sql += f" LIMIT {_CHARS_SAMPLE_ROWS}"

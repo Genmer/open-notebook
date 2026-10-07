@@ -6,6 +6,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import {
   CreateProjectEnvRequest,
+  MaterialsSubmitRequest,
   MockGenerateRequest,
   PolishBackgroundRequest,
   RewriteClaimRequest,
@@ -22,9 +23,13 @@ export function useProjectEnvs(view: ProjectEnvView = 'manage') {
     queryKey: QUERY_KEYS.projectEnvs(view),
     queryFn: () => projectEnvsApi.list(view),
     // Rows flip pending -> verified/needs_review server-side; poll only
-    // while at least one verification is actually running.
+    // while at least one verification or materials generation is running.
     refetchInterval: (query) =>
-      query.state.data?.some((env) => env.status === 'pending') ? 5000 : false,
+      query.state.data?.some(
+        (env) => env.status === 'pending' || env.status === 'material_pending'
+      )
+        ? 5000
+        : false,
   })
 }
 
@@ -43,6 +48,16 @@ export function useProjectEnvVerification(id: string | null | undefined) {
     enabled: !!id,
     refetchInterval: (query) =>
       query.state.data?.status === 'pending' ? 3000 : false,
+  })
+}
+
+export function useProjectEnvMaterials(id: string | null | undefined) {
+  return useQuery({
+    queryKey: QUERY_KEYS.projectEnvMaterials(id ?? ''),
+    queryFn: () => projectEnvsApi.getMaterials(id as string),
+    enabled: !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'material_pending' ? 3000 : false,
   })
 }
 
@@ -172,6 +187,38 @@ export function useRegenerateProjectEnv() {
   })
 }
 
+// Mock envs only: (re)run the materials/routes candidate generation job.
+export function useGenerateProjectEnvMaterials() {
+  const invalidate = useInvalidateProjectEnvs()
+  const { t } = useTranslation()
+  return useMutation({
+    mutationFn: (id: string) => projectEnvsApi.generateMaterials(id),
+    onSuccess: () => {
+      invalidate()
+    },
+    onError: (error: unknown) => {
+      toast.error(getApiErrorMessage(error, (k) => t(k)) || t('projectEnvs.materialGenerateFailed'))
+    },
+  })
+}
+
+// Submit the user's material/route selection; the env moves to pending and
+// the drafting+verification pipeline takes over.
+export function useSubmitProjectEnvMaterials() {
+  const invalidate = useInvalidateProjectEnvs()
+  const { t } = useTranslation()
+  return useMutation({
+    mutationFn: ({ envId, data }: { envId: string; data: MaterialsSubmitRequest }) =>
+      projectEnvsApi.submitMaterials(envId, data),
+    onSuccess: () => {
+      invalidate()
+    },
+    onError: (error: unknown) => {
+      toast.error(getApiErrorMessage(error, (k) => t(k)) || t('projectEnvs.materialSubmitFailed'))
+    },
+  })
+}
+
 export function useDismissClaim() {
   const invalidate = useInvalidateProjectEnvs()
   const { t } = useTranslation()
@@ -206,6 +253,29 @@ export function useRewriteClaim() {
     },
     onError: (error: unknown) => {
       toast.error(getApiErrorMessage(error, (k) => t(k)) || t('projectEnvs.claimRewriteFailed'))
+    },
+  })
+}
+
+// Stateless AI suggestion; the caller renders loading/failed states, so this
+// hook deliberately has no toasts of its own.
+export function useSuggestClaimRewrite() {
+  return useMutation({
+    mutationFn: ({ envId, pointId }: { envId: string; pointId: string }) =>
+      projectEnvsApi.suggestClaimRewrite(envId, pointId),
+  })
+}
+
+export function useGenerateGenericParagraph() {
+  const { t } = useTranslation()
+  return useMutation({
+    mutationFn: (envId: string) =>
+      projectEnvsApi.generateGenericParagraph(envId),
+    onError: (error: unknown) => {
+      toast.error(
+        getApiErrorMessage(error, (k) => t(k)) ||
+          t('projectEnvs.genericParagraphGenerateFailed')
+      )
     },
   })
 }

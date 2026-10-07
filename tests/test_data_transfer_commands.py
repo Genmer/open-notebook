@@ -313,6 +313,20 @@ class TransferRecorder:
                 {"title": title, "prompt": prompt}
                 for title, prompt in sorted(self.existing_transformation_titles.items())
             ]
+        if sql == "SELECT id, name FROM project_env":
+            return [
+                {"id": r["id"], "name": r.get("name")}
+                for r in self.tables.get("project_env", [])
+            ]
+        if sql.startswith("SELECT * FROM project_env_verification WHERE project_env ="):
+            env_ref = str((params or {}).get("id"))
+            runs = [
+                r
+                for r in self.tables.get("project_env_verification", [])
+                if str(r.get("project_env")) == env_ref
+            ]
+            runs.sort(key=lambda r: str(r.get("created") or ""))
+            return runs[-1:]
         match = _CONFIG_ROW_RE.match(sql)
         if match:
             return self.tables.get(match.group(1), [])[:1]
@@ -594,7 +608,7 @@ class TestExport:
             assert "files/s1/report.pdf" in names
 
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 2
+            assert manifest["format_version"] == 3
             assert manifest["package_type"] == "full"
             assert manifest["counts"]["source"] == 1
             assert manifest["counts"]["source_embedding"] == 2
@@ -792,19 +806,14 @@ class TestNotebookScopeExport:
         assert "not found" in str(excinfo.value).lower()
 
     @pytest.mark.asyncio
-    async def test_notebook_scope_filters_rows_and_keeps_shared_tables(
-        self, tmp_path
-    ):
+    async def test_notebook_scope_filters_rows_and_keeps_shared_tables(self, tmp_path):
         tables = _default_rows()
         # A second notebook with its own source/note; the export below picks
         # only n1, so every n2-owned row must be absent from the package.
         tables["notebook"].append(
             {"id": "notebook:n2", "name": "Other", "description": "", "archived": False}
         )
-        tables["source"].append(
-            _source_row()
-            | {"id": "source:s2"}
-        )
+        tables["source"].append(_source_row() | {"id": "source:s2"})
         tables["note"].append(
             {
                 "id": "note:note2",
@@ -816,9 +825,7 @@ class TestNotebookScopeExport:
         )
         # Second notebook's membership lives on the reference edge (in=source,
         # out=notebook); refers_to only carries a chat-session citation.
-        tables["reference"].append(
-            {"in": "source:s2", "out": "notebook:n2"}
-        )
+        tables["reference"].append({"in": "source:s2", "out": "notebook:n2"})
         tables["refers_to"] = [
             {"in": "chat_session:c1", "out": NOTEBOOK_ID},
             {"in": "chat_session:c2", "out": "notebook:n2"},
@@ -857,8 +864,7 @@ class TestNotebookScopeExport:
                 member = f"data/{table}.ndjson"
                 assert member in names
                 return [
-                    json.loads(line)
-                    for line in zf.read(member).decode().splitlines()
+                    json.loads(line) for line in zf.read(member).decode().splitlines()
                 ]
 
             notebooks = {r["id"] for r in rows("notebook")}
@@ -1537,7 +1543,7 @@ class TestModelExport:
                 "manifest.json",
             ]
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 2
+            assert manifest["format_version"] == 3
             assert manifest["package_type"] == "models"
             assert manifest["counts"] == {
                 "credential": 1,
@@ -1981,4 +1987,337 @@ class TestValidatePackageVersions:
             )
         with zipfile.ZipFile(package) as zf:
             with pytest.raises(ValueError, match="non-model tables"):
+                dtc._validate_package(zf)
+
+
+# --- project_env transfer (format v3, ADR-015) ---
+
+ENV_ID = "project_env:e1"
+RUN_OLD_ID = "project_env_verification:r_old"
+RUN_NEW_ID = "project_env_verification:r_new"
+
+
+def _project_env_rows(status: str = "needs_review") -> List[Dict[str, Any]]:
+    return [
+        {
+            "id": ENV_ID,
+            "name": "电商平台重构",
+            "background": "系统采用 Redis 7.0 缓存。",
+            "period_start": "2025.01",
+            "period_end": "2025.08",
+            "source_type": "real",
+            "keywords": ["微服务"],
+            "tech_background": "Spring Boot 3.2。",
+            "tuning_process": None,
+            "problems_solutions": None,
+            "my_role": "架构师",
+            "scale": "团队 20 人",
+            "generic_paragraph": "通用段落 ____。",
+            "status": status,
+            "draft_content": None,
+            "verified_snapshot": {"name": "电商平台重构", "background": "快照背景"},
+            "pending_claims": [
+                {"point_id": "p1", "quote": "系统采用 Redis 9.9 缓存。"}
+            ],
+            "time_adjusted": None,
+            "ai_assisted": None,
+            "materials": None,
+            "materials_selection": None,
+            # runtime/fencing state must never enter a package:
+            "verification_token": "tok-local-1",
+            "active_job_id": "command:job1",
+            "verification_progress": {"stage": "verifying", "percent": 55},
+            "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
+            "updated": datetime(2026, 9, 2, tzinfo=timezone.utc),
+        }
+    ]
+
+
+def _project_env_run_rows() -> List[Dict[str, Any]]:
+    """Two completed runs for the same env: only the newer one may export."""
+    common = {
+        "id": RUN_OLD_ID,
+        "project_env": ENV_ID,
+        "token": "tok-old-run",
+        "mode": "material",
+        "status": "completed",
+        "degraded": {"single_model": True},
+        "llm_calls": 12,
+        "summary": {"total": 3, "passed": 2, "failed": 0, "manual": 1},
+        "points": [{"point_id": "p1", "quote": "旧", "state": "manual_review"}],
+        "time_warnings": [],
+        "created": datetime(2026, 9, 1, tzinfo=timezone.utc),
+        "updated": datetime(2026, 9, 1, tzinfo=timezone.utc),
+    }
+    newer = {
+        **common,
+        "id": RUN_NEW_ID,
+        "llm_calls": 20,
+        "summary": {"total": 3, "passed": 3, "failed": 0, "manual": 0},
+        "created": datetime(2026, 9, 5, tzinfo=timezone.utc),
+        "updated": datetime(2026, 9, 5, tzinfo=timezone.utc),
+    }
+    return [common, newer]
+
+
+class TestProjectEnvExport:
+    @pytest.mark.asyncio
+    async def test_full_export_includes_project_env_and_latest_run_only(self, tmp_path):
+        tables = _default_rows()
+        tables["project_env"] = _project_env_rows()
+        tables["project_env_verification"] = _project_env_run_rows()
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
+
+        assert output.success is True
+        assert output.counts["project_env"] == 1
+        assert output.counts["project_env_verification"] == 1
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            assert manifest["format_version"] == 3
+            assert manifest["counts"]["project_env"] == 1
+            assert manifest["counts"]["project_env_verification"] == 1
+
+            env_lines = [
+                json.loads(line)
+                for line in zf.read("data/project_env.ndjson").decode().splitlines()
+            ]
+            assert [row["id"] for row in env_lines] == [ENV_ID]
+
+            run_lines = [
+                json.loads(line)
+                for line in zf.read("data/project_env_verification.ndjson")
+                .decode()
+                .splitlines()
+            ]
+            # only the newest run of the env enters the package
+            assert [row["id"] for row in run_lines] == [RUN_NEW_ID]
+
+    @pytest.mark.asyncio
+    async def test_exported_project_env_rows_drop_runtime_state(self, tmp_path):
+        tables = _default_rows()
+        tables["project_env"] = _project_env_rows()
+        tables["project_env_verification"] = _project_env_run_rows()
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            env_row = json.loads(
+                zf.read("data/project_env.ndjson").decode().splitlines()[0]
+            )
+            run_row = json.loads(
+                zf.read("data/project_env_verification.ndjson").decode().splitlines()[0]
+            )
+
+        # fencing/runtime state stays local; the run's token is history too
+        for forbidden in (
+            "verification_token",
+            "active_job_id",
+            "verification_progress",
+        ):
+            assert forbidden not in env_row
+        assert "token" not in run_row
+        assert env_row["generic_paragraph"] == "通用段落 ____。"
+        assert env_row["status"] == "needs_review"
+        assert run_row["project_env"] == ENV_ID
+
+    @pytest.mark.asyncio
+    async def test_topic_and_models_scope_exports_carry_no_project_env(
+        self, tmp_path, encryption_key
+    ):
+        tables = _default_rows()
+        tables["project_env"] = _project_env_rows()
+        tables["project_env_verification"] = _project_env_run_rows()
+
+        nb_output = await _run_export(
+            TransferRecorder(tables=tables),
+            str(tmp_path / "exports_nb"),
+            str(tmp_path),
+            scope="notebooks",
+            notebook_ids=[NOTEBOOK_ID],
+        )
+        with zipfile.ZipFile(nb_output.package_path) as zf:
+            names = zf.namelist()
+        assert "data/project_env.ndjson" not in names
+        assert "data/project_env_verification.ndjson" not in names
+
+        models_output = await _run_export(
+            TransferRecorder(tables=tables),
+            str(tmp_path / "exports_models"),
+            str(tmp_path),
+            scope="models",
+        )
+        with zipfile.ZipFile(models_output.package_path) as zf:
+            names = zf.namelist()
+        assert "data/project_env.ndjson" not in names
+        assert "data/project_env_verification.ndjson" not in names
+
+
+class TestProjectEnvImport:
+    def _package(
+        self,
+        path,
+        env_rows: List[Dict[str, Any]],
+        run_rows: List[Dict[str, Any]],
+        format_version: int = 3,
+    ) -> None:
+        rows: Dict[str, List[Dict[str, Any]]] = {}
+        if env_rows:
+            rows["project_env"] = env_rows
+        if run_rows:
+            rows["project_env_verification"] = run_rows
+        _build_package(path, rows, {}, format_version=format_version)
+
+    @staticmethod
+    def _packaged_env(status: str = "needs_review") -> Dict[str, Any]:
+        row = _project_env_rows(status)[0]
+        row.pop("verification_token")
+        row.pop("active_job_id")
+        row.pop("verification_progress")
+        row["created"] = "2026-09-01T00:00:00+00:00"
+        row["updated"] = "2026-09-02T00:00:00+00:00"
+        return row
+
+    @staticmethod
+    def _packaged_run(run_id: str, env_ref: str = ENV_ID) -> Dict[str, Any]:
+        run = dict(_project_env_run_rows()[0])
+        run["id"] = run_id
+        run["project_env"] = env_ref
+        run["created"] = "2026-09-01T00:00:00+00:00"
+        run["updated"] = "2026-09-01T00:00:00+00:00"
+        # a real v3 package never carries the fencing token (export whitelists
+        # it out); mirror that so the import happy path stays warning-free
+        run.pop("token", None)
+        return run
+
+    @pytest.mark.asyncio
+    async def test_import_creates_env_and_run_without_runtime_state(self, tmp_path):
+        package = tmp_path / "pkg.zip"
+        self._package(package, [self._packaged_env()], [self._packaged_run(RUN_NEW_ID)])
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported["project_env"] == 1
+        assert output.imported["project_env_verification"] == 1
+        assert output.warnings == []
+
+        env_params = _params_of(recorder, f"CREATE {ENV_ID} SET")
+        assert env_params["p0_status"] == "needs_review"
+        assert env_params["p0_generic_paragraph"] == "通用段落 ____。"
+        assert env_params["p0_pending_claims"] == [
+            {"point_id": "p1", "quote": "系统采用 Redis 9.9 缓存。"}
+        ]
+        # fencing/runtime fields are not writable on import
+        for forbidden in (
+            "verification_token",
+            "active_job_id",
+            "verification_progress",
+        ):
+            assert not any(k.startswith(f"p0_{forbidden}") for k in env_params)
+
+        run_params = _params_of(recorder, f"CREATE {RUN_NEW_ID} SET")
+        assert run_params["p0_project_env"].id == "e1"  # remapped to RecordID
+
+    @pytest.mark.asyncio
+    async def test_import_pending_status_remaps_to_failed_with_progress_hint(
+        self, tmp_path
+    ):
+        for status in ("pending", "material_pending"):
+            package = tmp_path / f"pkg_{status}.zip"
+            self._package(
+                package,
+                [self._packaged_env(status)],
+                [self._packaged_run(RUN_NEW_ID)],
+            )
+            recorder = TransferRecorder(models=["model:m1"])
+
+            output = await _run_import(recorder, str(tmp_path), package)
+
+            assert output.success is True
+            env_params = _params_of(recorder, f"CREATE {ENV_ID} SET")
+            assert env_params["p0_status"] == "failed"
+            progress = env_params["p0_verification_progress"]
+            assert progress["stage"] == "done"
+            assert progress["percent"] == 100
+            assert progress["error"] == "导入时验证未完成，请重新验证"
+
+    @pytest.mark.asyncio
+    async def test_import_duplicate_env_name_warns_but_imports(self, tmp_path):
+        package = tmp_path / "pkg.zip"
+        self._package(package, [self._packaged_env()], [self._packaged_run(RUN_NEW_ID)])
+        local_rows = _project_env_rows()
+        local_rows[0]["id"] = "project_env:local1"  # same name, different id
+        recorder = TransferRecorder(
+            tables={"project_env": local_rows}, models=["model:m1"]
+        )
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported["project_env"] == 1
+        codes = [w.code for w in output.warning_codes]
+        assert "projectEnvNameDuplicate" in codes
+        assert any("already exists under a different id" in w for w in output.warnings)
+        assert _params_of(recorder, f"CREATE {ENV_ID} SET")  # imported anyway
+
+    @pytest.mark.asyncio
+    async def test_import_orphan_run_skips_with_warning(self, tmp_path):
+        package = tmp_path / "pkg.zip"
+        self._package(
+            package,
+            [self._packaged_env()],
+            [self._packaged_run(RUN_NEW_ID, env_ref="project_env:gone")],
+        )
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported.get("project_env_verification", 0) == 0
+        assert output.skipped["project_env_verification"] == 1
+        codes = [w.code for w in output.warning_codes]
+        assert "projectEnvRunOrphan" in codes
+        assert not [sql for sql, _ in recorder.writes if RUN_NEW_ID in sql]
+
+    @pytest.mark.asyncio
+    async def test_import_project_env_reentry_skips_everything(self, tmp_path):
+        package = tmp_path / "pkg.zip"
+        self._package(package, [self._packaged_env()], [self._packaged_run(RUN_NEW_ID)])
+        recorder = TransferRecorder(
+            existing_ids={
+                "project_env": {ENV_ID},
+                "project_env_verification": {RUN_NEW_ID},
+            },
+            models=["model:m1"],
+        )
+
+        output = await _run_import(recorder, str(tmp_path), package)
+
+        assert output.success is True
+        assert output.imported == {}
+        assert output.skipped["project_env"] == 1
+        assert output.skipped["project_env_verification"] == 1
+        assert output.warnings == []
+        assert not [
+            sql for sql, _ in recorder.writes if sql.startswith("CREATE project_env")
+        ]
+
+    def test_rejects_v2_package_with_project_env_members(self, tmp_path):
+        package = tmp_path / "v2_with_env.zip"
+        with zipfile.ZipFile(package, "w") as zf:
+            zf.writestr(
+                "data/project_env.ndjson",
+                json.dumps(self._packaged_env(), default=str) + "\n",
+            )
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"format_version": 2, "counts": {}}),
+            )
+        with zipfile.ZipFile(package) as zf:
+            with pytest.raises(ValueError, match="format_version 3"):
                 dtc._validate_package(zf)

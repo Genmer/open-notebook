@@ -1658,6 +1658,7 @@ class ProjectEnvCreate(BaseModel):
     problems_solutions: Optional[str] = None
     my_role: Optional[str] = None
     scale: Optional[str] = None
+    generic_paragraph: Optional[str] = Field(None, max_length=5000)
     background_ai_polished: bool = Field(
         False, description="Background text came from the polish endpoint"
     )
@@ -1675,6 +1676,7 @@ class ProjectEnvUpdate(BaseModel):
     problems_solutions: Optional[str] = None
     my_role: Optional[str] = None
     scale: Optional[str] = None
+    generic_paragraph: Optional[str] = Field(None, max_length=5000)
 
 
 class ProjectEnvResponse(BaseModel):
@@ -1685,11 +1687,13 @@ class ProjectEnvResponse(BaseModel):
     period_end: str = ""
     source_type: str
     keywords: Optional[List[str]] = None
+    industry: Optional[str] = None
     tech_background: str = ""
     tuning_process: Optional[str] = None
     problems_solutions: Optional[str] = None
     my_role: Optional[str] = None
     scale: Optional[str] = None
+    generic_paragraph: Optional[str] = None
     # Mock drafts live here until promotion; the detail dialog shows them
     # while the environment is still pending verification.
     draft_content: Optional[Dict[str, Any]] = None
@@ -1709,8 +1713,10 @@ class ProjectEnvResponse(BaseModel):
 class MockGenerateRequest(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     keywords: List[str] = Field(..., min_length=2, max_length=8)
+    industry: Optional[str] = Field(None, max_length=20)
     period_start: Optional[str] = Field(None, description="YYYY.MM, optional")
     period_end: Optional[str] = Field(None, description="YYYY.MM, optional")
+    flow: str = Field("direct", description="direct | materials")
 
 
 class MockGenerateResponse(BaseModel):
@@ -1737,15 +1743,41 @@ class VerificationStatusResponse(BaseModel):
     degraded: Optional[Dict[str, Any]] = None
 
 
+class MaterialsStatusResponse(BaseModel):
+    status: str
+    job: Optional[Dict[str, Any]] = None
+    progress: Optional[Dict[str, Any]] = None
+    materials: Optional[Dict[str, Any]] = None
+    routes: Optional[Dict[str, Any]] = None
+    selection: Optional[Dict[str, Any]] = None
+
+
+class MaterialsSubmitRequest(BaseModel):
+    kind: str = Field(..., description="materials | routes")
+    material_ids: Optional[List[str]] = None  # kind=materials 时必填非空
+    route_id: Optional[str] = None  # kind=routes 时必填
+
+
 class ReverifyResponse(BaseModel):
     job_id: str
 
 
 class RewriteClaimRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000)
+    text: str = Field(..., min_length=1, max_length=4000)
 
 
 class RewriteClaimResponse(BaseModel):
     passed: bool
     lanes: Dict[str, Any]
     env: ProjectEnvResponse
+
+
+class SuggestClaimRewriteResponse(BaseModel):
+    suggestion: str = Field(..., description="Suggested replacement paragraph")
+    explanation: str = Field(
+        ..., description="What was fixed and why it should pass verification"
+    )
+
+
+class GenericParagraphResponse(BaseModel):
+    paragraph: str

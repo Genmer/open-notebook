@@ -29,6 +29,10 @@ SOURCE_RECORD = RecordID("source", "s1")
 
 
 class FakeAnnotationStore:
+    # Attached by the store fixture; consumed via the Source.get stub.
+    source: SimpleNamespace
+    source_stub: AsyncMock
+
     def __init__(self):
         self.rows: dict = {}
 

@@ -1,0 +1,4 @@
+-- 素材/路线候选与用户选择，均为自由结构 object；FLEXIBLE 的原因同 37
+-- （strict object 会静默丢自由 dict 写入，SurrealDB v2.6.5）。
+DEFINE FIELD materials ON TABLE project_env FLEXIBLE TYPE option<object>;
+DEFINE FIELD materials_selection ON TABLE project_env FLEXIBLE TYPE option<object>;

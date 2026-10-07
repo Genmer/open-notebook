@@ -834,3 +834,25 @@
 .textLayer.selecting .endOfContent {
   top: 0;
 }
+
+/* 项目卡片身份色条：缓慢漂移的纵向渐变（流动感，prefers-reduced-motion 时静止） */
+@keyframes env-accent-drift {
+  from {
+    background-position: 50% 0%;
+  }
+  to {
+    background-position: 50% 100%;
+  }
+}
+
+.env-accent-ribbon {
+  background-size: 100% 320%;
+  animation: env-accent-drift 9s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .env-accent-ribbon {
+    animation: none;
+    background-size: 100% 100%;
+  }
+}

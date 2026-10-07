@@ -12,14 +12,15 @@ import {
 } from '@/components/project-envs/ProjectEnvList'
 import { CreateEnvWizard } from '@/components/project-envs/CreateEnvWizard'
 import { EnvDetailDialog } from '@/components/project-envs/EnvDetailDialog'
-import type { ProjectEnv } from '@/lib/types/api'
 
 export default function ProjectEnvironmentsPage() {
   const { t } = useTranslation()
   const { data: envs, isLoading, refetch } = useProjectEnvs('manage')
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardEnvId, setWizardEnvId] = useState<string | null>(null)
-  const [detailEnv, setDetailEnv] = useState<ProjectEnv | null>(null)
+  // 存 id 而非对象：保存/处置后列表刷新时弹窗数据跟着走，避免 stale snapshot
+  const [detailEnvId, setDetailEnvId] = useState<string | null>(null)
+  const detailEnv = envs?.find((env) => env.id === detailEnvId) ?? null
 
   const openVerification = (envId: string) => {
     setWizardEnvId(envId)
@@ -63,7 +64,7 @@ export default function ProjectEnvironmentsPage() {
               envs={envs}
               isLoading={isLoading}
               onOpenVerification={openVerification}
-              onOpenDetail={setDetailEnv}
+              onOpenDetail={(env) => setDetailEnvId(env.id)}
             />
           ) : (
             <ProjectEnvEmptyState
@@ -84,7 +85,7 @@ export default function ProjectEnvironmentsPage() {
             env={detailEnv}
             open={!!detailEnv}
             onOpenChange={(next) => {
-              if (!next) setDetailEnv(null)
+              if (!next) setDetailEnvId(null)
             }}
           />
         </div>

@@ -364,3 +364,48 @@ async def test_parallel_stream_endpoint_closed_gate_sends_none():
             events.append(json.loads(line[len("data: ") :]))
     assert any(e.get("type") == "run_complete" for e in events), events
     assert captured["project_env_context"] is None
+
+
+# --- generic paragraph injection (迁移 39) ---
+
+
+@pytest.mark.asyncio
+async def test_verified_env_appends_generic_paragraph_block():
+    env = _env(status="verified", generic_paragraph="本系统采用 ____ 架构。<u>要点</u>")
+    result = await _render(env)
+    assert result["state"] == "verified"
+    assert "通用段落（写作时直接套用，填空处按项目实情填充）：" in result["text"]
+    assert "本系统采用 ____ 架构。<u>要点</u>" in result["text"]
+    assert result["text"].index("验证通过时间") < result["text"].index("通用段落")
+
+
+@pytest.mark.asyncio
+async def test_verified_env_without_generic_paragraph_stays_unchanged():
+    result = await _render(_env(status="verified"))
+    assert result["state"] == "verified"
+    assert "通用段落" not in result["text"]
+
+
+@pytest.mark.asyncio
+async def test_pending_stale_includes_note_snapshot_and_generic_paragraph():
+    env = _env(status="pending", generic_paragraph="通用段落内容")
+    result = await _render(env)
+    assert result["state"] == "pending_stale"
+    assert result["text"].startswith(INJECTABLE_STATUS_NOTE)
+    assert "某电商平台微服务化改造项目" in result["text"]
+    assert "通用段落内容" in result["text"]
+
+
+@pytest.mark.asyncio
+async def test_generic_paragraph_not_part_of_frozen_snapshot():
+    env = _env(status="verified", generic_paragraph="用户写的段落")
+    snapshot = env.build_snapshot()
+    assert "generic_paragraph" not in snapshot
+
+
+@pytest.mark.asyncio
+async def test_generic_paragraph_edit_keeps_snapshot():
+    env = _env(status="verified", generic_paragraph="旧段落")
+    before = env.verified_snapshot
+    env.generic_paragraph = "编辑后的段落"
+    assert env.verified_snapshot is before

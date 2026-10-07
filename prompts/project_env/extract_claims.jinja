@@ -16,9 +16,10 @@ Only falsifiable technical assertions — statements a reviewer could check agai
 - exempt: narrative-only sentences that make no checkable claim — mark these exempt instead of skipping
 
 Rules:
-- Quote must be copied verbatim from the field text, one sentence, keep the original language.
+- The verification unit is ONE natural paragraph: quote must be copied verbatim from the field text, whole paragraph, keep the original language.
+- One paragraph yields at most one claim; several technology+version/metric facts inside the same paragraph merge into that single claim.
 - field must be the bracket label the quote came from.
-- Do NOT invent or merge claims; do NOT extract opinions, plans or marketing fluff as semantic claims (mark them exempt).
+- Do NOT invent claims; do NOT extract opinions, plans or marketing fluff as semantic claims (mark them exempt).
 {% if previous_error %}
 A previous attempt was unusable: {{ previous_error }}
 Return strictly valid JSON this time.

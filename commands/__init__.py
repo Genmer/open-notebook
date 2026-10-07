@@ -22,7 +22,10 @@ from .embedding_commands import (
     rebuild_embeddings_command,
 )
 from .podcast_commands import generate_podcast_command
-from .project_env_commands import verify_project_env_command
+from .project_env_commands import (
+    generate_project_env_materials_command,
+    verify_project_env_command,
+)
 from .source_commands import process_source_command
 
 __all__ = [
@@ -41,6 +44,7 @@ __all__ = [
     # Other commands
     "generate_artifact_command",
     "generate_podcast_command",
+    "generate_project_env_materials_command",
     "process_source_command",
     "verify_project_env_command",
 ]

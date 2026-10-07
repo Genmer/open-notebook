@@ -269,7 +269,13 @@ export interface APIError {
 // Project environment types (软考项目环境) — mirror of the backend
 // ProjectEnvResponse family in api/models.py.
 export type ProjectEnvSourceType = 'real' | 'mock'
-export type ProjectEnvStatus = 'pending' | 'verified' | 'needs_review' | 'failed'
+export type ProjectEnvStatus =
+  | 'pending'
+  | 'material_pending'
+  | 'material_ready'
+  | 'verified'
+  | 'needs_review'
+  | 'failed'
 
 export interface ProjectEnvAiAssisted {
   polish_count?: number
@@ -310,6 +316,7 @@ export interface ProjectEnv {
   problems_solutions: string | null
   my_role: string | null
   scale: string | null
+  generic_paragraph?: string | null
   // Absent until the mock drafting phase writes it (the serializer omits
   // unset fields), hence optional in addition to nullable.
   draft_content?: Record<string, unknown> | null
@@ -338,6 +345,7 @@ export interface CreateProjectEnvRequest {
   problems_solutions?: string | null
   my_role?: string | null
   scale?: string | null
+  generic_paragraph?: string | null
   background_ai_polished?: boolean
 }
 
@@ -353,18 +361,71 @@ export interface UpdateProjectEnvRequest {
   problems_solutions?: string | null
   my_role?: string | null
   scale?: string | null
+  generic_paragraph?: string | null
 }
 
 export interface MockGenerateRequest {
   name?: string
   keywords: string[]
+  industry?: string
   period_start?: string
   period_end?: string
+  // 'direct' (default) drafts+verifies from keywords right away;
+  // 'materials' stops at the candidate step for user selection.
+  flow?: 'direct' | 'materials'
 }
 
 export interface MockGenerateResponse {
   id: string
   job_id: string
+}
+
+// Materials / routes candidates (mock env 素材生成步骤) — mirror of the
+// backend MaterialsStatusResponse family. category is a TEXT_FIELDS id.
+export interface ProjectEnvMaterialItem {
+  id: string
+  category: string
+  title: string
+  text: string
+  tags?: string[]
+}
+
+export interface ProjectEnvRouteProposal {
+  id: string
+  title: string
+  summary: string
+  tech_stack: string[]
+  scale: string
+  role: string
+  highlights: string[]
+  period?: { start: string; end: string }
+}
+
+export interface ProjectEnvCandidateList<T> {
+  items: T[]
+  generated_at?: string
+}
+
+export interface ProjectEnvMaterialsSelection {
+  kind: 'materials' | 'routes' | string
+  material_ids?: string[] | null
+  route_id?: string | null
+  submitted_at?: string
+}
+
+export interface ProjectEnvMaterialsStatus {
+  status: ProjectEnvStatus | string
+  job?: { id: string; status?: string; error_message?: string | null } | null
+  progress?: ProjectEnvVerificationProgress | null
+  materials?: ProjectEnvCandidateList<ProjectEnvMaterialItem> | null
+  routes?: ProjectEnvCandidateList<ProjectEnvRouteProposal> | null
+  selection?: ProjectEnvMaterialsSelection | null
+}
+
+export interface MaterialsSubmitRequest {
+  kind: 'materials' | 'routes'
+  material_ids?: string[]
+  route_id?: string
 }
 
 export interface PolishBackgroundRequest {
@@ -442,6 +503,15 @@ export interface RewriteClaimResponse {
 
 export interface ReverifyResponse {
   job_id: string
+}
+
+export interface SuggestClaimRewriteResponse {
+  suggestion: string
+  explanation: string
+}
+
+export interface GenericParagraphResponse {
+  paragraph: string
 }
 
 export interface ProjectEnvDeleteResponse {

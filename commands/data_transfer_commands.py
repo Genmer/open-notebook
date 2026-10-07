@@ -74,10 +74,10 @@ TRANSFER_RETRY_CONFIG = {
     "retry_log_level": "warning",
 }
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 # v1 packages (data/files only) stay importable; model members in a v1 package
 # are a packaging bug and reject the whole import.
-SUPPORTED_FORMAT_VERSIONS = (1, 2)
+SUPPORTED_FORMAT_VERSIONS = (1, 2, 3)
 EXPORT_BATCH = 500
 WRITE_BATCH = 100
 # Per-file skip details kept for the summary; beyond this only the counter
@@ -115,11 +115,20 @@ CONFIG_TABLES = ("content_settings", "default_prompts", "annotation_settings")
 # the CONFIG_TABLES entries, credential/model are regular keyed records.
 MODEL_CONFIG_TABLES = ("credential", "model", "default_models")
 SINGLETON_TABLES = CONFIG_TABLES + ("default_models",)
+# Project environments and their verification detail rows (format v3). Only
+# the latest run per env is exported; fencing tokens are whitelisted out on
+# both sides so imported needs_review envs stay directly actionable.
+PROJECT_ENV_TABLES = ("project_env", "project_env_verification")
 # Fork rule: every new project-data table (user-owned domain data) MUST be
 # added to this export/import scope — see the README fork log. Known gap:
-# agent / project_env are not exported yet.
+# agent is not exported yet.
 ALL_TABLES = (
-    DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES + MODEL_CONFIG_TABLES
+    DATA_TABLES
+    + EDGE_TABLES
+    + (EMBEDDING_TABLE,)
+    + CONFIG_TABLES
+    + MODEL_CONFIG_TABLES
+    + PROJECT_ENV_TABLES
 )
 
 # The query layer excludes model_usage/command/chat_session/refers_to from
@@ -278,6 +287,46 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
         "default_tools_model",
         "default_qa_model",
     ),
+    # Deliberately excluded: verification_token / active_job_id /
+    # verification_progress are fencing/runtime state, not user data (the
+    # import's pending->failed remap writes a fresh progress object).
+    "project_env": (
+        "name",
+        "background",
+        "period_start",
+        "period_end",
+        "source_type",
+        "keywords",
+        "industry",
+        "tech_background",
+        "tuning_process",
+        "problems_solutions",
+        "my_role",
+        "scale",
+        "generic_paragraph",
+        "status",
+        "draft_content",
+        "verified_snapshot",
+        "pending_claims",
+        "time_adjusted",
+        "ai_assisted",
+        "materials",
+        "materials_selection",
+        "created",
+        "updated",
+    ),
+    "project_env_verification": (
+        "project_env",
+        "mode",
+        "status",
+        "degraded",
+        "llm_calls",
+        "summary",
+        "points",
+        "time_warnings",
+        "created",
+        "updated",
+    ),
 }
 ASSET_FIELDS = ("file_path", "url")
 
@@ -288,6 +337,7 @@ RECORD_FIELDS: Dict[str, Set[str]] = {
     EMBEDDING_TABLE: {"source"},
     "model": {"credential"},
     "source_annotation": {"source"},
+    "project_env_verification": {"project_env"},
 }
 DATETIME_FIELDS = {"created", "updated", "last_viewed_at", "last_classified_at"}
 
@@ -653,7 +703,9 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
     prefix = (
         "open_notebook_models"
         if models_scope
-        else "open_notebook_topic" if notebooks_scope else "open_notebook_export"
+        else "open_notebook_topic"
+        if notebooks_scope
+        else "open_notebook_export"
     )
     filename = f"{prefix}_{ts}.zip"
     tmp_path = os.path.join(EXPORTS_FOLDER, f".export_{ts}.zip.tmp")
@@ -719,21 +771,26 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             "export", stage, percent, message, stages=stage_stats, **kw
         )
 
-    counted_tables: Tuple[str, ...] = (
-        MODEL_CONFIG_TABLES
-        if models_scope
-        else (
-            ALL_TABLES
-            if include_models
-            else DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,) + CONFIG_TABLES
-        )
-    )
+    # project_env data rides only in full packages: topic packages describe
+    # notebooks, model packages describe credentials/models.
+    project_env_scope = not models_scope and not notebooks_scope
+    counted_tables: Tuple[str, ...] = DATA_TABLES + EDGE_TABLES + (EMBEDDING_TABLE,)
+    if not models_scope:
+        counted_tables += CONFIG_TABLES
+    if include_models:
+        counted_tables += MODEL_CONFIG_TABLES
+    if project_env_scope:
+        counted_tables += PROJECT_ENV_TABLES
     if models_scope:
         export_tables: Tuple[str, ...] = ("credential", "model")
-    elif include_models:
-        export_tables = DATA_TABLES + EDGE_TABLES + ("credential", "model")
     else:
         export_tables = DATA_TABLES + EDGE_TABLES
+        if include_models:
+            export_tables += ("credential", "model")
+        if project_env_scope:
+            # only the env table goes through the generic paged loop; its
+            # verification runs are exported latest-per-env further below
+            export_tables += ("project_env",)
     singleton_tables: Tuple[str, ...] = (
         ("default_models",)
         if models_scope
@@ -786,6 +843,7 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
             tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6
         ) as zf:
             await report("exporting_tables", stages["exporting_tables"][0])
+            exported_env_ids: List[str] = []
             for i, table in enumerate(export_tables):
                 if table == "source":
                     columns = SOURCE_EXPORT_COLUMNS
@@ -825,6 +883,8 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                                 plain = decrypted_keys.get(str(row.get("id")))
                                 if plain is not None:
                                     payload["api_key"] = plain
+                            elif table == "project_env":
+                                exported_env_ids.append(str(row.get("id")))
                         _write_ndjson_line(member, payload)
                 # counts must describe the package contents, not the source
                 # table (source_view rows are filtered down on export).
@@ -842,6 +902,26 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                         "rows": written,
                     },
                 )
+
+            if project_env_scope:
+                # Verification detail: only the latest run per exported env
+                # enters the package — older runs are history whose fencing
+                # token is stale anyway.
+                written_runs = 0
+                with zf.open(f"data/{PROJECT_ENV_TABLES[1]}.ndjson", "w") as member:
+                    for env_id_str in exported_env_ids:
+                        run_rows = await repo_query(
+                            "SELECT * FROM project_env_verification "
+                            "WHERE project_env = $id ORDER BY created DESC LIMIT 1",
+                            {"id": ensure_record_id(env_id_str)},
+                        )
+                        for run_row in run_rows or []:
+                            _write_ndjson_line(
+                                member,
+                                _export_row("project_env_verification", run_row),
+                            )
+                            written_runs += 1
+                counts["project_env_verification"] = written_runs
 
             for table in singleton_tables:
                 # Named distinctly from the paged-loop `row` above: this one
@@ -913,9 +993,7 @@ async def export_data_command(input_data: ExportDataInput) -> ExportDataOutput:
                 )
                 total_chunks = counts.get(EMBEDDING_TABLE, 0)
                 written = 0
-                emb_where, emb_params = scope_filters.get(
-                    EMBEDDING_TABLE, ("", None)
-                )
+                emb_where, emb_params = scope_filters.get(EMBEDDING_TABLE, ("", None))
                 with zf.open(f"data/{EMBEDDING_TABLE}.ndjson", "w") as member:
                     async for row in _iter_paged(
                         EMBEDDING_EXPORT_COLUMNS,
@@ -1191,6 +1269,8 @@ def _validate_package(zf: zipfile.ZipFile) -> PackageManifest:
         )
     if manifest.format_version < 2 and data_tables & set(MODEL_CONFIG_TABLES):
         raise ValueError("Model configuration members require package format_version 2")
+    if manifest.format_version < 3 and data_tables & set(PROJECT_ENV_TABLES):
+        raise ValueError("project_env members require package format_version 3")
     if manifest.package_type == "models" and data_tables - set(MODEL_CONFIG_TABLES):
         unexpected = sorted(data_tables - set(MODEL_CONFIG_TABLES))
         raise ValueError(
@@ -1518,7 +1598,7 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
 
             await report("precheck", IMPORT_STAGES["precheck"][0])
             existing_ids: Dict[str, Set[str]] = {}
-            for table in DATA_TABLES + (EMBEDDING_TABLE,):
+            for table in DATA_TABLES + (EMBEDDING_TABLE,) + PROJECT_ENV_TABLES:
                 rows = await repo_query(f"SELECT VALUE id FROM {table}")
                 existing_ids[table] = {str(r) for r in rows or []}
             # Transformations are keyed by title in the UI (the insight-type
@@ -1655,6 +1735,108 @@ async def import_data_command(input_data: ImportDataInput) -> ImportDataOutput:
                         "total": len(DATA_TABLES),
                     },
                 )
+
+            # Project-env members (format v3): env rows first, then their
+            # verification runs. Fencing tokens are whitelisted out on both
+            # sides, so an imported needs_review env's dismiss/rewrite work
+            # right away until a local reverify rotates the token.
+            if any(f"data/{table}.ndjson" in names for table in PROJECT_ENV_TABLES):
+                local_env_owner: Dict[str, str] = {
+                    str(r.get("name") or ""): str(r.get("id"))
+                    for r in await repo_query("SELECT id, name FROM project_env") or []
+                }
+                imported_env_ids: Set[str] = set()
+                batch = []
+                with _open_member(zf, "project_env") as member:
+                    for raw in member:
+                        line = raw.decode("utf-8").strip()
+                        if not line:
+                            continue
+                        row = _parse_member_row("project_env", line)
+                        rid = ensure_record_id(row["id"])
+                        if str(rid) in existing_ids.get("project_env", set()):
+                            skipped["project_env"] = skipped.get("project_env", 0) + 1
+                            continue
+                        name = str(row.get("name") or "")
+                        owner = local_env_owner.get(name)
+                        if owner and owner != str(rid):
+                            warnings.add(
+                                "projectEnvNameDuplicate",
+                                f"Project env '{name}' already exists under a "
+                                "different id; imported anyway",
+                                name=name,
+                            )
+                        prepared = _prepare_import_row("project_env", row, warnings)
+                        # An in-flight status can never finish after the move:
+                        # mark it failed with a progress note telling the user
+                        # to re-verify (an env that never verified is useless
+                        # but harmless).
+                        if str(prepared.get("status") or "") in (
+                            "pending",
+                            "material_pending",
+                        ):
+                            prepared["status"] = "failed"
+                            prepared["verification_progress"] = {
+                                "stage": "done",
+                                "percent": 100,
+                                "message": "",
+                                "error": "导入时验证未完成，请重新验证",
+                                "updated": datetime.now(timezone.utc).isoformat(),
+                            }
+                        batch.append((rid, prepared))
+                        imported_env_ids.add(str(rid))
+                        local_env_owner.setdefault(name, str(rid))
+                        if len(batch) >= WRITE_BATCH:
+                            await _write_create_batch("project_env", batch, imported)
+                            batch = []
+                    if batch:
+                        await _write_create_batch("project_env", batch, imported)
+
+                batch = []
+                with _open_member(zf, "project_env_verification") as member:
+                    for raw in member:
+                        line = raw.decode("utf-8").strip()
+                        if not line:
+                            continue
+                        row = _parse_member_row("project_env_verification", line)
+                        rid = ensure_record_id(row["id"])
+                        if str(rid) in existing_ids.get(
+                            "project_env_verification", set()
+                        ):
+                            skipped["project_env_verification"] = (
+                                skipped.get("project_env_verification", 0) + 1
+                            )
+                            continue
+                        env_ref = str(row.get("project_env") or "")
+                        known_env = (
+                            env_ref in imported_env_ids
+                            or env_ref in existing_ids.get("project_env", set())
+                        )
+                        if not known_env:
+                            skipped["project_env_verification"] = (
+                                skipped.get("project_env_verification", 0) + 1
+                            )
+                            warnings.add(
+                                "projectEnvRunOrphan",
+                                f"Skipped verification run {rid}: its project "
+                                f"env {env_ref} is neither present locally nor "
+                                "in the package",
+                                env=env_ref,
+                            )
+                            continue
+                        prepared = _prepare_import_row(
+                            "project_env_verification", row, warnings
+                        )
+                        batch.append((rid, prepared))
+                        if len(batch) >= WRITE_BATCH:
+                            await _write_create_batch(
+                                "project_env_verification", batch, imported
+                            )
+                            batch = []
+                    if batch:
+                        await _write_create_batch(
+                            "project_env_verification", batch, imported
+                        )
 
             # Config records merge unconditionally into the fixed target id:
             # MERGE keeps target fields absent from the package untouched, and

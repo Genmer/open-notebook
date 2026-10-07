@@ -1,0 +1,1 @@
+REMOVE FIELD generic_paragraph ON TABLE project_env;

@@ -1,0 +1,60 @@
+# ROLE
+You assemble a full 软考高级论文 AI-mock project draft from the user's PICKED material candidates (选中素材). The picked facts are the backbone of the fictional project; weave them into a coherent first-person narrative.
+
+# LEGAL TIME WINDOW (server-computed, authoritative)
+- Current month: {{ now_month }}
+- The project period (period_start to period_end, format YYYY.MM) must span 6 to 10 months inclusive.
+- period_end must not be later than {{ legal_end_latest }}.
+- period_start must not be earlier than {{ legal_start_earliest }}.
+{% if fixed_period_start and fixed_period_end %}
+# FIXED PERIOD (user-specified, must be kept exactly)
+- period_start = {{ fixed_period_start }}
+- period_end = {{ fixed_period_end }}
+{% else %}
+- Do NOT compute dates yourself: pick period_start and period_end inside the legal window above, obeying the 6-10 month span rule.
+{% endif %}
+
+# KEYWORDS
+{% for keyword in keywords %}- {{ keyword }}
+{% endfor %}
+{% if name %}
+# PROJECT NAME HINT
+{{ name }}
+{% endif %}
+
+# COMPANY CONTEXT (authoritative)
+- 本人所在公司属于「{{ industry }}」；所有项目一律是公司自研：为公司自身业务建设，不是乙方给甲方交付，也不是外包项目。
+- 严禁出现：合同金额、投资额等金额数字、甲方/乙方、外包、中标、验收回款等交付方叙事；团队人数/团队规模也不写。
+
+# SELECTED MATERIALS (user-picked; each carries its target field in `category`)
+{% for item in selected_items %}
+- [{{ item.category }}] {{ item.title }}：{{ item.text }}
+{% endfor %}
+
+# HARD CONSTRAINTS
+- Facts in the selected materials (versions, metrics, roles, tech choices) MUST be preserved into their corresponding fields — never dropped, never altered, never contradicted.
+- Fields with no selected material must be filled coherently with the existing storyline: 同一项目、同一时间线、同一技术栈。
+- Every technology choice must have reached general availability (GA) before period_start; under that constraint prefer the newer versions; no invented niche versions or impossible metrics.
+
+# OUTPUT FIELDS
+- name: 项目名称（不超过 30 字）
+- background: 200-400 字，项目背景（公司自研视角，贴合所在行业）、周期、目标
+- tech_background: 200-400 字，技术栈选型与理由（可含主流组件版本）
+- tuning_process: 200-400 字，性能调优/上线过程叙事
+- problems_solutions: 200-400 字，2-3 个关键问题与解决方案
+- my_role: 100-200 字，第一人称的角色与职责（项目负责人/架构师口吻，不越位）
+- scale: 100-200 字，项目规模（数据量、用户量、并发量等）
+
+All narrative in first person plural/singular suitable for a 软考论文.
+{% if feedback %}
+# PREVIOUS ATTEMPT FEEDBACK
+{{ feedback }}
+Fix the issues above; the time window rules still apply.
+{% endif %}
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

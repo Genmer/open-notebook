@@ -190,8 +190,13 @@ class TestExportEstimate:
         if "string::len(full_text)" in sql:
             return [{"l": 100}] * 25  # mean 100 chars
         if sql.startswith("SELECT * FROM source_embedding"):
-            return [{"id": "source_embedding:e1", "source": "source:s1",
-                     "embedding": [0.1] * 8}] * 3
+            return [
+                {
+                    "id": "source_embedding:e1",
+                    "source": "source:s1",
+                    "embedding": [0.1] * 8,
+                }
+            ] * 3
         raise AssertionError(f"unexpected estimate query: {sql[:160]!r}")
 
     @pytest.mark.asyncio
@@ -213,10 +218,7 @@ class TestExportEstimate:
         assert body["asset_bytes"] > 0
         # text_chars = mean(100) * source_count(5); embedding rows absent → 0
         assert body["text_chars"] == 500
-        assert (
-            body["estimated_package_bytes"]
-            == body["asset_bytes"] + int(500 * 0.45)
-        )
+        assert body["estimated_package_bytes"] == body["asset_bytes"] + int(500 * 0.45)
 
     @pytest.mark.asyncio
     async def test_estimate_notebooks_scope_applies_filters(self, client):
@@ -305,7 +307,9 @@ class TestChunkedImport:
         imports = tmp_path / "imports"
         imports.mkdir()
         monkeypatch.setattr(svc, "IMPORTS_FOLDER", str(imports))
-        monkeypatch.setattr(svc, "CHUNK_SESSIONS_FOLDER", str(imports / "chunk_sessions"))
+        monkeypatch.setattr(
+            svc, "CHUNK_SESSIONS_FOLDER", str(imports / "chunk_sessions")
+        )
         # Tiny chunks so a minimal package still spans multiple parts.
         monkeypatch.setattr(svc, "MIN_CHUNK_SIZE", 64)
         return imports
@@ -313,10 +317,30 @@ class TestChunkedImport:
     @pytest.mark.asyncio
     async def test_create_validates_package_contract(self, client, folders):
         for payload in (
-            {"filename": "x.tar", "total_size": 10, "chunk_size": self.CHUNK, "total_chunks": 1},
-            {"filename": "x.zip", "total_size": 0, "chunk_size": self.CHUNK, "total_chunks": 0},
-            {"filename": "x.zip", "total_size": self.CHUNK + 1, "chunk_size": self.CHUNK, "total_chunks": 1},
-            {"filename": "x.zip", "total_size": self.CHUNK, "chunk_size": 32, "total_chunks": self.CHUNK // 32},
+            {
+                "filename": "x.tar",
+                "total_size": 10,
+                "chunk_size": self.CHUNK,
+                "total_chunks": 1,
+            },
+            {
+                "filename": "x.zip",
+                "total_size": 0,
+                "chunk_size": self.CHUNK,
+                "total_chunks": 0,
+            },
+            {
+                "filename": "x.zip",
+                "total_size": self.CHUNK + 1,
+                "chunk_size": self.CHUNK,
+                "total_chunks": 1,
+            },
+            {
+                "filename": "x.zip",
+                "total_size": self.CHUNK,
+                "chunk_size": 32,
+                "total_chunks": self.CHUNK // 32,
+            },
         ):
             response = self._create(client, payload)
             assert response.status_code == 400, payload
@@ -347,13 +371,19 @@ class TestChunkedImport:
         ok = client.put(
             f"/api/data-transfer/import/chunk-session/{session['upload_id']}/chunks/0",
             content=package[: self.CHUNK],
-            headers={"X-Chunk-Sha256": digest, "Content-Type": "application/octet-stream"},
+            headers={
+                "X-Chunk-Sha256": digest,
+                "Content-Type": "application/octet-stream",
+            },
         )
         assert ok.status_code == 200
         bad = client.put(
             f"/api/data-transfer/import/chunk-session/{session['upload_id']}/chunks/1",
             content=package[self.CHUNK : 2 * self.CHUNK] or package[self.CHUNK :],
-            headers={"X-Chunk-Sha256": "0" * 64, "Content-Type": "application/octet-stream"},
+            headers={
+                "X-Chunk-Sha256": "0" * 64,
+                "Content-Type": "application/octet-stream",
+            },
         )
         assert bad.status_code == 400
 
@@ -442,7 +472,12 @@ class TestChunkedImport:
 
         created = self._create(
             client,
-            {"filename": "x.zip", "total_size": self.CHUNK, "chunk_size": self.CHUNK, "total_chunks": 1},
+            {
+                "filename": "x.zip",
+                "total_size": self.CHUNK,
+                "chunk_size": self.CHUNK,
+                "total_chunks": 1,
+            },
         )
         upload_id = created.json()["upload_id"]
         gone = client.delete(f"/api/data-transfer/import/chunk-session/{upload_id}")

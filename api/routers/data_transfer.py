@@ -143,9 +143,7 @@ async def upload_import_package(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to scan package: {e}")
 
 
-@router.post(
-    "/data-transfer/import/chunk-session", response_model=ChunkSessionResponse
-)
+@router.post("/data-transfer/import/chunk-session", response_model=ChunkSessionResponse)
 async def create_chunk_session(request: ChunkSessionCreateRequest):
     """Start (or resume) a chunked upload; same client_key resumes in place."""
     try:

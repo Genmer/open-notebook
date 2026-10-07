@@ -1,0 +1,3 @@
+-- 用户可直接编辑的通用段落；字符串自由文本，FLEXIBLE 原因同 37/38
+-- （strict 类型会静默丢自由写入，SurrealDB v2.6.5）。
+DEFINE FIELD generic_paragraph ON TABLE project_env FLEXIBLE TYPE option<string>;

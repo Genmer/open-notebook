@@ -222,6 +222,10 @@ def _streaming_provisioned(chunks):
     )
 
 
+async def _noop_delta(_delta: str) -> None:
+    return None
+
+
 @pytest.mark.asyncio
 async def test_analyze_streaming_forwards_deltas_and_aggregates(model_mocks):
     from langchain_core.messages import AIMessageChunk
@@ -267,7 +271,7 @@ async def test_analyze_streaming_empty_stream_raises(model_mocks):
             page_start=None,
             page_end=None,
             locale="en-US",
-            on_delta=lambda _d: None,
+            on_delta=_noop_delta,
         )
     assert record_usage.await_args.kwargs["success"] is False
 
@@ -306,7 +310,7 @@ async def test_analyze_streaming_timeout_maps_to_external_error(
             page_start=None,
             page_end=None,
             locale="en-US",
-            on_delta=lambda _d: None,
+            on_delta=_noop_delta,
         )
     assert record_usage.await_args.kwargs["success"] is False
 
@@ -440,6 +444,7 @@ def test_endpoint_submits_job_and_returns_job_id(client):
     assert response.status_code == 200
     assert response.json() == {"job_id": "command:job1", "status": "submitted"}
 
+    assert submit.await_args is not None
     module_name, command_name, command_args = submit.await_args.args
     assert module_name == "open_notebook"
     assert command_name == "analyze_source_section"

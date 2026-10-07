@@ -1014,7 +1014,7 @@ SOURCE_ID = "source:s1"
 
 def _source_row(
     source_id: str = SOURCE_ID,
-    title: str = "My Source",
+    title: str | None = "My Source",
     embedding_status: str = "completed",
 ) -> Source:
     return Source(
@@ -1373,6 +1373,8 @@ class TestClonePhysicalFile:
         first = _clone_physical_file(self._source_with_file(original))
         second = _clone_physical_file(self._source_with_file(original))
 
+        assert first is not None
+        assert second is not None
         assert first.endswith("doc (copy 2).pdf")
         assert second.endswith("doc (copy 3).pdf")
 

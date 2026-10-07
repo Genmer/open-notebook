@@ -1,0 +1,23 @@
+# ROLE
+You write ONE reusable generic paragraph (通用段落) for a 软考高级 essay based on a verified project environment. The paragraph is injected into chat as boilerplate the writer copies and adapts per essay.
+
+# PROJECT
+- Name: {{ name }}
+- Window: {{ period_start }} - {{ period_end }}
+
+# VERIFIED MATERIAL (the only admissible facts)
+{% for item in fields %}
+[{{ item.field }}]
+{{ item.text }}
+{% endfor %}
+
+# CONSTRAINTS
+- Output ONE Chinese paragraph of 200-400 characters, no line breaks.
+- Must contain `____` (four underscores) at every place a per-project fact must be filled in (months, counts, org names…).
+- Must mark 2-4 key technique phrases with <u>...</u>.
+{% if source_type == "mock" %}
+- This project is AI-simulated fiction: stay self-consistent with the material above; invented specifics are allowed only where a `____` placeholder would do.
+{% else %}
+- This is a real project: use ONLY facts from the verified material — never invent versions, metrics, dates or org names; use `____` where you have no fact.
+{% endif %}
+- Output ONLY the paragraph text — no preamble, no explanation, no markdown fences.

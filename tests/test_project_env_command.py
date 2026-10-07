@@ -4,21 +4,32 @@ All LLM seams (pipeline functions / provisioning) and DB writes are patched;
 write ordering and fencing behavior are asserted from the recorded calls.
 """
 
+import asyncio
 import copy
 from contextlib import ExitStack
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from commands.project_env_commands import (
+    GenerateProjectEnvMaterialsInput,
     VerifyProjectEnvInput,
     _prescreen_version_points,
+    generate_project_env_materials_command,
     verify_project_env_command,
 )
-from open_notebook.ai.project_env_pipeline import MockDraft
-from open_notebook.domain.project_env import ProjectEnv
+from open_notebook.ai.project_env_pipeline import (
+    MaterialItem,
+    MaterialsBundle,
+    MockDraft,
+    RoutePeriod,
+    RouteProposal,
+    RoutesBundle,
+)
+from open_notebook.domain.project_env import TEXT_FIELDS, ProjectEnv
 from open_notebook.exceptions import ConfigurationError
 
 ENV_ID = "project_env:e1"
@@ -318,6 +329,7 @@ class TestConvergence:
             "uncovered": 0,
         }
         claims = env.pending_claims
+        assert claims is not None
         assert len(claims) == 1  # only the error point, passed point excluded
         assert "Redis" in claims[0]["quote"]
         assert claims[0]["reason_code"] == "llm_error"
@@ -325,8 +337,9 @@ class TestConvergence:
         final_run = recorder.run_updates[-1]
         assert final_run["status"] == "completed"
         states = {p["quote"]: p["state"] for p in final_run["points"]}
+        # paragraph granularity: the whole background sentence pair is ONE point
         assert states == {
-            "系统采用 Redis 7.0 作为缓存。": "error",
+            "系统采用 Redis 7.0 作为缓存。整体高并发。": "error",
             "Spring Boot 3.2 微服务架构。": "passed",
         }
         assert "env_failed" not in recorder.events
@@ -997,9 +1010,10 @@ class TestBudgetAndRounds:
         )  # deterministic spend order
         env = _env(
             tech_background="",
+            # paragraph granularity needs separate paragraphs for separate points
             background=(
-                "句子一采用 Redis 7.0。"
-                "句子二采用 Kafka 3.7。"
+                "句子一采用 Redis 7.0。\n"
+                "句子二采用 Kafka 3.7。\n"
                 "句子三采用 Elasticsearch 8.0。"
             ),
         )
@@ -1097,3 +1111,701 @@ class TestRateLimitBackoff:
             )
 
         assert sleeps == []  # non-rate-limit errors retry immediately
+
+    @pytest.mark.asyncio
+    async def test_invoke_json_times_out_hung_model_calls(self):
+        """挂死的模型调用必须被超时兜住：两次尝试后返回 None 而不是永久等待。"""
+        from open_notebook.ai import project_env_pipeline as pipeline
+
+        calls = {"n": 0}
+
+        class _Model:
+            async def ainvoke(self, prompt):
+                calls["n"] += 1
+                await asyncio.Event().wait()  # never resolves
+
+        class _Prov:
+            langchain_model = _Model()
+
+        async def fake_provision(prompt, model_id, kind, max_tokens=4096):
+            return _Prov()
+
+        with (
+            patch.object(
+                pipeline, "provision_langchain_model_with_info", fake_provision
+            ),
+            patch.object(pipeline, "LLM_CALL_TIMEOUT_SECONDS", 0.05),
+        ):
+            result = await pipeline._invoke_json(
+                "project_env/verify_c", {}, pipeline.LaneVerdict, None, None
+            )
+
+        assert result is None
+        assert calls["n"] == 2  # timeout counts as a failed attempt, retried once
+
+
+class TestMaterialsOutputBudget:
+    @pytest.mark.asyncio
+    async def test_generate_materials_raises_output_cap(self):
+        """18 条素材束是全管线最大单次 JSON 输出，必须高于默认 4096 上限。"""
+        from open_notebook.ai import project_env_pipeline as pipeline
+
+        seen: list[int] = []
+
+        class _Model:
+            async def ainvoke(self, prompt):
+                return SimpleNamespace(
+                    content=(
+                        '{"items": [{"category": "background", "title": "t", '
+                        '"text": "片段", "tags": []}]}'
+                    )
+                )
+
+        class _Prov:
+            langchain_model = _Model()
+
+        async def fake_provision(prompt, model_id, kind, max_tokens=4096):
+            seen.append(max_tokens)
+            return _Prov()
+
+        with patch.object(
+            pipeline, "provision_langchain_model_with_info", fake_provision
+        ):
+            result = await pipeline.generate_materials(
+                keywords=["微服务"], name=None, period_start=None, period_end=None
+            )
+
+        assert result is not None
+        assert seen == [8192]
+
+
+# --- materials candidate generation (素材生成步骤) ---
+
+
+def _materials_bundle(valid=6, extra_invalid=0):
+    categories = [
+        "background",
+        "tech_background",
+        "tuning_process",
+        "problems_solutions",
+        "my_role",
+        "scale",
+    ]
+    items = [
+        MaterialItem(
+            category=categories[i % len(categories)],
+            title=f"素材 {i}",
+            text=f"片段 {i} 采用 Redis 7.0 缓存。",
+            tags=["测试"],
+        )
+        for i in range(valid)
+    ]
+    items.extend(
+        MaterialItem(category="bogus", title=f"坏素材 {i}", text="x", tags=[])
+        for i in range(extra_invalid)
+    )
+    return MaterialsBundle(items=items)
+
+
+def _routes_bundle(n=3):
+    return RoutesBundle(
+        routes=[
+            RouteProposal(
+                title=f"路线 {i}",
+                summary="一句话概括",
+                tech_stack=["Kafka 3.7", "Flink 1.18"],
+                scale="团队 20 人",
+                role="我担任架构师",
+                highlights=["难点一"],
+                period=RoutePeriod(start="2025.02", end="2025.09"),
+            )
+            for i in range(n)
+        ]
+    )
+
+
+class MaterialsRecorder(Recorder):
+    """Recorder that also logs token rechecks (the write fence)."""
+
+    async def query(self, sql, params=None):
+        if "SELECT verification_token FROM project_env" in sql:
+            self.events.append("token_check")
+        return await super().query(sql, params)
+
+
+async def _run_materials(env, recorder, token=TOKEN, **pipeline_overrides):
+    async def fake_get(env_id):
+        return env
+
+    async def fake_save(self_env):
+        recorder.events.append("env_save")
+
+    defaults = {
+        "generate_materials": AsyncMock(return_value=_materials_bundle()),
+        "generate_routes": AsyncMock(return_value=_routes_bundle()),
+    }
+    defaults.update(pipeline_overrides)
+
+    async def defaults_row(sql, params=None):
+        if "FROM ONLY" in sql:
+            return [{"default_chat_model": "model:chat"}]
+        raise AssertionError(f"unexpected ai.models query: {sql[:100]}")
+
+    patches: list[Any] = [
+        patch("commands.project_env_commands.ProjectEnv.get", side_effect=fake_get),
+        patch("commands.project_env_commands.repo_query", side_effect=recorder.query),
+        patch("open_notebook.ai.models.repo_query", side_effect=defaults_row),
+        patch.object(ProjectEnv, "save", autospec=True, side_effect=fake_save),
+    ]
+    for name, value in defaults.items():
+        patches.append(patch(f"open_notebook.ai.project_env_pipeline.{name}", value))
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        result = await generate_project_env_materials_command(
+            GenerateProjectEnvMaterialsInput(env_id=str(env.id), token=token)
+        )
+    return result, defaults
+
+
+def _materials_env(**overrides) -> ProjectEnv:
+    data = dict(
+        id=ENV_ID,
+        name="AI 模拟项目",
+        background="",
+        period_start="2025.02",
+        period_end="2025.09",
+        source_type="mock",
+        keywords=["微服务", "高并发"],
+        tech_background="",
+        status="material_pending",
+        verification_token=TOKEN,
+        created=datetime(2026, 1, 1),
+        updated=datetime(2026, 1, 1),
+    )
+    data.update(overrides)
+    return ProjectEnv(**data)
+
+
+class TestGenerateMaterialsCommand:
+    @pytest.mark.asyncio
+    async def test_success_writes_both_stores_with_renumbered_ids(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        result, mocks = await _run_materials(env, recorder)
+
+        assert result.success is True
+        assert result.status == "material_ready"
+        assert result.counts == {"materials": 6, "routes": 3}
+        mocks["generate_materials"].assert_awaited_once()
+        mocks["generate_routes"].assert_awaited_once()
+        assert env.status == "material_ready"
+        store = env.materials
+        assert store is not None
+        assert [m["id"] for m in store["materials"]["items"]] == [
+            f"m{i}" for i in range(1, 7)
+        ]
+        assert [r["id"] for r in store["routes"]["items"]] == [
+            f"r{i}" for i in range(1, 4)
+        ]
+        assert store["materials"]["generated_at"]
+        assert store["routes"]["generated_at"]
+        # progress walks materialing -> routing -> done via the fenced UPDATE
+        stages = [u["stage"] for u in recorder.progress_updates]
+        assert stages == ["materialing", "routing", "done"]
+        # the full-field save is fenced by a token recheck right before it
+        assert recorder.events.index("token_check") < recorder.events.index("env_save")
+
+    @pytest.mark.asyncio
+    async def test_industry_forwarded_to_materials_and_routes(self):
+        env = _materials_env(industry="物流行业")
+        recorder = MaterialsRecorder()
+        result, mocks = await _run_materials(env, recorder)
+
+        assert result.status == "material_ready"
+        assert mocks["generate_materials"].await_args.kwargs["industry"] == "物流行业"
+        assert mocks["generate_routes"].await_args.kwargs["industry"] == "物流行业"
+
+    @pytest.mark.asyncio
+    async def test_stale_token_is_noop(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        result, mocks = await _run_materials(env, recorder, token="other-token")
+
+        assert result.status == "stale_token"
+        assert recorder.events == []
+        mocks["generate_materials"].assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_parse_failure_marks_failed(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        with pytest.raises(ValueError):
+            await _run_materials(
+                env, recorder, generate_materials=AsyncMock(return_value=None)
+            )
+
+        assert "env_failed" in recorder.events
+        assert "env_save" not in recorder.events
+
+    @pytest.mark.asyncio
+    async def test_below_floor_fails_after_filtering(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        # 5 valid + 1 off-whitelist: the filter drops one, leaving 5 < 6
+        with pytest.raises(ValueError):
+            await _run_materials(
+                env,
+                recorder,
+                generate_materials=AsyncMock(
+                    return_value=_materials_bundle(valid=5, extra_invalid=1)
+                ),
+            )
+
+        assert "env_failed" in recorder.events
+        assert "env_save" not in recorder.events
+
+    @pytest.mark.asyncio
+    async def test_routes_below_floor_fails(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        with pytest.raises(ValueError):
+            await _run_materials(
+                env, recorder, generate_routes=AsyncMock(return_value=_routes_bundle(1))
+            )
+
+        assert "env_failed" in recorder.events
+
+    @pytest.mark.asyncio
+    async def test_category_whitelist_drops_invalid_without_error(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder()
+        result, _ = await _run_materials(
+            env,
+            recorder,
+            generate_materials=AsyncMock(
+                return_value=_materials_bundle(valid=6, extra_invalid=2)
+            ),
+        )
+
+        assert result.status == "material_ready"
+        assert env.materials is not None
+        items = env.materials["materials"]["items"]
+        assert len(items) == 6  # bogus entries silently dropped
+        assert all(item["category"] in TEXT_FIELDS for item in items)
+        assert [m["id"] for m in items] == [f"m{i}" for i in range(1, 7)]
+
+    @pytest.mark.asyncio
+    async def test_token_rotated_mid_run_stands_down_without_writes(self):
+        env = _materials_env()
+        recorder = MaterialsRecorder(token=TOKEN)
+
+        async def slow_routes(**kwargs):
+            recorder.token = "tok-2"  # a newer submission rotated the token
+            return _routes_bundle()
+
+        result, _ = await _run_materials(env, recorder, generate_routes=slow_routes)
+
+        assert result.status == "superseded"
+        assert result.success is True
+        assert "env_save" not in recorder.events  # no store written
+        assert "env_failed" not in recorder.events
+        assert env.materials is None
+        assert env.status == "material_pending"
+
+
+def _selection_env(**overrides) -> ProjectEnv:
+    store = {
+        "materials": {
+            "items": [
+                {
+                    "id": "m1",
+                    "category": "background",
+                    "title": "素材一",
+                    "text": "电商平台重构背景。",
+                    "tags": [],
+                },
+                {
+                    "id": "m2",
+                    "category": "tech_background",
+                    "title": "素材二",
+                    "text": "技术栈选型。",
+                    "tags": [],
+                },
+                {
+                    "id": "m3",
+                    "category": "scale",
+                    "title": "素材三",
+                    "text": "团队 20 人。",
+                    "tags": [],
+                },
+            ],
+            "generated_at": "2026-10-07T10:00:00",
+        },
+        "routes": {
+            "items": [
+                {
+                    "id": "r1",
+                    "title": "路线一",
+                    "summary": "s1",
+                    "tech_stack": ["Kafka 3.7"],
+                    "scale": "15 人",
+                    "role": "架构师",
+                    "highlights": ["h1"],
+                    "period": {"start": "2025.02", "end": "2025.09"},
+                },
+                {
+                    "id": "r2",
+                    "title": "路线二",
+                    "summary": "s2",
+                    "tech_stack": ["Spring Boot 3.2"],
+                    "scale": "25 人",
+                    "role": "项目负责人",
+                    "highlights": ["h2"],
+                    "period": {"start": "2025.01", "end": "2025.08"},
+                },
+            ],
+            "generated_at": "2026-10-07T10:00:00",
+        },
+    }
+    data = dict(
+        id=ENV_ID,
+        name="AI 模拟项目",
+        background="",
+        period_start="",
+        period_end="",
+        source_type="mock",
+        keywords=["微服务"],
+        tech_background="",
+        status="pending",
+        verification_token=TOKEN,
+        materials=store,
+        created=datetime(2026, 1, 1),
+        updated=datetime(2026, 1, 1),
+    )
+    data.update(overrides)
+    return ProjectEnv(**data)
+
+
+def _mock_draft() -> MockDraft:
+    return MockDraft(
+        name="AI 模拟项目",
+        background="拼装背景采用 MySQL 8.0 存储。",
+        period_start="2025.02",
+        period_end="2025.09",
+        tech_background="拼装技术栈。",
+        tuning_process="拼装调优。",
+        problems_solutions="拼装问题。",
+        my_role="我担任架构师。",
+        scale="团队 20 人。",
+    )
+
+
+class TestDraftingFromSelection:
+    @pytest.mark.asyncio
+    async def test_materials_selection_renders_from_selection(self):
+        env = _selection_env(
+            materials_selection={
+                "kind": "materials",
+                "material_ids": ["m1", "m3"],
+                "route_id": None,
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            }
+        )
+        recorder = Recorder()
+        render = AsyncMock(return_value=_mock_draft())
+        result, mocks = await _run(
+            env,
+            recorder,
+            mode="mock",
+            render_materials_draft=render,
+        )
+
+        assert result.status == "verified"
+        render.assert_awaited_once()
+        assert render.await_args is not None
+        picked = render.await_args.kwargs["selected_items"]
+        assert [m["id"] for m in picked] == ["m1", "m3"]
+        mocks["render_mock"].assert_not_awaited()
+        assert env.draft_content == _mock_draft().model_dump()
+        drafting = next(
+            u for u in recorder.progress_updates if u["stage"] == "drafting"
+        )
+        assert "选中素材" in drafting["message"]
+
+    @pytest.mark.asyncio
+    async def test_routes_selection_renders_route_draft(self):
+        env = _selection_env(
+            materials_selection={
+                "kind": "routes",
+                "material_ids": None,
+                "route_id": "r2",
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            }
+        )
+        recorder = Recorder()
+        render = AsyncMock(return_value=_mock_draft())
+        result, mocks = await _run(
+            env,
+            recorder,
+            mode="mock",
+            render_route_draft=render,
+        )
+
+        assert result.status == "verified"
+        render.assert_awaited_once()
+        assert render.await_args is not None
+        assert render.await_args.kwargs["route"]["id"] == "r2"
+        mocks["render_mock"].assert_not_awaited()
+        assert env.draft_content == _mock_draft().model_dump()
+
+    @pytest.mark.asyncio
+    async def test_selection_missing_falls_back_to_render_mock(self):
+        """A selection pointing at ids that no longer exist must degrade to
+        the keywords path (with a warning), never block drafting."""
+        from loguru import logger as loguru_logger
+
+        env = _selection_env(
+            materials_selection={
+                "kind": "materials",
+                "material_ids": ["m99"],
+                "route_id": None,
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            }
+        )
+        recorder = Recorder()
+        render_selection = AsyncMock(return_value=_mock_draft())
+        warnings: list = []
+        handler = loguru_logger.add(warnings.append, level="WARNING")
+
+        try:
+            result, mocks = await _run(
+                env,
+                recorder,
+                mode="mock",
+                render_materials_draft=render_selection,
+                render_mock=AsyncMock(return_value=_mock_draft()),
+            )
+        finally:
+            loguru_logger.remove(handler)
+
+        assert result.status == "verified"
+        render_selection.assert_not_awaited()
+        mocks["render_mock"].assert_awaited_once()
+        assert any("falling back" in str(w) for w in warnings)
+        drafting = next(
+            u for u in recorder.progress_updates if u["stage"] == "drafting"
+        )
+        assert "关键词" in drafting["message"]
+
+    @pytest.mark.asyncio
+    async def test_industry_forwarded_to_all_draft_paths(self):
+        """env.industry 必须随 common dict 下发到三条 draft 路径；为空时下发
+        None（pipeline 侧回退默认行业）。"""
+        # 关键词路径（materials_selection 为空）
+        env = _selection_env(industry="医疗行业")
+        recorder = Recorder()
+        render_kw = AsyncMock(return_value=_mock_draft())
+        await _run(env, recorder, mode="mock", render_mock=render_kw)
+        assert render_kw.await_args.kwargs["industry"] == "医疗行业"
+
+        # 素材路径
+        env = _selection_env(
+            industry="医疗行业",
+            materials_selection={
+                "kind": "materials",
+                "material_ids": ["m1"],
+                "route_id": None,
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            },
+        )
+        render_mat = AsyncMock(return_value=_mock_draft())
+        await _run(env, Recorder(), mode="mock", render_materials_draft=render_mat)
+        assert render_mat.await_args.kwargs["industry"] == "医疗行业"
+
+        # 路线路径
+        env = _selection_env(
+            industry="医疗行业",
+            materials_selection={
+                "kind": "routes",
+                "material_ids": None,
+                "route_id": "r1",
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            },
+        )
+        render_route = AsyncMock(return_value=_mock_draft())
+        await _run(env, Recorder(), mode="mock", render_route_draft=render_route)
+        assert render_route.await_args.kwargs["industry"] == "医疗行业"
+
+        # 行业为空（老行/真实来源）→ None 下发，不由命令层填默认
+        env = _selection_env(industry=None)
+        render_none = AsyncMock(return_value=_mock_draft())
+        await _run(env, Recorder(), mode="mock", render_mock=render_none)
+        assert render_none.await_args.kwargs["industry"] is None
+
+
+class TestParagraphGranularity:
+    """Paragraph-level claim units: split / extract / dedup / drift / prescreen."""
+
+    # --- split_paragraphs ---
+
+    def test_split_paragraphs_newlines_and_blank_lines(self):
+        from open_notebook.ai.project_env_pipeline import split_paragraphs
+
+        units = split_paragraphs("第一段。\n\n第二段。\n  \n第三段。")
+        assert units == ["第一段。", "第二段。", "第三段。"]
+
+    def test_split_paragraphs_empty_and_whitespace_only(self):
+        from open_notebook.ai.project_env_pipeline import split_paragraphs
+
+        assert split_paragraphs("") == []
+        assert split_paragraphs("  \n \n") == []
+
+    def test_split_paragraphs_long_paragraph_packed_by_sentence_under_cap(self):
+        from open_notebook.ai.project_env_pipeline import (
+            PARAGRAPH_MAX_CHARS,
+            split_paragraphs,
+        )
+
+        sentence = "字" * 300 + "。"
+        units = split_paragraphs(sentence * 3)
+        assert all(len(u) <= PARAGRAPH_MAX_CHARS for u in units)
+        assert "".join(units) == sentence * 3
+
+    def test_split_paragraphs_oversized_sentence_stays_whole(self):
+        from open_notebook.ai.project_env_pipeline import (
+            PARAGRAPH_MAX_CHARS,
+            split_paragraphs,
+        )
+
+        giant = "字" * (PARAGRAPH_MAX_CHARS + 100)
+        assert split_paragraphs(giant) == [giant]
+
+    # --- extract_claims_regex ---
+
+    def test_extract_claims_regex_paragraph_yields_single_version_claim(self):
+        from open_notebook.ai.project_env_pipeline import extract_claims_regex
+
+        paragraph = "缓存采用 Redis 7.0，日均处理 300 万条，超时设为 500。"
+        claims = extract_claims_regex({"background": paragraph})
+        assert len(claims) == 1
+        assert claims[0]["type"] == "version"  # priority: version > metric > param
+        assert claims[0]["quote"] == paragraph
+        assert claims[0]["field"] == "background"
+
+    def test_extract_claims_regex_skips_plain_paragraphs(self):
+        from open_notebook.ai.project_env_pipeline import extract_claims_regex
+
+        claims = extract_claims_regex({"background": "整体运行平稳。\n叙事性描述。"})
+        assert claims == []
+
+    # --- dedup_claims ---
+
+    def test_dedup_claims_merges_whitespace_variants(self):
+        from open_notebook.ai.project_env_pipeline import dedup_claims
+
+        claims = [
+            {"quote": "系统采用 Redis 7.0 作为缓存。", "field": "background"},
+            {"quote": "系统采用 Redis 7.0 作为  缓存。", "field": "background"},
+        ]
+        assert len(dedup_claims(claims)) == 1
+
+    def test_dedup_claims_keeps_distinct_paragraphs_sharing_prefix(self):
+        from open_notebook.ai.project_env_pipeline import dedup_claims
+
+        head = "字" * 120
+        claims = [
+            {"quote": head + "第一段结尾。", "field": "background"},
+            {"quote": head + "第二段结尾。", "field": "background"},
+        ]
+        assert len(dedup_claims(claims)) == 2
+
+    # --- _drop_drifted_claims ---
+
+    def test_drop_drifted_claims_rewrites_quote_to_verbatim(self):
+        from commands.project_env_commands import _drop_drifted_claims
+
+        text = "系统采用 Redis 7.0 作为缓存。"
+        claims = [{"quote": "系统采用 Redis 7.0 作为  缓存。", "field": "background"}]
+        kept = _drop_drifted_claims(claims, {"background": text})
+        assert len(kept) == 1
+        assert kept[0]["quote"] == text  # exact original substring
+
+    def test_drop_drifted_claims_drops_hallucinated_quote(self):
+        from commands.project_env_commands import _drop_drifted_claims
+
+        claims = [{"quote": "这句话不在材料里。", "field": "background"}]
+        assert (
+            _drop_drifted_claims(claims, {"background": "系统采用 Redis 7.0。"}) == []
+        )
+
+    # --- _find_verbatim ---
+
+    def test_find_verbatim_handles_regex_metacharacters_in_quote(self):
+        """LLM quotes carry ( ) [ ] * freely; locating them must never raise
+        re.error and must stay whitespace-tolerant against the original."""
+        from open_notebook.ai.project_env_pipeline import _find_verbatim
+
+        text = "消息队列采用 Kafka（3.6）[KRaft]* 模式部署。"
+        verbatim = _find_verbatim(text, "Kafka（3.6） [KRaft] *  模式")
+        assert verbatim == "Kafka（3.6）[KRaft]* 模式"
+
+        # an unterminated '[' would raise re.error if the quote went into the
+        # regex unescaped; escaped it is just an unmatched literal
+        absent = _find_verbatim(text, "消息队列 [Kafka 集群")
+        assert absent is None
+
+    # --- prescreen_quote ---
+
+    def test_prescreen_quote_fail_wins_over_pass(self):
+        from open_notebook.ai.project_env_pipeline import prescreen_quote
+
+        result = prescreen_quote("数据层用 MySQL 8.0，缓存层用 Redis 7.2。", "2023.01")
+        assert result["status"] == "fail"
+
+    def test_prescreen_quote_off_table_wins_over_pass(self):
+        from open_notebook.ai.project_env_pipeline import prescreen_quote
+
+        result = prescreen_quote("存储用 HyperDB 2.0，缓存用 Redis 7.0。", "2025.01")
+        assert result["status"] == "off_table"
+
+    def test_prescreen_quote_all_in_table_passes(self):
+        from open_notebook.ai.project_env_pipeline import prescreen_quote
+
+        result = prescreen_quote("缓存采用 Redis 7.0。", "2025.01")
+        assert result["status"] == "pass"
+
+    def test_prescreen_quote_without_version_is_unspecified(self):
+        from open_notebook.ai.project_env_pipeline import prescreen_quote
+
+        assert prescreen_quote("整体高并发。", "2025.01")["status"] == "unspecified"
+
+    # --- correct_point ---
+
+    @pytest.mark.asyncio
+    async def test_correct_point_requests_4096_tokens(self, monkeypatch):
+        from open_notebook.ai import project_env_pipeline as pipeline
+
+        captured: dict = {}
+
+        class _Prov:
+            class langchain_model:  # noqa: N801 - attribute stub
+                @staticmethod
+                async def ainvoke(prompt):
+                    return SimpleNamespace(content="改好的段落")
+
+        async def fake_provision(prompt, model_id, kind, max_tokens=None):
+            captured["max_tokens"] = max_tokens
+            return _Prov()
+
+        monkeypatch.setattr(
+            pipeline, "provision_langchain_model_with_info", fake_provision
+        )
+        result = await pipeline.correct_point(
+            quote="错误段落。",
+            field="background",
+            issues=["GA 晚于开工"],
+            context={"narrative": "", "period_start": "2025.01", "period_end": ""},
+        )
+        assert result == "改好的段落"
+        assert captured["max_tokens"] == 4096

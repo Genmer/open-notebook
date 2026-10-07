@@ -1099,3 +1099,222 @@ describe('New i18n keys (2026-10 context topic view / compress)', () => {
     },
   )
 })
+
+// Pinned inventory of the i18n keys added by the 2026-10-07 project-env
+// materials-selection changeset (candidate step, material/route picker tabs,
+// generation progress, list badges). The replaced `projectEnvs.generateAndVerify`
+// key is intentionally absent. Same guarding contract as the blocks above.
+const MATERIAL_KEYS = [
+  'projectEnvs.stepMaterials',
+  'projectEnvs.generateMaterials',
+  'projectEnvs.skipMaterials',
+  'projectEnvs.materialStepTitle',
+  'projectEnvs.materialStepDesc',
+  'projectEnvs.tabMaterials',
+  'projectEnvs.tabRoutes',
+  'projectEnvs.tabMaterialsHint',
+  'projectEnvs.tabRoutesHint',
+  'projectEnvs.stageMaterialing',
+  'projectEnvs.stageRouting',
+  'projectEnvs.materialSelectedCount',
+  'projectEnvs.materialSelectAll',
+  'projectEnvs.materialDeselectAll',
+  'projectEnvs.materialGroupEmpty',
+  'projectEnvs.materialSubmit',
+  'projectEnvs.materialMinHint',
+  'projectEnvs.routeSubmit',
+  'projectEnvs.routeMinHint',
+  'projectEnvs.routeDiffTech',
+  'projectEnvs.routeDiffScale',
+  'projectEnvs.routeDiffRole',
+  'projectEnvs.routePreview',
+  'projectEnvs.materialGenerateFailed',
+  'projectEnvs.materialEmptyAll',
+  'projectEnvs.materialRetry',
+  'projectEnvs.materialStaleHint',
+  'projectEnvs.materialSubmitFailed',
+  'projectEnvs.materialBackToList',
+  'projectEnvs.statusMaterialPending',
+  'projectEnvs.statusMaterialReady',
+  'projectEnvs.materialRegenerateBatch',
+  'projectEnvs.materialRegenerateTitle',
+  'projectEnvs.materialRegenerateDesc',
+  'projectEnvs.skipReadyTitle',
+  'projectEnvs.skipReadyDesc',
+  'projectEnvs.crossTabRoutesTitle',
+  'projectEnvs.crossTabRoutesDesc',
+  'projectEnvs.crossTabMaterialsTitle',
+  'projectEnvs.crossTabMaterialsDesc',
+  'projectEnvs.phaseVerifyMock',
+]
+
+describe('New i18n keys (2026-10 project-env materials selection)', () => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = MATERIAL_KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = MATERIAL_KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of MATERIAL_KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of MATERIAL_KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of MATERIAL_KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})
+
+// Pinned inventory of the i18n keys added by the 2026-10-07 paragraph-level
+// verification changeset (AI rewrite suggestion panel on the verification
+// points). Same guarding contract as the blocks above.
+const SUGGEST_KEYS = [
+  'projectEnvs.suggestAction',
+  'projectEnvs.suggestTitle',
+  'projectEnvs.suggestOriginal',
+  'projectEnvs.suggestSuggestion',
+  'projectEnvs.suggestExplanation',
+  'projectEnvs.suggestAdopt',
+  'projectEnvs.suggestDiscard',
+  'projectEnvs.suggestFailed',
+]
+
+// Pinned inventory of the 2026-10-07 generic-paragraph changeset (view/edit
+// section in the env detail dialog + AI generation). Same contract.
+const GENERIC_PARAGRAPH_KEYS = [
+  'projectEnvs.genericParagraph',
+  'projectEnvs.genericParagraphHint',
+  'projectEnvs.genericParagraphEdit',
+  'projectEnvs.genericParagraphSave',
+  'projectEnvs.genericParagraphCancel',
+  'projectEnvs.genericParagraphGenerate',
+  'projectEnvs.genericParagraphGenerateFailed',
+  'projectEnvs.genericParagraphSaved',
+  'projectEnvs.genericParagraphSaveFailed',
+  'projectEnvs.genericParagraphCount',
+]
+
+// Pinned inventory of the 2026-10-07 data-transfer v3 changeset: the two
+// project-env tables now travel in export/import packages. Same contract.
+const TRANSFER_V3_KEYS = [
+  'dataManagement.tables.project_env',
+  'dataManagement.tables.project_env_verification',
+]
+
+// Pinned inventory of the 2026-10 project-env card/detail redesign changeset. Same guarding contract as the blocks above.
+const VERIFICATION_DETAILS_KEYS = ['projectEnvs.verificationDetails']
+
+// Pinned inventory of the 2026-10 project-env detail visual redesign changeset
+// (timeline / metric tiles / tech cards / tuning flow / problem pairs). Same contract.
+const DETAIL_VISUAL_KEYS = [
+  'projectEnvs.detailMetrics',
+  'projectEnvs.detailMetricTrendAria',
+  'projectEnvs.detailTechStack',
+  'projectEnvs.detailOutcome',
+  'projectEnvs.detailProblem',
+  'projectEnvs.detailSolution',
+  'projectEnvs.detailOriginalText',
+]
+
+// Pinned inventory of the i18n keys added by the 2026-10-07 project-env
+// industry changeset (mock wizard company-industry input). Same contract.
+const INDUSTRY_KEYS = [
+  'projectEnvs.mockIndustryLabel',
+  'projectEnvs.mockIndustryHelper',
+]
+
+describe.each([
+  ['2026-10 project-env suggest panel', SUGGEST_KEYS],
+  ['2026-10 project-env generic paragraph', GENERIC_PARAGRAPH_KEYS],
+  ['2026-10 data transfer v3 project-env tables', TRANSFER_V3_KEYS],
+  ['2026-10 project-env card/detail redesign', VERIFICATION_DETAILS_KEYS],
+  ['2026-10 project-env detail visual redesign', DETAIL_VISUAL_KEYS],
+  ['2026-10 project-env industry input', INDUSTRY_KEYS],
+])('New i18n keys (%s)', (_label, KEYS) => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})

@@ -54,4 +54,6 @@ export const QUERY_KEYS = {
   projectEnv: (id: string) => ['project-envs', 'detail', id] as const,
   projectEnvVerification: (id: string) =>
     ['project-envs', 'detail', id, 'verification'] as const,
+  projectEnvMaterials: (id: string) =>
+    ['project-envs', 'detail', id, 'materials'] as const,
 }

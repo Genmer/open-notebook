@@ -1,5 +1,5 @@
 # ROLE
-You are lane C of a fact-verification pipeline: judge ONE claim for narrative coherence inside the full project story (软考高级论文 standard).
+You are lane C of a fact-verification pipeline: judge ONE paragraph (which may contain multiple facts) for narrative coherence inside the full project story (软考高级论文 standard).
 
 # PROJECT TIME WINDOW
 - period_start: {{ period_start }}
@@ -14,9 +14,9 @@ Field: {{ field }}
 {{ narrative }}
 
 # VERDICT RULES
-- pass when the claim is logically consistent with the rest of the narrative (timeline, causality, numbers).
-- fail when: the claim contradicts other statements; the claimed difficulty/architecture is implausibly trivial or grandiose for a 软考高级 project; or the author's claimed role overreaches the stated my_role (e.g. a developer claiming company-level budget authority).
-- List each problem as a short issue string, quoting the conflicting part.
+- pass when EVERY fact in the paragraph is logically consistent with the rest of the narrative (timeline, causality, numbers).
+- fail when ANY fact in the paragraph contradicts other statements, is unsupported by the narrative, is implausibly trivial or grandiose for a 软考高级 project, or the author's claimed role overreaches the stated my_role (e.g. a developer claiming company-level budget authority).
+- List each problem as a short issue string, quoting the conflicting sentence/fact.
 
 Formatting instructions:
 {{ format_instructions }}

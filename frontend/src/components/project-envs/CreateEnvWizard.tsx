@@ -20,7 +20,9 @@ import {
   useCreateProjectEnv,
   useMockGenerateProjectEnv,
   usePolishBackground,
+  useProjectEnv,
 } from '@/lib/hooks/use-project-envs'
+import { MaterialSelectionStep, type MaterialTab } from './MaterialSelectionStep'
 import { TimeRangeField } from './TimeRangeField'
 import { VerificationPanel } from './VerificationPanel'
 import { validatePeriod, parseMonthsFromText, type ProjectEnvMode } from '@/lib/utils/project-env-time'
@@ -136,20 +138,52 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
 
   // Mock form
   const [mockName, setMockName] = useState('')
+  const [industry, setIndustry] = useState(
+    () =>
+      (typeof window !== 'undefined' && localStorage.getItem('project-env-industry')) ||
+      '物流行业'
+  )
   const [keywords, setKeywords] = useState<string[]>([])
   const [mockPeriod, setMockPeriod] = useState({ start: '', end: '' })
   const [mockPeriodTouched, setMockPeriodTouched] = useState(false)
 
   const [envId, setEnvId] = useState<string | null>(null)
 
+  // Materials step (mock only): selection state lives here so switching
+  // wizard steps or tabs never drops what the user already picked.
+  const [materialTab, setMaterialTab] = useState<MaterialTab>('materials')
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set())
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
+  const [reopenPending, setReopenPending] = useState(false)
+
   const createMutation = useCreateProjectEnv()
   const mockMutation = useMockGenerateProjectEnv()
+  const mockMaterialsMutation = useMockGenerateProjectEnv()
   const polishMutation = usePolishBackground()
 
+  // mock-generate always creates a NEW env row, so a second submit from
+  // step 2 while the current row is still mid-flight would silently fork
+  // the work — block it instead.
+  const { data: currentEnv } = useProjectEnv(envId)
+  const envInFlight =
+    !!envId &&
+    !!currentEnv &&
+    !['verified', 'needs_review', 'failed'].includes(String(currentEnv.status))
+
+  // Reopen routing needs the row (source_type + status) before the target
+  // step is known; keep the indicator steady with a loading body meanwhile.
+  const { data: reopenedEnv, isError: reopenError } = useProjectEnv(
+    open && initialEnvId ? initialEnvId : null
+  )
+
+  const lastStep = mode === 'mock' ? 4 : 3
   const steps: WizardStep[] = [
     { number: 1, title: t('projectEnvs.stepMode'), description: '' },
     { number: 2, title: t('projectEnvs.stepDetails'), description: '' },
-    { number: 3, title: t('projectEnvs.stepVerify'), description: '' },
+    ...(mode === 'mock'
+      ? [{ number: 3, title: t('projectEnvs.stepMaterials'), description: '' }]
+      : []),
+    { number: lastStep, title: t('projectEnvs.stepVerify'), description: '' },
   ]
 
   useEffect(() => {
@@ -172,11 +206,41 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
       setMockPeriod({ start: '', end: '' })
       setMockPeriodTouched(false)
       setEnvId(null)
+      setMaterialTab('materials')
+      setSelectedMaterialIds(new Set())
+      setSelectedRouteId(null)
+      setReopenPending(false)
     } else if (initialEnvId) {
       setEnvId(initialEnvId)
-      setStep(3)
+      setReopenPending(true)
     }
   }, [open, initialEnvId])
+
+  useEffect(() => {
+    if (!open || !initialEnvId || !reopenPending) return
+    if (reopenedEnv) {
+      setMode(reopenedEnv.source_type)
+      // Mock envs land on the materials step whenever the candidate store
+      // matters: mid-generation, awaiting a pick, or failed (failed lets the
+      // user re-pick from the stored batch or retry/skip from the banner).
+      setStep(
+        reopenedEnv.source_type === 'mock' &&
+          ['material_pending', 'material_ready', 'failed'].includes(
+            String(reopenedEnv.status)
+          )
+          ? 3
+          : reopenedEnv.source_type === 'mock'
+            ? 4
+            : 3
+      )
+      setReopenPending(false)
+    } else if (reopenError) {
+      // Row vanished (deleted elsewhere): land on verify like before; the
+      // panel surfaces the missing env.
+      setStep(3)
+      setReopenPending(false)
+    }
+  }, [open, initialEnvId, reopenPending, reopenedEnv, reopenError])
 
   // Real form: R1 blocks, R2/R3 only warn (decision ②).
   const realViolations = validatePeriod(period.start, period.end, 'real')
@@ -198,7 +262,9 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
     mockKeywordsInvalid ||
     (!!mockPeriod.start !== !!mockPeriod.end) ||
     mockViolations.some((v) => v.severity === 'block') ||
-    mockMutation.isPending
+    mockMutation.isPending ||
+    mockMaterialsMutation.isPending ||
+    envInFlight
 
   const handlePolish = () => {
     if (!background.trim()) return
@@ -260,18 +326,50 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
     )
   }
 
-  const submitMock = () => {
-    mockMutation.mutate(
+  // 行业偏好随提交持久化（不在每次击键时写），下次打开向导时回填
+  const persistIndustry = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('project-env-industry', industry.trim())
+    }
+  }
+
+  // flow='materials' stops at the candidate step for the user to pick;
+  // flow='direct' (skip) runs the legacy draft+verify pipeline right away.
+  const submitMockMaterials = () => {
+    persistIndustry()
+    mockMaterialsMutation.mutate(
       {
         name: mockName.trim() || undefined,
         keywords,
+        industry: industry.trim() || undefined,
         period_start: mockPeriod.start || undefined,
         period_end: mockPeriod.end || undefined,
+        flow: 'materials',
       },
       {
         onSuccess: (result) => {
           setEnvId(result.id)
           setStep(3)
+        },
+      }
+    )
+  }
+
+  const submitMock = () => {
+    persistIndustry()
+    mockMutation.mutate(
+      {
+        name: mockName.trim() || undefined,
+        keywords,
+        industry: industry.trim() || undefined,
+        period_start: mockPeriod.start || undefined,
+        period_end: mockPeriod.end || undefined,
+        flow: 'direct',
+      },
+      {
+        onSuccess: (result) => {
+          setEnvId(result.id)
+          setStep(lastStep)
         },
       }
     )
@@ -300,6 +398,13 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
         </DialogHeader>
         <div className="max-h-[calc(90vh-7rem)] overflow-y-auto p-4">
           <WizardContainer currentStep={step} steps={steps} onStepClick={setStep}>
+            {open && initialEnvId && reopenPending ? (
+              <div className="flex items-center justify-center py-10 text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t('common.loading')}
+              </div>
+            ) : (
+              <>
             {step === 1 && (
               <div className="space-y-4 py-2">
                 <p className="text-sm text-muted-foreground">
@@ -545,6 +650,21 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
             {step === 2 && mode === 'mock' && (
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5">
+                  <Label htmlFor="env-mock-industry">
+                    {t('projectEnvs.mockIndustryLabel')}
+                  </Label>
+                  <Input
+                    id="env-mock-industry"
+                    value={industry}
+                    onChange={(event) => setIndustry(event.target.value)}
+                    maxLength={20}
+                    data-testid="env-mock-industry"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('projectEnvs.mockIndustryHelper')}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="env-mock-name">{t('projectEnvs.mockNameLabel')}</Label>
                   <Input
                     id="env-mock-name"
@@ -595,23 +715,50 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
                 <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
                   {t('projectEnvs.mockCostHint')}
                 </p>
-                <div className="flex justify-end gap-2 border-t pt-3">
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-3">
                   <Button variant="outline" onClick={() => setStep(1)}>
                     {t('common.back')}
                   </Button>
                   <Button
+                    variant="ghost"
                     disabled={mockBlocked}
                     onClick={submitMock}
                     data-testid="env-mock-submit"
                   >
                     {mockMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {t('projectEnvs.generateAndVerify')}
+                    {t('projectEnvs.skipMaterials')}
+                  </Button>
+                  <Button
+                    disabled={mockBlocked}
+                    onClick={submitMockMaterials}
+                    data-testid="env-mock-materials-submit"
+                  >
+                    {mockMaterialsMutation.isPending && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    {t('projectEnvs.generateMaterials')}
                   </Button>
                 </div>
               </div>
             )}
 
-            {step === 3 && envId && (
+            {step === 3 && mode === 'mock' && envId && (
+              <MaterialSelectionStep
+                envId={envId}
+                keywords={keywords.length ? keywords : (reopenedEnv?.keywords ?? [])}
+                tab={materialTab}
+                selectedIds={selectedMaterialIds}
+                selectedRouteId={selectedRouteId}
+                onTabChange={setMaterialTab}
+                onSelectedIdsChange={setSelectedMaterialIds}
+                onSelectedRouteChange={setSelectedRouteId}
+                onSubmitted={() => setStep(lastStep)}
+                onBack={() => setStep(2)}
+                onClose={() => onOpenChange(false)}
+              />
+            )}
+
+            {step === lastStep && envId && (
               <div className="space-y-3 py-2">
                 <p className="text-sm font-medium">{t('projectEnvs.verifyingTitle')}</p>
                 <VerificationPanel envId={envId} onCancel={() => onOpenChange(false)} />
@@ -621,6 +768,8 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
                   </Button>
                 </div>
               </div>
+            )}
+              </>
             )}
           </WizardContainer>
         </div>

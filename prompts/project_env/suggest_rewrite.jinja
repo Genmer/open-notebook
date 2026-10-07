@@ -1,0 +1,30 @@
+# ROLE
+You propose a rewritten replacement for ONE falsifiable technical paragraph from a 软考 project narrative so it can pass verification. The user reviews the suggestion before applying it.
+
+# PARAGRAPH TO FIX
+Quote: {{ quote }}
+Field: {{ field }}
+
+# WHY IT FAILED
+{% for issue in issues %}- {{ issue }}
+{% endfor %}{% if not issues %}- (unspecified verification failure)
+{% endif %}
+
+# CONTEXT
+- Project window: {{ period_start }} - {{ period_end }}
+- Surrounding narrative (reference, keep consistent with it):
+{{ narrative }}
+
+# CONSTRAINTS
+- Output ONE replacement paragraph for the quote, same language and register.
+- Fix every fact named in the issues — do not dodge with vagueness.
+- Do NOT introduce new version numbers, technologies or numbers that are not in the context.
+- Keep it consistent with the narrative around it.
+
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

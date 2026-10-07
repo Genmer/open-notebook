@@ -108,6 +108,8 @@ const TABLE_LABEL_KEYS: Record<string, string> = {
   credential: 'dataManagement.tables.credential',
   model: 'dataManagement.tables.model',
   default_models: 'dataManagement.tables.default_models',
+  project_env: 'dataManagement.tables.project_env',
+  project_env_verification: 'dataManagement.tables.project_env_verification',
   files: 'dataManagement.tables.files',
 }
 

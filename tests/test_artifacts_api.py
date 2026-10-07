@@ -187,11 +187,16 @@ class TestParseMindmap:
         tree = json.loads(_parse_mindmap(raw))
         assert tree["kind"] == "mindmap"
         assert tree["root"]["label"] == "系统可靠性"
-        assert [b["label"] for b in tree["root"]["children"]] == ["基本概念", "冗余设计"]
+        assert [b["label"] for b in tree["root"]["children"]] == [
+            "基本概念",
+            "冗余设计",
+        ]
         assert [c["label"] for c in tree["root"]["children"][0]["children"]] == [
             "MTBF",
         ]
-        assert [c["label"] for c in tree["root"]["children"][0]["children"][0]["children"]] == [
+        assert [
+            c["label"] for c in tree["root"]["children"][0]["children"][0]["children"]
+        ] == [
             "定义",
             "计算公式",
         ]

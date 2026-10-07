@@ -16,8 +16,18 @@ from open_notebook.domain.project_env_rules import MONTH_RE, SOURCE_TYPES
 from open_notebook.exceptions import InvalidInputError
 
 NAME_MAX_CHARS = 100
+INDUSTRY_MAX_CHARS = 20
+# mock 生成的公司所在行业默认值（公司自研视角的行业背景）
+DEFAULT_INDUSTRY = "物流行业"
 
-STATUSES = ("pending", "verified", "needs_review", "failed")
+STATUSES = (
+    "pending",
+    "verified",
+    "needs_review",
+    "failed",
+    "material_pending",
+    "material_ready",
+)
 
 TEXT_FIELDS = (
     "background",
@@ -45,6 +55,7 @@ class ProjectEnv(ObjectModel):
     table_name: ClassVar[str] = "project_env"
     nullable_fields: ClassVar[set[str]] = {
         "keywords",
+        "industry",
         "tuning_process",
         "problems_solutions",
         "my_role",
@@ -57,6 +68,9 @@ class ProjectEnv(ObjectModel):
         "verification_progress",
         "verification_token",
         "active_job_id",
+        "materials",
+        "materials_selection",
+        "generic_paragraph",
     }
 
     def _prepare_save_data(self) -> Dict[str, Any]:
@@ -73,6 +87,8 @@ class ProjectEnv(ObjectModel):
     period_end: str = ""
     source_type: str
     keywords: Optional[List[str]] = None
+    # mock 生成时公司所在行业（公司自研视角）
+    industry: Optional[str] = None
     tech_background: str = ""
     tuning_process: Optional[str] = None
     problems_solutions: Optional[str] = None
@@ -87,6 +103,11 @@ class ProjectEnv(ObjectModel):
     verification_progress: Optional[Dict[str, Any]] = None
     verification_token: Optional[str] = None
     active_job_id: Optional[str] = None
+    # 素材/路线候选 store 与用户提交的选择（形状见迁移 38 与素材端点契约）
+    materials: Optional[Dict[str, Any]] = None
+    materials_selection: Optional[Dict[str, Any]] = None
+    # 用户内容：不进快照、不触发验证、mock 重生成也不清（迁移 39）
+    generic_paragraph: Optional[str] = None
 
     @model_validator(mode="after")
     def enforce_project_env_rules(self) -> "ProjectEnv":
@@ -105,6 +126,8 @@ class ProjectEnv(ObjectModel):
                 raise InvalidInputError(
                     f"period '{period}' must use the YYYY.MM format"
                 )
+        if self.industry and len(self.industry.strip()) > INDUSTRY_MAX_CHARS:
+            raise InvalidInputError(f"industry exceeds {INDUSTRY_MAX_CHARS} characters")
         return self
 
     def candidate_fields(self) -> Dict[str, Any]:

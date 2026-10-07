@@ -1,0 +1,2 @@
+REMOVE FIELD materials ON TABLE project_env;
+REMOVE FIELD materials_selection ON TABLE project_env;

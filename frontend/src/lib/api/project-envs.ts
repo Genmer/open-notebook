@@ -1,16 +1,20 @@
 import apiClient from './client'
 import {
   CreateProjectEnvRequest,
+  GenericParagraphResponse,
+  MaterialsSubmitRequest,
   MockGenerateRequest,
   MockGenerateResponse,
   PolishBackgroundRequest,
   PolishBackgroundResponse,
   ProjectEnv,
   ProjectEnvDeleteResponse,
+  ProjectEnvMaterialsStatus,
   ProjectEnvVerificationStatus,
   ReverifyResponse,
   RewriteClaimRequest,
   RewriteClaimResponse,
+  SuggestClaimRewriteResponse,
   UpdateProjectEnvRequest,
 } from '@/lib/types/api'
 
@@ -85,6 +89,31 @@ export const projectEnvsApi = {
     return response.data
   },
 
+  getMaterials: async (id: string): Promise<ProjectEnvMaterialsStatus> => {
+    const response = await apiClient.get<ProjectEnvMaterialsStatus>(
+      `/project-envs/${id}/materials`
+    )
+    return response.data
+  },
+
+  generateMaterials: async (id: string): Promise<ReverifyResponse> => {
+    const response = await apiClient.post<ReverifyResponse>(
+      `/project-envs/${id}/materials/generate`
+    )
+    return response.data
+  },
+
+  submitMaterials: async (
+    id: string,
+    data: MaterialsSubmitRequest
+  ): Promise<ReverifyResponse> => {
+    const response = await apiClient.post<ReverifyResponse>(
+      `/project-envs/${id}/materials/submit`,
+      data
+    )
+    return response.data
+  },
+
   dismissClaim: async (
     envId: string,
     pointId: string
@@ -103,6 +132,25 @@ export const projectEnvsApi = {
     const response = await apiClient.post<RewriteClaimResponse>(
       `/project-envs/${envId}/claims/${pointId}/rewrite`,
       data
+    )
+    return response.data
+  },
+
+  suggestClaimRewrite: async (
+    envId: string,
+    pointId: string
+  ): Promise<SuggestClaimRewriteResponse> => {
+    const response = await apiClient.post<SuggestClaimRewriteResponse>(
+      `/project-envs/${envId}/claims/${pointId}/suggest`
+    )
+    return response.data
+  },
+
+  generateGenericParagraph: async (
+    envId: string
+  ): Promise<GenericParagraphResponse> => {
+    const response = await apiClient.post<GenericParagraphResponse>(
+      `/project-envs/${envId}/generic-paragraph/generate`
     )
     return response.data
   },

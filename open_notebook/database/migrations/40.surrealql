@@ -1,0 +1,2 @@
+-- 公司所在行业（mock 生成一律按该公司自研项目视角撰写）
+DEFINE FIELD IF NOT EXISTS industry ON TABLE project_env TYPE option<string>;

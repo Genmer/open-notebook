@@ -21,9 +21,8 @@ from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.ai import project_env_pipeline as pipeline
 from open_notebook.database.repository import ensure_record_id, repo_create, repo_query
-from open_notebook.domain.project_env import ProjectEnv
+from open_notebook.domain.project_env import TEXT_FIELDS, ProjectEnv
 from open_notebook.domain.project_env_rules import (
-    check_ga_ordering,
     check_runtime_consistency,
     legal_window,
     month_index,
@@ -46,6 +45,16 @@ POINT_POOL_CAP = 20
 # in-flight calls sustainable.
 LANE_CONCURRENCY = 3
 FINAL_STATES = {"passed", "dismissed", "rewritten", "exempt", "manual_review"}
+
+# candidate floors after server-side filtering (below -> whole run fails)
+MATERIALS_FLOOR = 6
+ROUTES_FLOOR = 2
+
+_DRAFTING_MESSAGES = {
+    "materials": "AI 扩充：根据选中素材拼装项目草稿",
+    "routes": "AI 扩充：根据选中路线扩写项目草稿",
+    "keywords": "AI 扩充：根据关键词生成完整项目背景草稿",
+}
 
 
 class _Superseded(Exception):
@@ -200,16 +209,71 @@ async def _save_run(run: Dict[str, Any], **fields: Any) -> None:
 # --- material preparation ---
 
 
+def _mock_render_plan(env: ProjectEnv) -> Dict[str, Any]:
+    """Resolve materials_selection into the drafting render plan. mode is
+    materials | routes | keywords; a selection matching no stored candidate
+    degrades to the keywords path (never block drafting on stale ids)."""
+    sel = env.materials_selection or {}
+    store = env.materials or {}
+    plan: Dict[str, Any] = {"mode": "keywords", "selected_items": [], "route": None}
+    kind = str(sel.get("kind") or "")
+    if kind == "materials":
+        ids = set(sel.get("material_ids") or [])
+        items = [
+            m
+            for m in ((store.get("materials") or {}).get("items") or [])
+            if m.get("id") in ids
+        ]
+        if items:
+            plan.update(mode="materials", selected_items=items)
+        else:
+            logger.warning(
+                f"materials_selection matched no stored candidates for {env.id}; "
+                "falling back to keywords drafting"
+            )
+    elif kind == "routes":
+        route = next(
+            (
+                r
+                for r in ((store.get("routes") or {}).get("items") or [])
+                if r.get("id") == sel.get("route_id")
+            ),
+            None,
+        )
+        if route:
+            plan.update(mode="routes", route=route)
+        else:
+            logger.warning(
+                f"materials_selection route not found for {env.id}; "
+                "falling back to keywords drafting"
+            )
+    return plan
+
+
 async def _prepare_mock_material(
     env: ProjectEnv, token: str, budget: pipeline.CallBudget
 ) -> None:
-    draft = await pipeline.render_mock(
-        keywords=env.keywords or [],
-        name=env.name,
-        period_start=env.period_start or None,
-        period_end=env.period_end or None,
-        budget=budget,
-    )
+    plan = _mock_render_plan(env)
+
+    async def render(feedback: Optional[str] = None) -> Optional[pipeline.MockDraft]:
+        common: Dict[str, Any] = {
+            "keywords": env.keywords or [],
+            "name": env.name,
+            "period_start": env.period_start or None,
+            "period_end": env.period_end or None,
+            "industry": env.industry,
+            "budget": budget,
+            "feedback": feedback,
+        }
+        if plan["mode"] == "materials":
+            return await pipeline.render_materials_draft(
+                selected_items=plan["selected_items"], **common
+            )
+        if plan["mode"] == "routes":
+            return await pipeline.render_route_draft(route=plan["route"], **common)
+        return await pipeline.render_mock(**common)
+
+    draft = await render()
     if draft is None:
         raise ValueError("mock generation failed after retry")
 
@@ -217,14 +281,7 @@ async def _prepare_mock_material(
     violations = validate_period(period[0], period[1], "mock")["violations"]
     if violations:
         feedback = "; ".join(v["message"] for v in violations)
-        draft = await pipeline.render_mock(
-            keywords=env.keywords or [],
-            name=env.name,
-            period_start=env.period_start or None,
-            period_end=env.period_end or None,
-            budget=budget,
-            feedback=feedback,
-        )
+        draft = await render(feedback=feedback)
         if draft is None:
             raise ValueError("mock regeneration failed after rule violations")
         violations = validate_period(draft.period_start, draft.period_end, "mock")[
@@ -271,15 +328,13 @@ async def _prepare_mock_material(
 def _prescreen_version_points(
     points: List[Dict[str, Any]], period_start: str, mode: str = "material"
 ) -> None:
-    """R5 pre-screen: anchor-table lookup for version claims. In mock mode an
-    off_table lookup only marks the point — lane B judges plausibility."""
+    """R5 pre-screen: anchor-table lookup over every version pair a paragraph
+    contains. In mock mode an off_table lookup only marks the point — lane B
+    judges plausibility."""
     for point in points:
         if point.get("type") != "version":
             continue
-        match = pipeline.VERSION_RE.search(str(point.get("quote") or ""))
-        tech = (match.group(1).strip() if match else "") or str(point.get("tech") or "")
-        version = match.group(2) if match else point.get("version")
-        result = check_ga_ordering(tech, version, period_start)
+        result = pipeline.prescreen_quote(str(point.get("quote") or ""), period_start)
         point["prescreen"] = result
         if result.get("status") == "off_table" and mode != "mock":
             point["state"] = "manual_review"
@@ -297,13 +352,17 @@ def _drop_drifted_claims(
     claims: List[Dict[str, Any]], candidate: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
     """Quotes the LLM hallucinated out of the material verify nothing; keep
-    only claims actually present in the candidate text."""
+    only claims locatable in the candidate text (whitespace-tolerant) and
+    rewrite their quote to the exact original substring so every downstream
+    replace stays byte-exact."""
     kept: List[Dict[str, Any]] = []
     for claim in claims:
         quote = str(claim.get("quote") or "")
         field = str(claim.get("field") or "")
         text = str(candidate.get(field) or "")
-        if quote and quote in text:
+        verbatim = pipeline._find_verbatim(text, quote) if quote else None
+        if verbatim:
+            claim["quote"] = verbatim
             kept.append(claim)
     return kept
 
@@ -509,7 +568,7 @@ async def _process_point(
             point["state"] = "manual_review"
             point["manual_reason"] = "quote_drift"
             break
-        env.apply_candidate_text(field, text.replace(old_quote, corrected))
+        env.apply_candidate_text(field, text.replace(old_quote, corrected, 1))
         point["quote"] = corrected
         rounds.append(
             {
@@ -656,11 +715,12 @@ async def verify_project_env_command(
 
         if not points:
             if input_data.mode == "mock" and not env.draft_content:
+                drafting_message = _DRAFTING_MESSAGES[_mock_render_plan(env)["mode"]]
                 await _set_progress(
                     env_id,
                     "drafting",
                     10,
-                    "AI 扩充：根据关键词生成完整项目背景草稿",
+                    drafting_message,
                     token=input_data.token,
                 )
                 await _prepare_mock_material(env, input_data.token, budget)
@@ -763,6 +823,116 @@ async def verify_project_env_command(
     except RuntimeError as e:
         # retriable, but when every retry dies the env must not stay pending
         # forever at 90% — a successful retry overwrites the failed mark
+        await _fail_env(env_id, str(e), input_data.token)
+        raise
+
+
+class GenerateProjectEnvMaterialsInput(CommandInput):
+    env_id: str
+    token: str
+
+
+class GenerateProjectEnvMaterialsOutput(CommandOutput):
+    success: bool
+    status: str  # material_ready | stale_token | superseded
+    counts: Dict[str, int] = Field(default_factory=dict)
+    error_message: Optional[str] = None
+
+
+@command(
+    "generate_project_env_materials",
+    app="open_notebook",
+    retry=PROJECT_ENV_RETRY_CONFIG,
+)
+async def generate_project_env_materials_command(
+    input_data: GenerateProjectEnvMaterialsInput,
+) -> GenerateProjectEnvMaterialsOutput:
+    """One run generates BOTH candidate stores (materials then routes,
+    sequentially): two concurrent jobs sharing a token would race env.save()
+    full-field merges, and both tabs ready at once is the product intent."""
+    env_id = input_data.env_id
+    env = await ProjectEnv.get(env_id)  # NotFoundError: permanent
+
+    if input_data.token != (env.verification_token or ""):
+        logger.info(f"[generate_project_env_materials:{env_id}] stale token, no-op")
+        return GenerateProjectEnvMaterialsOutput(success=True, status="stale_token")
+
+    try:
+        await _require_model_configured(pipeline.get_lane_models())
+        budget = pipeline.CallBudget()
+
+        await _set_progress(
+            env_id, "materialing", 10, "AI 生成素材候选中", token=input_data.token
+        )
+        materials_bundle = await pipeline.generate_materials(
+            keywords=env.keywords or [],
+            name=env.name,
+            period_start=env.period_start or None,
+            period_end=env.period_end or None,
+            industry=env.industry,
+            budget=budget,
+        )
+        await _set_progress(
+            env_id, "routing", 55, "AI 生成备选路线中", token=input_data.token
+        )
+        routes_bundle = await pipeline.generate_routes(
+            keywords=env.keywords or [],
+            name=env.name,
+            period_start=env.period_start or None,
+            period_end=env.period_end or None,
+            industry=env.industry,
+            budget=budget,
+        )
+        if materials_bundle is None or routes_bundle is None:
+            await _fail_env(env_id, "素材候选生成失败，请重试", input_data.token)
+            raise ValueError("素材候选生成失败，请重试")
+
+        # Server-side hardening: LLM ids/categories are untrusted — drop
+        # off-whitelist categories silently, renumber ids, enforce floors.
+        material_items = [
+            {**item.model_dump(), "id": f"m{i}"}
+            for i, item in enumerate(
+                (it for it in materials_bundle.items if it.category in TEXT_FIELDS),
+                start=1,
+            )
+        ]
+        route_items = [
+            {**route.model_dump(), "id": f"r{i}"}
+            for i, route in enumerate(routes_bundle.routes, start=1)
+        ]
+        if len(material_items) < MATERIALS_FLOOR or len(route_items) < ROUTES_FLOOR:
+            message = (
+                f"素材候选不足（素材 {len(material_items)} 条 / 路线 "
+                f"{len(route_items)} 条），请重试"
+            )
+            await _fail_env(env_id, message, input_data.token)
+            raise ValueError(message)
+
+        if not await _token_current(env_id, input_data.token):
+            raise _Superseded()
+        generated_at = datetime.now().isoformat()
+        env.materials = {
+            "materials": {"items": material_items, "generated_at": generated_at},
+            "routes": {"items": route_items, "generated_at": generated_at},
+        }
+        env.status = "material_ready"
+        await env.save()
+
+        await _set_progress(
+            env_id, "done", 100, "素材已生成，请选择", token=input_data.token
+        )
+        return GenerateProjectEnvMaterialsOutput(
+            success=True,
+            status="material_ready",
+            counts={"materials": len(material_items), "routes": len(route_items)},
+        )
+    except _Superseded:
+        logger.info(
+            f"[generate_project_env_materials:{env_id}] superseded mid-run, "
+            "standing down"
+        )
+        return GenerateProjectEnvMaterialsOutput(success=True, status="superseded")
+    except (ValueError, ConfigurationError) as e:
         await _fail_env(env_id, str(e), input_data.token)
         raise
 

@@ -1,0 +1,1 @@
+REMOVE FIELD industry ON TABLE project_env;

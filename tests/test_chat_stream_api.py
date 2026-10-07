@@ -370,7 +370,7 @@ def test_b8b_node_flip_is_config_gated(tmp_path, stream_tokens):
     model = _fake_model("Hello streamed world")
     prov = SimpleNamespace(langchain_model=model, model_name="fake-stream-model")
 
-    configurable = {"thread_id": "chat_session:t-b8"}
+    configurable: dict[str, object] = {"thread_id": "chat_session:t-b8"}
     if stream_tokens:
         configurable["stream_tokens"] = True
 

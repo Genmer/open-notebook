@@ -49,6 +49,7 @@ RETRYABLE_COMMANDS: frozenset[str] = frozenset(
         "embed_source",
         "export_data",
         "generate_artifact",
+        "generate_project_env_materials",
         "process_source",
         "rebuild_embeddings",
         "run_transformation",

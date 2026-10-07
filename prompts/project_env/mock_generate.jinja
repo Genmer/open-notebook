@@ -22,7 +22,12 @@ You generate a plausible project environment (软考高级论文项目背景) fo
 {{ name }}
 {% endif %}
 
+# COMPANY CONTEXT (authoritative)
+- 本人所在公司属于「{{ industry }}」；所有项目一律是公司自研：为公司自身业务建设，不是乙方给甲方交付，也不是外包项目。
+- 严禁出现：合同金额、投资额等金额数字、甲方/乙方、外包、中标、验收回款等交付方叙事；团队人数/团队规模也不写。
+
 # FIVE PROJECT TEMPLATES (pick or blend one that fits the keywords)
+五个模板都要改造为贴合「{{ industry }}」行业场景的自研项目。
 1. 数据平台/中台类：数据采集→清洗→存储→分析全链路，涉及 Kafka、Flink、ClickHouse 等。
 2. 微服务治理类：单体拆分微服务，注册发现、网关、链路追踪、灰度发布。
 3. AI/大模型应用类：检索增强生成、向量化、模型推理服务化、评测调优。
@@ -34,12 +39,12 @@ You generate a plausible project environment (软考高级论文项目背景) fo
 
 # OUTPUT FIELDS
 - name: 项目名称（不超过 30 字）
-- background: 200-400 字，项目背景、甲方、周期、目标
+- background: 200-400 字，项目背景（公司自研视角，贴合所在行业）、周期、目标
 - tech_background: 200-400 字，技术栈选型与理由（可含主流组件版本）
 - tuning_process: 200-400 字，性能调优/上线过程叙事
 - problems_solutions: 200-400 字，2-3 个关键问题与解决方案
 - my_role: 100-200 字，第一人称的角色与职责（项目负责人/架构师口吻，不越位）
-- scale: 100-200 字，项目规模（团队人数、数据量、用户量等）
+- scale: 100-200 字，项目规模（数据量、用户量、并发量等）
 
 All narrative in first person plural/singular suitable for a 软考论文. Every technical choice must have reached general availability (GA) before period_start; under that constraint prefer the newer versions to reflect technical currency. Every technical claim must be mainstream and checkable; invented niche versions or impossible metrics will fail verification.
 {% if feedback %}

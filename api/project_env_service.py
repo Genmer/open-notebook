@@ -20,6 +20,15 @@ from open_notebook.exceptions import NotFoundError
 INJECTABLE_STATUS_NOTE = "（以下为最近一次通过验证的版本）"
 
 
+def _generic_paragraph_block(paragraph: Optional[str]) -> str:
+    """Live generic-paragraph block: read from the env at injection time (not
+    the snapshot), so edits reach chats without a re-verification."""
+    text = str(paragraph or "").strip()
+    if not text:
+        return ""
+    return f"通用段落（写作时直接套用，填空处按项目实情填充）：\n{text}"
+
+
 async def render_project_env_context(env_id: Optional[str]) -> Optional[Dict[str, Any]]:
     """Resolve a session's project_env reference into injectable prompt text.
 
@@ -34,11 +43,29 @@ async def render_project_env_context(env_id: Optional[str]) -> Optional[Dict[str
         return {"text": None, "state": "dangling"}
 
     if env.status == "verified" and env.verified_snapshot:
-        return {"text": _render_snapshot(env.verified_snapshot), "state": "verified"}
+        text = "\n\n".join(
+            part
+            for part in (
+                _render_snapshot(env.verified_snapshot),
+                _generic_paragraph_block(env.generic_paragraph),
+            )
+            if part
+        )
+        return {"text": text, "state": "verified"}
 
     if env.status == "pending" and env.verified_snapshot:
-        text = f"{INJECTABLE_STATUS_NOTE}\n{_render_snapshot(env.verified_snapshot)}"
-        return {"text": text, "state": "pending_stale"}
+        combined = "\n\n".join(
+            part
+            for part in (
+                _render_snapshot(env.verified_snapshot),
+                _generic_paragraph_block(env.generic_paragraph),
+            )
+            if part
+        )
+        return {
+            "text": f"{INJECTABLE_STATUS_NOTE}\n{combined}",
+            "state": "pending_stale",
+        }
 
     return {"text": None, "state": env.status}
 

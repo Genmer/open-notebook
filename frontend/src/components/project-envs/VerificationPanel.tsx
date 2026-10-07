@@ -1,19 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { SuggestRewritePanel } from '@/components/project-envs/SuggestRewritePanel'
 import { cn } from '@/lib/utils'
-import { Check, ChevronDown, Loader2, X, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { Check, ChevronDown, Loader2, X, AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useDismissClaim,
+  useProjectEnv,
   useProjectEnvVerification,
   useRewriteClaim,
+  useSuggestClaimRewrite,
 } from '@/lib/hooks/use-project-envs'
 import { tasksApi } from '@/lib/api/tasks'
 import type {
@@ -82,9 +85,16 @@ function phaseIndex(stage: string | undefined): number {
 }
 
 // Static literals so the locale unused-key scanner sees the references.
-const PHASE_LABEL_KEYS = [
+const REAL_PHASE_KEYS = [
   'projectEnvs.phaseDraft',
   'projectEnvs.phaseVerify',
+  'projectEnvs.phaseConverge',
+] as const
+// Mock runs verify with lanes B+C only (no KB evidence lane), so the middle
+// phase reads "two-lane" there.
+const MOCK_PHASE_KEYS = [
+  'projectEnvs.phaseDraft',
+  'projectEnvs.phaseVerifyMock',
   'projectEnvs.phaseConverge',
 ] as const
 
@@ -140,21 +150,37 @@ function RoundsHistory({ rounds }: { rounds: ProjectEnvClaimRound[] }) {
   )
 }
 
+const REWRITE_MAX_CHARS = 4000
+
+// Only lanes_failed/exhausted points carry the failed-lane opinions the
+// suggestion endpoint needs; other manual reasons are rejected server-side.
+function isSuggestible(point: ProjectEnvClaimPoint): boolean {
+  return (
+    point.state === 'manual_review' &&
+    (point.manual_reason === 'lanes_failed' || point.manual_reason === 'exhausted')
+  )
+}
+
 function PointCard({
   envId,
   point,
   pending,
+  lanes,
 }: {
   envId: string
   point: ProjectEnvClaimPoint
   pending: boolean
+  lanes: ProjectEnvLane[]
 }) {
   const { t } = useTranslation()
   const [rewriteOpen, setRewriteOpen] = useState(false)
   const [rewriteText, setRewriteText] = useState('')
+  const [suggestOpen, setSuggestOpen] = useState(false)
   const [confirmDismiss, setConfirmDismiss] = useState(false)
+  const rewriteInputRef = useRef<HTMLTextAreaElement>(null)
   const dismissMutation = useDismissClaim()
   const rewriteMutation = useRewriteClaim()
+  const suggestMutation = useSuggestClaimRewrite()
 
   const state = point.state
   const isManual = state === 'manual_review'
@@ -195,14 +221,14 @@ function PointCard({
       data-testid={`claim-point-${point.point_id}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 text-sm break-all">{point.quote}</p>
+        <p className="min-w-0 flex-1 whitespace-pre-wrap break-all text-sm">{point.quote}</p>
         {stateBadge}
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <Badge variant="secondary" className="text-[10px] font-normal">
           {fieldLabel(point.field, t)}
         </Badge>
-        {LANES.map((lane) => (
+        {lanes.map((lane) => (
           <LaneBadge key={lane} lane={lane} result={point.lanes?.[lane]} />
         ))}
         {state === 'manual_review' && point.manual_reason === 'uncovered' && (
@@ -216,7 +242,7 @@ function PointCard({
 
       {isManual && !pending && (
         <div className="space-y-2 border-t pt-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -231,19 +257,65 @@ function PointCard({
               variant="outline"
               onClick={() => {
                 setRewriteOpen((open) => !open)
-                setRewriteText('')
+                // Prefill with the original paragraph: rewrites usually touch a
+                // fact or two, not the whole paragraph.
+                setRewriteText(point.quote.slice(0, REWRITE_MAX_CHARS))
               }}
             >
               {t('projectEnvs.rewriteAction')}
             </Button>
+            {isSuggestible(point) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={suggestMutation.isPending}
+                onClick={() => {
+                  setSuggestOpen(true)
+                  suggestMutation.mutate({ envId, pointId: point.point_id })
+                }}
+                data-testid={`claim-suggest-${point.point_id}`}
+              >
+                {suggestMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {!suggestMutation.isPending && <Sparkles className="h-3.5 w-3.5" />}
+                {t('projectEnvs.suggestAction')}
+              </Button>
+            )}
           </div>
+          {suggestOpen && (
+            <SuggestRewritePanel
+              original={point.quote}
+              suggestion={suggestMutation.data?.suggestion}
+              explanation={suggestMutation.data?.explanation}
+              loading={suggestMutation.isPending}
+              failed={suggestMutation.isError}
+              onAdopt={() => {
+                if (!suggestMutation.data) return
+                setRewriteOpen(true)
+                setRewriteText(
+                  suggestMutation.data.suggestion.slice(0, REWRITE_MAX_CHARS)
+                )
+                setSuggestOpen(false)
+                // The textarea mounts with the open toggle above.
+                requestAnimationFrame(() => rewriteInputRef.current?.focus())
+              }}
+              onDiscard={() => {
+                setSuggestOpen(false)
+                suggestMutation.reset()
+              }}
+              onRetry={() => suggestMutation.mutate({ envId, pointId: point.point_id })}
+            />
+          )}
           {rewriteOpen && (
             <div className="space-y-1.5">
               <Textarea
+                ref={rewriteInputRef}
                 value={rewriteText}
-                onChange={(event) => setRewriteText(event.target.value.slice(0, 2000))}
+                onChange={(event) =>
+                  setRewriteText(event.target.value.slice(0, REWRITE_MAX_CHARS))
+                }
+                maxLength={REWRITE_MAX_CHARS}
                 placeholder={t('projectEnvs.rewritePlaceholder')}
-                rows={3}
+                rows={6}
                 data-testid={`claim-rewrite-input-${point.point_id}`}
               />
               <div className="flex items-center justify-between">
@@ -285,7 +357,7 @@ function PointCard({
                 ? t('projectEnvs.rewritePassed')
                 : t('projectEnvs.rewriteFailed')}
               {!rewriteResult.passed &&
-                LANES.map((lane) =>
+                lanes.map((lane) =>
                   rewriteResult.lanes?.[lane]?.issues?.length ? (
                     <span key={lane} className="block break-all">
                       {lane}: {rewriteResult.lanes![lane]!.issues!.join('; ')}
@@ -329,6 +401,12 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
   const { t } = useTranslation()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const { data, isLoading, refetch } = useProjectEnvVerification(envId)
+  // Lane A never runs for mock envs (no KB evidence), so its badge and the
+  // "three-lane" copy would only confuse there. Cached from the list/wizard.
+  const { data: envRow } = useProjectEnv(envId)
+  const isMock = envRow?.source_type === 'mock'
+  const lanes: ProjectEnvLane[] = isMock ? ['B', 'C'] : LANES
+  const phaseKeys = isMock ? MOCK_PHASE_KEYS : REAL_PHASE_KEYS
 
   if (isLoading || !data) {
     return (
@@ -361,7 +439,7 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
       {pending && (
         <div className="space-y-2 rounded-lg border border-teal/40 bg-teal-tint/40 p-3">
           <ol className="flex items-center gap-1.5 text-xs">
-            {PHASE_LABEL_KEYS.map((key, i) => {
+            {phaseKeys.map((key, i) => {
               const current = phaseIndex(progress?.stage)
               const done = i < current
               const active = i === current
@@ -448,7 +526,13 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
 
       <div className="space-y-2">
         {data.points.map((point) => (
-          <PointCard key={point.point_id} envId={envId} point={point} pending={pending} />
+          <PointCard
+            key={point.point_id}
+            envId={envId}
+            point={point}
+            pending={pending}
+            lanes={lanes}
+          />
         ))}
         {!data.points.length && !pending && (
           <p className="py-6 text-center text-sm text-muted-foreground">

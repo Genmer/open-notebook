@@ -3,8 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { VerificationPanel } from './VerificationPanel'
 import {
   useDismissClaim,
+  useProjectEnv,
   useProjectEnvVerification,
   useRewriteClaim,
+  useSuggestClaimRewrite,
 } from '@/lib/hooks/use-project-envs'
 import { tasksApi } from '@/lib/api/tasks'
 import type {
@@ -16,6 +18,8 @@ vi.mock('@/lib/hooks/use-project-envs', () => ({
   useProjectEnvVerification: vi.fn(),
   useDismissClaim: vi.fn(),
   useRewriteClaim: vi.fn(),
+  useProjectEnv: vi.fn(),
+  useSuggestClaimRewrite: vi.fn(),
 }))
 
 vi.mock('@/lib/api/tasks', () => ({
@@ -46,6 +50,8 @@ vi.mock('@/components/common/ConfirmDialog', () => ({
 const mockVerification = vi.mocked(useProjectEnvVerification)
 const mockDismiss = vi.mocked(useDismissClaim)
 const mockRewrite = vi.mocked(useRewriteClaim)
+const mockSuggest = vi.mocked(useSuggestClaimRewrite)
+const mockEnv = vi.mocked(useProjectEnv)
 const mockCancel = vi.mocked(tasksApi.cancel)
 
 function point(overrides: Partial<ProjectEnvClaimPoint> = {}): ProjectEnvClaimPoint {
@@ -94,6 +100,16 @@ describe('VerificationPanel', () => {
       isSuccess: false,
       data: undefined,
     } as unknown as ReturnType<typeof useRewriteClaim>)
+    mockSuggest.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      data: undefined,
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useSuggestClaimRewrite>)
+    mockEnv.mockReturnValue({
+      data: { source_type: 'real' },
+    } as unknown as ReturnType<typeof useProjectEnv>)
   })
 
   it('renders the full-scope summary line and degradation badges', () => {
@@ -231,6 +247,28 @@ describe('VerificationPanel', () => {
     )
   })
 
+  it('mock envs read the two-lane phase and drop the lane-A badge', () => {
+    mockEnv.mockReturnValue({
+      data: { source_type: 'mock' },
+    } as unknown as ReturnType<typeof useProjectEnv>)
+    mockVerification.mockReturnValue({
+      data: status({
+        status: 'pending',
+        progress: { stage: 'verifying', percent: 55 },
+      }),
+      isLoading: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    expect(screen.getByTestId('verification-phase-1')).toHaveTextContent(
+      'projectEnvs.phaseVerifyMock'
+    )
+    expect(screen.queryByText('projectEnvs.laneA')).toBeNull()
+    expect(screen.getByText('projectEnvs.laneB')).toBeDefined()
+    expect(screen.getByText('projectEnvs.laneC')).toBeDefined()
+  })
+
   it('highlights the expand phase while the AI drafts the material', () => {
     mockVerification.mockReturnValue({
       data: status({
@@ -248,5 +286,98 @@ describe('VerificationPanel', () => {
     expect(screen.getByTestId('verification-phase-1').className).toContain(
       'text-muted-foreground/60'
     )
+  })
+
+  it('prefills the rewrite box with the original paragraph', () => {
+    render(<VerificationPanel envId="env:1" />)
+    fireEvent.click(screen.getByText('projectEnvs.rewriteAction'))
+    const textarea = screen.getByTestId('claim-rewrite-input-p1') as HTMLTextAreaElement
+    expect(textarea.value).toBe('系统采用 MySQL 8.0 存储')
+    // cap mirrors the backend 4000-char limit (4001 -> 422)
+    expect(textarea.getAttribute('maxlength')).toBe('4000')
+  })
+
+  it('renders the point quote with pre-wrap so paragraph line breaks survive', () => {
+    render(<VerificationPanel envId="env:1" />)
+    const quote = screen.getByText('系统采用 MySQL 8.0 存储')
+    expect(quote.className).toContain('whitespace-pre-wrap')
+  })
+
+  it('shows the AI suggest action only for lanes_failed/exhausted points', () => {
+    const { unmount } = render(<VerificationPanel envId="env:1" />)
+    expect(screen.getByTestId('claim-suggest-p1')).toBeDefined()
+    unmount()
+
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [point({ manual_reason: 'off_table', lanes: {} })],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:2" />)
+    expect(screen.queryByTestId('claim-suggest-p1')).toBeNull()
+  })
+
+  it('adopting a suggestion feeds the rewrite box without saving anything', () => {
+    const suggestMutate = vi.fn()
+    mockSuggest.mockReturnValue({
+      mutate: suggestMutate,
+      isPending: false,
+      isError: false,
+      data: {
+        suggestion: '系统采用 MySQL 5.7 存储',
+        explanation: 'GA moved before period start',
+      },
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useSuggestClaimRewrite>)
+    render(<VerificationPanel envId="env:1" />)
+
+    fireEvent.click(screen.getByTestId('claim-suggest-p1'))
+    expect(suggestMutate).toHaveBeenCalledWith({ envId: 'env:1', pointId: 'p1' })
+    expect(screen.getByTestId('suggest-panel')).toBeDefined()
+    expect(screen.getByTestId('suggest-adopt')).toBeDefined()
+    expect(screen.getByTestId('suggest-discard')).toBeDefined()
+
+    fireEvent.click(screen.getByTestId('suggest-adopt'))
+    const textarea = screen.getByTestId('claim-rewrite-input-p1') as HTMLTextAreaElement
+    expect(textarea.value).toBe('系统采用 MySQL 5.7 存储')
+  })
+
+  it('discarding the suggestion closes the panel and shows the loading state while pending', () => {
+    const reset = vi.fn()
+    mockSuggest.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      data: { suggestion: 's', explanation: 'e' },
+      reset,
+    } as unknown as ReturnType<typeof useSuggestClaimRewrite>)
+    const first = render(<VerificationPanel envId="env:1" />)
+    fireEvent.click(screen.getByTestId('claim-suggest-p1'))
+    fireEvent.click(screen.getByTestId('suggest-discard'))
+    expect(reset).toHaveBeenCalled()
+    expect(screen.queryByTestId('suggest-panel')).toBeNull()
+    first.unmount()
+
+    // Real flow: the click opens the panel, the in-flight mutation then flips
+    // the same instance into its loading state.
+    const idle = {
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      data: undefined,
+      reset: vi.fn(),
+    } as unknown as ReturnType<typeof useSuggestClaimRewrite>
+    mockSuggest.mockReturnValue(idle)
+    const { rerender, unmount } = render(<VerificationPanel envId="env:3" />)
+    fireEvent.click(screen.getByTestId('claim-suggest-p1'))
+
+    mockSuggest.mockReturnValue({
+      ...idle,
+      isPending: true,
+    } as unknown as ReturnType<typeof useSuggestClaimRewrite>)
+    rerender(<VerificationPanel envId="env:3" />)
+    expect(screen.getByTestId('suggest-loading')).toBeDefined()
+    unmount()
   })
 })
