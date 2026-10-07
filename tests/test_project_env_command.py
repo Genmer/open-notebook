@@ -1607,6 +1607,7 @@ class TestDraftingFromSelection:
         recorder = Recorder()
         render_kw = AsyncMock(return_value=_mock_draft())
         await _run(env, recorder, mode="mock", render_mock=render_kw)
+        assert render_kw.await_args is not None
         assert render_kw.await_args.kwargs["industry"] == "医疗行业"
 
         # 素材路径
@@ -1621,6 +1622,7 @@ class TestDraftingFromSelection:
         )
         render_mat = AsyncMock(return_value=_mock_draft())
         await _run(env, Recorder(), mode="mock", render_materials_draft=render_mat)
+        assert render_mat.await_args is not None
         assert render_mat.await_args.kwargs["industry"] == "医疗行业"
 
         # 路线路径
@@ -1635,12 +1637,14 @@ class TestDraftingFromSelection:
         )
         render_route = AsyncMock(return_value=_mock_draft())
         await _run(env, Recorder(), mode="mock", render_route_draft=render_route)
+        assert render_route.await_args is not None
         assert render_route.await_args.kwargs["industry"] == "医疗行业"
 
         # 行业为空（老行/真实来源）→ None 下发，不由命令层填默认
         env = _selection_env(industry=None)
         render_none = AsyncMock(return_value=_mock_draft())
         await _run(env, Recorder(), mode="mock", render_mock=render_none)
+        assert render_none.await_args is not None
         assert render_none.await_args.kwargs["industry"] is None
 
 

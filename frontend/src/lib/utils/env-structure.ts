@@ -111,19 +111,44 @@ function labelOf(text: string, start: number, end: number): string {
   return pre + post
 }
 
+// 存量环境禁词兜底（README 第 4 项）：提示词禁写「合同金额/团队规模/团队人数」
+// 只约束新生成，改造前生成的存量文本仍可能带禁词。含禁词的子句不再出指标卡。
+// 与后端 open_notebook/domain/project_env_cleaner.py 的 FORBIDDEN_PHRASES 同集。
+export const FORBIDDEN_STAT_PHRASES = ['合同金额', '团队规模', '团队人数'] as const
+
+// 子句窗口比 labelOf 的前10后6截断宽：禁词落在 label 窗口外时仍要整卡丢弃
+const CLAUSE_SEPS = SEPS + '\n,;:'
+
+function clauseAround(text: string, start: number, end: number): string {
+  let from = start
+  while (from > 0 && !CLAUSE_SEPS.includes(text[from - 1])) from--
+  let to = end
+  while (to < text.length && !CLAUSE_SEPS.includes(text[to])) to++
+  return text.slice(from, to)
+}
+
+function clauseForbidden(text: string, start: number, end: number): boolean {
+  const clause = clauseAround(text, start, end)
+  return FORBIDDEN_STAT_PHRASES.some((p) => clause.includes(p))
+}
+
 function scanTrends(text: string): { range: [number, number]; item: StatItem }[] {
   const out: { range: [number, number]; item: StatItem }[] = []
   for (const m of text.matchAll(TREND_RE)) {
     const from = m[1] ?? ''
     const to = m[5] ?? ''
     if (YEAR_RE.test(from) && YEAR_RE.test(to)) continue // 裸年份区间非指标
+    const start = m.index ?? 0
+    const end = start + m[0].length
+    // 禁词子句内的趋势命中整体丢弃；同子句的静态命中也按同一规则丢弃
+    if (clauseForbidden(text, start, end)) continue
     out.push({
-      range: [m.index ?? 0, (m.index ?? 0) + m[0].length],
+      range: [start, end],
       item: {
         trendFrom: stripComma(from) + (m[2] ?? ''),
         value: stripComma(to) + (m[6] ?? ''),
         unit: '',
-        label: labelOf(text, m.index ?? 0, (m.index ?? 0) + m[0].length),
+        label: labelOf(text, start, end),
         direction: m[3] ? 'up' : 'down',
       },
     })
@@ -138,6 +163,8 @@ function scanStatics(text: string, trendRanges: [number, number][]): StatItem[] 
     const end = start + m[0].length
     // 与 trend 匹配区间重叠的静态命中跳过，避免同一数字出两张卡
     if (trendRanges.some(([a, b]) => start < b && end > a)) continue
+    // 禁词子句内的静态命中整体丢弃（数字本身含禁词语义时连同子句消失）
+    if (clauseForbidden(text, start, end)) continue
     out.push({
       value: stripComma(m[2] ?? '') + (m[3] ?? ''),
       unit: m[4] ?? '',

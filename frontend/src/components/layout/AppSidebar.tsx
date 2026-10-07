@@ -72,7 +72,7 @@ const getNavigation = (t: TFunction) => [
     items: [
       { name: t('navigation.tasks'), href: '/tasks', icon: ListTodo, iconClass: undefined },
       { name: t('navigation.agents'), href: '/agents', icon: Bot, iconClass: undefined },
-      { name: t('navigation.projectEnvironments'), href: '/project-environments', icon: Building2, iconClass: undefined },
+      { name: t('navigation.projectEnvironments'), href: '/project-environments', icon: Building2, iconClass: undefined, note: t('navigation.projectEnvironmentsHint') },
       { name: t('navigation.models'), href: '/settings/models', icon: Bot, iconClass: undefined },
       { name: t('navigation.usage'), href: '/settings/usage', icon: Gauge, iconClass: undefined },
       { name: t('navigation.storage'), href: '/settings/storage', icon: HardDrive, iconClass: undefined },
@@ -301,13 +301,22 @@ export function AppSidebar() {
                             {button}
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent side="right">{item.name}</TooltipContent>
+                        <TooltipContent side="right">
+                          <div className="space-y-0.5">
+                            <div>{item.name}</div>
+                            {'note' in item && item.note && (
+                              <div className="max-w-48 text-xs leading-snug text-muted-foreground">
+                                {item.note}
+                              </div>
+                            )}
+                          </div>
+                        </TooltipContent>
                       </Tooltip>
                     )
                   }
 
                   return (
-                    <Link key={item.name} href={item.href}>
+                    <Link key={item.name} href={item.href} title={'note' in item ? item.note : undefined}>
                       {button}
                     </Link>
                   )

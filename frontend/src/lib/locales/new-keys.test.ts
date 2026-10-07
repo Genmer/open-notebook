@@ -1259,6 +1259,56 @@ const INDUSTRY_KEYS = [
   'projectEnvs.mockIndustryHelper',
 ]
 
+// Pinned inventory of the 2026-10 project-env ruankao UX pass: the exam-essay
+// note under the page title and the nav entry, the whole-card detail aria
+// label, and the static tech-stack glossary (40 entries) shown on hover.
+// Same guarding contract as the blocks above.
+const RUANKAO_UX_KEYS = [
+  'projectEnvs.ruankaoNote',
+  'navigation.projectEnvironmentsHint',
+  'projectEnvs.openDetailAria',
+  'projectEnvs.glossary.redis',
+  'projectEnvs.glossary.memcached',
+  'projectEnvs.glossary.postgresql',
+  'projectEnvs.glossary.mysql',
+  'projectEnvs.glossary.mongodb',
+  'projectEnvs.glossary.clickhouse',
+  'projectEnvs.glossary.elasticsearch',
+  'projectEnvs.glossary.milvus',
+  'projectEnvs.glossary.kafka',
+  'projectEnvs.glossary.rabbitmq',
+  'projectEnvs.glossary.rocketmq',
+  'projectEnvs.glossary.spring-boot',
+  'projectEnvs.glossary.spring-cloud',
+  'projectEnvs.glossary.fastapi',
+  'projectEnvs.glossary.django',
+  'projectEnvs.glossary.flask',
+  'projectEnvs.glossary.vue',
+  'projectEnvs.glossary.react',
+  'projectEnvs.glossary.qwen',
+  'projectEnvs.glossary.llama',
+  'projectEnvs.glossary.deepseek',
+  'projectEnvs.glossary.glm',
+  'projectEnvs.glossary.bert',
+  'projectEnvs.glossary.bge',
+  'projectEnvs.glossary.vllm',
+  'projectEnvs.glossary.or-tools',
+  'projectEnvs.glossary.gurobi',
+  'projectEnvs.glossary.cplex',
+  'projectEnvs.glossary.osrm',
+  'projectEnvs.glossary.postgis',
+  'projectEnvs.glossary.arcgis',
+  'projectEnvs.glossary.kubernetes',
+  'projectEnvs.glossary.k8s',
+  'projectEnvs.glossary.docker',
+  'projectEnvs.glossary.nginx',
+  'projectEnvs.glossary.java',
+  'projectEnvs.glossary.python',
+  'projectEnvs.glossary.go',
+  'projectEnvs.glossary.node',
+  'projectEnvs.glossary.jmeter',
+]
+
 describe.each([
   ['2026-10 project-env suggest panel', SUGGEST_KEYS],
   ['2026-10 project-env generic paragraph', GENERIC_PARAGRAPH_KEYS],
@@ -1266,6 +1316,7 @@ describe.each([
   ['2026-10 project-env card/detail redesign', VERIFICATION_DETAILS_KEYS],
   ['2026-10 project-env detail visual redesign', DETAIL_VISUAL_KEYS],
   ['2026-10 project-env industry input', INDUSTRY_KEYS],
+  ['2026-10 project-env ruankao UX pass', RUANKAO_UX_KEYS],
 ])('New i18n keys (%s)', (_label, KEYS) => {
   it('every new key exists as a non-empty string in en-US', () => {
     const enLeaves = getLeafStrings(enUS)

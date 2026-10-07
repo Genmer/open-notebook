@@ -54,6 +54,7 @@ export default function ProjectEnvironmentsPage() {
           </div>
 
           <div className="max-w-5xl">
+            <p className="mb-1 text-xs text-muted-foreground">{t('projectEnvs.ruankaoNote')}</p>
             <p className="text-muted-foreground flex items-center gap-2">
               {t('projectEnvs.desc')}
             </p>

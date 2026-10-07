@@ -41,7 +41,10 @@ function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
     return (
       <button
         type="button"
-        onClick={onOpen}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen()
+        }}
         className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring"
         title={t('projectEnvs.statusNeedsReview', { count: env.pending_claims_count })}
       >
@@ -55,7 +58,10 @@ function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
     return (
       <button
         type="button"
-        onClick={onOpen}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen()
+        }}
         data-testid={`env-pending-${env.id}`}
         className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
@@ -70,7 +76,10 @@ function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
     return (
       <button
         type="button"
-        onClick={onOpen}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen()
+        }}
         data-testid={`env-material-pending-${env.id}`}
         className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
@@ -85,7 +94,10 @@ function StatusBadge({ env, onOpen }: { env: ProjectEnv; onOpen: () => void }) {
     return (
       <button
         type="button"
-        onClick={onOpen}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpen()
+        }}
         data-testid={`env-material-ready-${env.id}`}
         className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
@@ -153,11 +165,28 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
         const span = spanMonths(env.period_start, env.period_end)
         const accent = accentOf(env.id)
         const real = env.source_type === 'real'
+        // The whole card opens the detail dialog (click, Enter, Space), so every
+        // interactive element added inside the card must stopPropagation on its
+        // click, or it will also open the dialog.
         return (
           <Card
             key={env.id}
-            className="relative gap-0 overflow-hidden py-0"
+            data-testid={`env-card-${env.id}`}
+            role="button"
+            tabIndex={0}
+            aria-label={t('projectEnvs.openDetailAria', { name: env.name })}
+            className="relative gap-0 overflow-hidden py-0 cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ backgroundImage: accent.wash }}
+            onClick={() => onOpenDetail(env)}
+            onKeyDown={(e) => {
+              // Key presses belong to the card only when it holds the focus itself;
+              // otherwise inner buttons keep their own keyboard behavior.
+              if (e.target !== e.currentTarget) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onOpenDetail(env)
+              }
+            }}
           >
             <span
               aria-hidden
@@ -177,8 +206,11 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                     type="button"
                     data-testid={`env-open-detail-${env.id}`}
                     title={env.name}
-                    onClick={() => onOpenDetail(env)}
-                    className="block w-full truncate text-left text-sm font-medium hover:text-teal hover:underline underline-offset-4"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onOpenDetail(env)
+                    }}
+                    className="block w-full truncate text-left text-sm font-medium"
                   >
                     {env.name}
                   </button>
@@ -248,7 +280,10 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                         env.status === 'pending' ||
                         env.status === 'material_pending'
                       }
-                      onClick={() => regenerateMutation.mutate(env.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        regenerateMutation.mutate(env.id)
+                      }}
                       aria-label={t('projectEnvs.regenerate')}
                       title={t('projectEnvs.regenerate')}
                     >
@@ -266,7 +301,10 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                       size="sm"
                       className="h-7 text-xs"
                       disabled={reverifyMutation.isPending}
-                      onClick={() => reverifyMutation.mutate(env.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        reverifyMutation.mutate(env.id)
+                      }}
                     >
                       <RefreshCw className={cn('h-3.5 w-3.5', reverifyMutation.isPending && 'animate-spin')} />
                       {t('projectEnvs.reverify')}
@@ -279,7 +317,10 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                     aria-label={t('projectEnvs.copy')}
                     title={t('projectEnvs.copy')}
                     disabled={copyingId === env.id || duplicateMutation.isPending}
-                    onClick={() => handleCopy(env)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCopy(env)
+                    }}
                   >
                     {copyingId === env.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -294,7 +335,10 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                     aria-label={t('projectEnvs.deleteTitle')}
                     title={t('projectEnvs.deleteTitle')}
                     disabled={deleteMutation.isPending}
-                    onClick={() => setDeleteTarget(env)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeleteTarget(env)
+                    }}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>

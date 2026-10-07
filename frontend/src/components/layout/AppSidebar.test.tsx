@@ -40,6 +40,15 @@ describe('AppSidebar', () => {
     expect(screen.getByText('navigation.notebooks')).toBeDefined()
   })
 
+  it('carries the exam-essay hint as the project-environments link title when expanded', () => {
+    const { container } = render(<AppSidebar />)
+
+    const link = container.querySelector('a[href="/project-environments"]')
+    expect(link?.getAttribute('title')).toBe('navigation.projectEnvironmentsHint')
+    // entries without a hint keep no title attribute
+    expect(container.querySelector('a[href="/sources"]')?.getAttribute('title')).toBeNull()
+  })
+
   it('uses consistent spacing for expanded footer actions', () => {
     render(<AppSidebar />)
 
@@ -81,5 +90,18 @@ describe('AppSidebar', () => {
 
     // In collapsed mode, app name shouldn't be visible (as text)
     expect(screen.queryByText('common.appName')).toBeNull()
+  })
+
+  it('includes the exam-essay hint in the collapsed project-environments tooltip', () => {
+    vi.mocked(useSidebarStore).mockReturnValue({
+      isCollapsed: true,
+      toggleCollapse: vi.fn(),
+    } as any)
+
+    render(<AppSidebar />)
+
+    // TooltipContent is mocked to render its children inline, so the hint
+    // line shows up next to the entry name without a real hover.
+    expect(screen.getByText('navigation.projectEnvironmentsHint')).toBeDefined()
   })
 })

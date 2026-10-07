@@ -300,7 +300,7 @@ class TestUpdateDelete:
     def test_delete_removes_annotation(self, client, store):
         created = client.post("/api/source-annotations", json=_create_payload()).json()
         resp = client.delete(f"/api/source-annotations/{created['id']}")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
         assert client.get(f"/api/source-annotations?source_id={SOURCE_ID}").json() == []
 
 

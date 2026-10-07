@@ -4,6 +4,7 @@ import { Brain, Database, Layers, Package, Route, Sigma, Zap } from 'lucide-reac
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import type { TechItem, TechKind } from '@/lib/utils/env-structure'
+import { glossaryKeyFor } from '@/lib/utils/tech-glossary'
 import type { accentOf } from './env-accent'
 
 // 类别只靠图标形状区分（aria-hidden 装饰），省 7 个类别 key × 14 locale。
@@ -35,6 +36,12 @@ export function TechStackCards({ items, accent, narrative }: TechStackCardsProps
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {shown.map((tech) => {
           const Icon = KIND_ICON[tech.kind]
+          // hover 解释走静态术语表：命中词条时 title = 完整名 + 换行 + 解释（t 查不到回退空串），
+          // 未命中保持 title = 原技术名 行为不变（overflow 卡不参与，title 仍为纯名字列表）。
+          const glossaryKey = glossaryKeyFor(tech.name)
+          const hint = glossaryKey
+            ? t(`projectEnvs.glossary.${glossaryKey}`, { defaultValue: '' })
+            : ''
           return (
             <div
               key={tech.name}
@@ -51,7 +58,10 @@ export function TechStackCards({ items, accent, narrative }: TechStackCardsProps
                 <Icon className="size-4" strokeWidth={1.5} />
               </span>
               <div className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium" title={tech.name}>
+                <span
+                  className="block truncate text-sm font-medium"
+                  title={hint ? `${tech.name}\n${hint}` : tech.name}
+                >
                   {tech.name}
                 </span>
                 <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-muted-foreground">

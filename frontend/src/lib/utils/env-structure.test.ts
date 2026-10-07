@@ -49,9 +49,9 @@ describe('extractEnvStats', () => {
     expect(stats[1].label).toBe('日均处理配送订单')
   })
 
-  it('ENV2（内部助手）：恰 2 张成行（360万元 + 17人）', () => {
+  it('ENV2（内部助手）：合同金额句整卡消失，仅 17人 成行', () => {
     const stats = extractEnvStats(ENV2.scale, ENV2.background)
-    expect(vals(stats)).toEqual(['360万元', '17人'])
+    expect(vals(stats)).toEqual(['17人'])
   })
 
   it('抽取 X→Y 改善型趋势卡（复合单位），终点不重复出静态卡', () => {
@@ -69,7 +69,7 @@ describe('extractEnvStats', () => {
   })
 
   it('千分位：剥逗号显示；畸形分组不抽', () => {
-    expect(vals(extractEnvStats('团队规模12,000人。', ''))).toEqual(['12000人'])
+    expect(vals(extractEnvStats('团队规模12,000人。', ''))).toEqual([])
     expect(vals(extractEnvStats('旗下1,200家门店。', ''))).toEqual(['1200家'])
     expect(vals(extractEnvStats('', '年营业额达到1,200万元。'))).toEqual(['1200万元'])
     expect(extractEnvStats('规模12,00人。', '')).toEqual([])
@@ -90,6 +90,34 @@ describe('extractEnvStats', () => {
     expect(extractEnvStats('', '')).toEqual([])
     expect(extractEnvStats('We serve 5000 users daily.', '')).toEqual([])
     expect(() => extractEnvStats('好'.repeat(3000), '坏'.repeat(3000))).not.toThrow()
+  })
+
+  it('禁词兜底：合同金额/团队规模/团队人数 所在子句整卡丢弃，窗口外禁词也拦住', () => {
+    // 禁词在 label 截断窗口之外（前 10 字容不下「项目合同金额约」），子句窗口仍命中
+    expect(vals(extractEnvStats('项目合同金额约360万元。我带领17人团队完成建设。', ''))).toEqual([
+      '17人',
+    ])
+    expect(vals(extractEnvStats('团队规模12,000人。', ''))).toEqual([])
+    // 趋势整条滤：合同金额句中的 X→Y 不再出趋势卡
+    expect(extractEnvStats('', '合同金额由360万元压缩至120万元。')).toEqual([])
+  })
+
+  it('禁词兜底无误杀：不含禁词的团队/成本表述照常出卡', () => {
+    // 「团队15人」「成本由360万元压缩至120万元」不含禁词（README 本项只点名两词）
+    expect(vals(extractEnvStats('', '成本由360万元压缩至120万元，团队15人。'))).toEqual([
+      '120万元',
+      '15人',
+    ])
+    // 换行是子句边界：禁词子句外的数字照常出卡
+    expect(vals(extractEnvStats('团队规模18人。\n日均订单2.8万条', ''))).toEqual(['2.8万条'])
+    // 禁词在独立子句（冒号隔开）时，另一子句的数字不受牵连
+    expect(vals(extractEnvStats('背景：无禁词。团队规模: 18人', ''))).toEqual(['18人'])
+  })
+
+  it('禁词兜底：纯函数幂等，重复抽取结果一致', () => {
+    const scale = '项目合同金额约360万元。我带领17人团队完成建设。'
+    const background = '合同金额由360万元压缩至120万元。门店6000家。'
+    expect(extractEnvStats(scale, background)).toEqual(extractEnvStats(scale, background))
   })
 })
 

@@ -53,15 +53,16 @@ const baseEnv = {
 
 function setup(env: Partial<ProjectEnv>) {
   const onOpenVerification = vi.fn()
+  const onOpenDetail = vi.fn()
   render(
     <ProjectEnvList
       envs={[{ ...baseEnv, ...env } as ProjectEnv]}
       isLoading={false}
       onOpenVerification={onOpenVerification}
-      onOpenDetail={vi.fn()}
+      onOpenDetail={onOpenDetail}
     />
   )
-  return { onOpenVerification }
+  return { onOpenVerification, onOpenDetail }
 }
 
 describe('ProjectEnvList StatusBadge material states', () => {
@@ -162,5 +163,101 @@ describe('ProjectEnvList copy', () => {
       expect.objectContaining({ generic_paragraph: '通用段落内容____。' }),
       expect.anything()
     )
+  })
+})
+
+describe('ProjectEnvList whole-card open detail', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(useDeleteProjectEnv).mockReturnValue(
+      mockMutation() as unknown as ReturnType<typeof useDeleteProjectEnv>
+    )
+    vi.mocked(useDuplicateProjectEnv).mockReturnValue(
+      mockMutation() as unknown as ReturnType<typeof useDuplicateProjectEnv>
+    )
+    vi.mocked(useRegenerateProjectEnv).mockReturnValue(
+      mockMutation() as unknown as ReturnType<typeof useRegenerateProjectEnv>
+    )
+    vi.mocked(useReverifyProjectEnv).mockReturnValue(
+      mockMutation() as unknown as ReturnType<typeof useReverifyProjectEnv>
+    )
+  })
+
+  it('opens the detail dialog when the card body itself is clicked', () => {
+    const { onOpenDetail } = setup({})
+
+    fireEvent.click(screen.getByTestId('env-card-project_env:e1'))
+    expect(onOpenDetail).toHaveBeenCalledTimes(1)
+    expect(onOpenDetail).toHaveBeenCalledWith(expect.objectContaining({ id: 'project_env:e1' }))
+  })
+
+  it('opens the detail dialog on Enter and Space, but not on Tab', () => {
+    const { onOpenDetail } = setup({})
+    const card = screen.getByTestId('env-card-project_env:e1')
+
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onOpenDetail).toHaveBeenCalledTimes(1)
+
+    fireEvent.keyDown(card, { key: ' ' })
+    expect(onOpenDetail).toHaveBeenCalledTimes(2)
+
+    fireEvent.keyDown(card, { key: 'Tab' })
+    expect(onOpenDetail).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps keyboard focus inside an inner button out of the card handler', () => {
+    const { onOpenDetail } = setup({})
+
+    // keydown bubbles up to the card, but the target guard must return early
+    fireEvent.keyDown(screen.getByTestId('env-open-detail-project_env:e1'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'projectEnvs.copy' }), { key: 'Enter' })
+    expect(onOpenDetail).not.toHaveBeenCalled()
+  })
+
+  it('clicking the pending badge reopens the wizard without opening the detail', () => {
+    const { onOpenVerification, onOpenDetail } = setup({ status: 'pending' })
+
+    fireEvent.click(screen.getByTestId('env-pending-project_env:e1'))
+    expect(onOpenVerification).toHaveBeenCalledWith('project_env:e1')
+    expect(onOpenDetail).not.toHaveBeenCalled()
+  })
+
+  it('clicking the material_ready badge reopens the wizard without opening the detail', () => {
+    const { onOpenVerification, onOpenDetail } = setup({ status: 'material_ready' })
+
+    fireEvent.click(screen.getByTestId('env-material-ready-project_env:e1'))
+    expect(onOpenVerification).toHaveBeenCalledWith('project_env:e1')
+    expect(onOpenDetail).not.toHaveBeenCalled()
+  })
+
+  it('regenerate, copy and delete stay isolated from the card click', () => {
+    const regenerate = { mutate: vi.fn(), isPending: false }
+    vi.mocked(useRegenerateProjectEnv).mockReturnValue(
+      regenerate as unknown as ReturnType<typeof useRegenerateProjectEnv>
+    )
+    const duplicate = { mutate: vi.fn(), isPending: false }
+    vi.mocked(useDuplicateProjectEnv).mockReturnValue(
+      duplicate as unknown as ReturnType<typeof useDuplicateProjectEnv>
+    )
+    const { onOpenDetail } = setup({})
+
+    fireEvent.click(screen.getByRole('button', { name: 'projectEnvs.regenerate' }))
+    expect(regenerate.mutate).toHaveBeenCalledWith('project_env:e1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'projectEnvs.copy' }))
+    expect(duplicate.mutate).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'projectEnvs.deleteTitle' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+
+    expect(onOpenDetail).not.toHaveBeenCalled()
+  })
+
+  it('clicking the name button opens the detail exactly once', () => {
+    const { onOpenDetail } = setup({})
+
+    fireEvent.click(screen.getByTestId('env-open-detail-project_env:e1'))
+    expect(onOpenDetail).toHaveBeenCalledTimes(1)
+    expect(onOpenDetail).toHaveBeenCalledWith(expect.objectContaining({ id: 'project_env:e1' }))
   })
 })
