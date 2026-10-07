@@ -2457,6 +2457,7 @@ export const ptBR = {
     reasonCostCap: "Orçamento de chamadas atingido",
     reasonUncovered: "Além da capacidade de verificação",
     reasonLanesFailed: "Faixas de verificação reprovadas",
+    reasonLlmError: "Falha na chamada do modelo — repita a verificação",
     roundsHistory: "Histórico de correções ({{count}})",
     fieldBackground: "Contexto",
     fieldTechBackground: "Contexto técnico",

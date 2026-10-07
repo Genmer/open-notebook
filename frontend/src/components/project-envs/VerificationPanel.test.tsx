@@ -113,6 +113,22 @@ describe('VerificationPanel', () => {
     expect(screen.getByText('projectEnvs.stateManual')).toBeDefined()
   })
 
+  it('renders the llm_error reason label for error-state points without claim actions', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [point({ state: 'error', manual_reason: 'llm_error' })],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    expect(screen.getByText('projectEnvs.reasonLlmError')).toBeDefined()
+    expect(screen.getByText('projectEnvs.stateError')).toBeDefined()
+    // dismiss/rewrite stay manual_review-only (backend 409s other states)
+    expect(screen.queryByText('projectEnvs.dismissAction')).toBeNull()
+    expect(screen.queryByText('projectEnvs.rewriteAction')).toBeNull()
+  })
+
   it('dismiss asks for confirmation before mutating', () => {
     const mutate = vi.fn()
     mockDismiss.mockReturnValue({

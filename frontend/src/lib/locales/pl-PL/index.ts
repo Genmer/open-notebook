@@ -2457,6 +2457,7 @@ export const plPL = {
     reasonCostCap: "Osiągnięto budżet wywołań",
     reasonUncovered: "Pojemność weryfikacji przekroczona",
     reasonLanesFailed: "Tory weryfikacji niezdane",
+    reasonLlmError: "Nie udało się wywołać modelu — ponów weryfikację",
     roundsHistory: "Historia korekt ({{count}})",
     fieldBackground: "Tło",
     fieldTechBackground: "Tło techniczne",

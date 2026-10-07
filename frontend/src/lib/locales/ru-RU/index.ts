@@ -2457,6 +2457,7 @@ export const ruRU = {
     reasonCostCap: "Достигнут лимит вызовов",
     reasonUncovered: "Вне мощности верификации",
     reasonLanesFailed: "Дорожки верификации не пройдены",
+    reasonLlmError: "Сбой вызова модели — повторите верификацию",
     roundsHistory: "История исправлений ({{count}})",
     fieldBackground: "Фон",
     fieldTechBackground: "Технический фон",

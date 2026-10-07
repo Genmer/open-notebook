@@ -21,7 +21,9 @@ from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.text_utils import extract_text_content
 
-LANE_TIMEOUT_SECONDS = 30
+# Must cover one full _invoke_json attempt: 2 model calls (thinking models on
+# long quotes run 30s+ each) plus the 8s rate-limit backoff between them.
+LANE_TIMEOUT_SECONDS = 120
 LANE_ATTEMPTS = 2
 
 
@@ -105,11 +107,12 @@ class MockDraft(BaseModel):
     scale: str = ""
 
 
-_ALLOWED_VERDICTS = {
-    "A": {"pass", "fail"},
-    "B": {"pass", "fail", "off_table"},
-    "C": {"pass", "fail"},
-}
+def _allowed_verdicts(lane: str, mode: str = "material") -> set:
+    """Lane B may answer off_table only for material mode: in mock mode the
+    verdict set must force a plausibility judgement, never a table bounce."""
+    if lane == "B" and mode != "mock":
+        return {"pass", "fail", "off_table"}
+    return {"pass", "fail"}
 
 
 def _strip_fences(content: str) -> str:
@@ -118,6 +121,37 @@ def _strip_fences(content: str) -> str:
     if fenced:
         content = fenced.group(1).strip()
     return content
+
+
+# Provider rate limits (HTTP 429 / Bailian code 1302) clear after a pause;
+# retrying immediately only burns the attempt inside the same limited window.
+_RATE_LIMIT_MARKERS = ("429", "rate limit", "1302")
+RATE_LIMIT_BACKOFF_SECONDS = (8, 20)
+
+# Shared meter across every pipeline LLM call: concurrent lane calls starting
+# as a burst are what trip the provider rate limit in the first place.
+LLM_CALL_MIN_INTERVAL_SECONDS = 1.5
+_LLM_PACE_LOCK: Optional[asyncio.Lock] = None
+_LLM_PACE_LAST = 0.0
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _RATE_LIMIT_MARKERS)
+
+
+async def _pace_llm_calls() -> None:
+    global _LLM_PACE_LOCK, _LLM_PACE_LAST
+    if _LLM_PACE_LOCK is None:
+        _LLM_PACE_LOCK = asyncio.Lock()
+    async with _LLM_PACE_LOCK:
+        now = asyncio.get_running_loop().time()
+        wait = _LLM_PACE_LAST + LLM_CALL_MIN_INTERVAL_SECONDS - now
+        if wait > 0:
+            await asyncio.sleep(wait)
+            _LLM_PACE_LAST += LLM_CALL_MIN_INTERVAL_SECONDS
+        else:
+            _LLM_PACE_LAST = now
 
 
 async def _invoke_json(
@@ -138,6 +172,7 @@ async def _invoke_json(
                 return None
             budget.spend()
         try:
+            await _pace_llm_calls()
             prompt = Prompter(prompt_template=template, parser=parser).render(  # type: ignore[arg-type]
                 data=payload
             )
@@ -158,6 +193,8 @@ async def _invoke_json(
             logger.warning(
                 f"LLM call for {template} failed (attempt {attempt + 1}): {e}"
             )
+            if _is_rate_limit_error(e) and attempt < len(RATE_LIMIT_BACKOFF_SECONDS):
+                await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS[attempt])
             payload["previous_error"] = f"previous output unusable: {e}"
     return None
 
@@ -215,12 +252,13 @@ async def verify_point_lane(
     context: Dict[str, Any],
     budget: Optional[CallBudget] = None,
     lane_model: Optional[str] = None,
+    mode: str = "material",
 ) -> Dict[str, Any]:
     """One lane verdict for one claim. Each attempt gets its own timeout;
     after one retry, model/parse failures degrade to verdict 'error' — never
     guess pass. ConfigurationError (no model configured) is the exception: it
     propagates so the caller can stop permanently instead of retrying."""
-    allowed = _ALLOWED_VERDICTS.get(lane, {"pass", "fail"})
+    allowed = _allowed_verdicts(lane, mode)
 
     def _validate(parsed: BaseModel) -> str:
         verdict = getattr(parsed, "verdict", "")
@@ -234,6 +272,7 @@ async def verify_point_lane(
         "narrative": context.get("narrative", ""),
         "my_role": context.get("my_role", ""),
         "anchor_table": anchors_compact(),
+        "mode": mode,
     }
     if lane == "A":
         data["evidence"] = await gather_evidence(quote)
@@ -255,6 +294,12 @@ async def verify_point_lane(
                 timeout=LANE_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
+            # One _invoke_json attempt already wraps 2 model calls plus a
+            # rate-limit backoff, so this budget must cover all of it.
+            logger.warning(
+                f"Lane {lane} attempt timed out after {LANE_TIMEOUT_SECONDS}s "
+                f"(quote: {quote[:60]!r})"
+            )
             parsed = None
             continue
         except ConfigurationError:

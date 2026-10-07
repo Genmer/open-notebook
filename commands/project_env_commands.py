@@ -1,12 +1,13 @@
 """verify_project_env: async verification pipeline for project environments.
 
-Three lanes (A: KB evidence, B: time/GA anchors, C: narrative coherence) run
-per claim with a bounded correction loop. Fencing token: a stale invocation
-(token != env.verification_token) is a no-op, and the token is re-read from
-the DB before every env write so a superseded run can never clobber a newer
-one. The command is idempotent under worker retry: the latest running detail
-row for the same token is resumed and already-settled points cost zero LLM
-calls.
+Lanes per claim with a bounded correction loop: material mode runs all three
+(A: KB evidence, B: time/GA anchors, C: narrative coherence); mock mode drops
+A — a fictional project has no KB evidence, so B judges plausibility instead.
+Fencing token: a stale invocation (token != env.verification_token) is a
+no-op, and the token is re-read from the DB before every env write so a
+superseded run can never clobber a newer one. The command is idempotent
+under worker retry: the latest running detail row for the same token is
+resumed and already-settled points cost zero LLM calls.
 """
 
 import asyncio
@@ -40,13 +41,11 @@ PROJECT_ENV_RETRY_CONFIG = {
 }
 
 POINT_POOL_CAP = 20
-LANE_CONCURRENCY = 5
+# Lower concurrency: 5 parallel points × 2 lanes burst-start LLM calls and trip
+# the provider rate limit; the pipeline's shared pacing plus this cap keeps
+# in-flight calls sustainable.
+LANE_CONCURRENCY = 3
 FINAL_STATES = {"passed", "dismissed", "rewritten", "exempt", "manual_review"}
-
-KB_EMPTY_MOCK_MESSAGE = (
-    "本地知识库为空（无来源与笔记）：AI 模拟项目依赖本地资料作为验证证据源，"
-    "请先在 notebook 导入资料后再使用 AI 模拟。"
-)
 
 
 class _Superseded(Exception):
@@ -269,8 +268,11 @@ async def _prepare_mock_material(
 # --- claim extraction funnel ---
 
 
-def _prescreen_version_points(points: List[Dict[str, Any]], period_start: str) -> None:
-    """R5 pre-screen: anchor-table lookup for version claims."""
+def _prescreen_version_points(
+    points: List[Dict[str, Any]], period_start: str, mode: str = "material"
+) -> None:
+    """R5 pre-screen: anchor-table lookup for version claims. In mock mode an
+    off_table lookup only marks the point — lane B judges plausibility."""
     for point in points:
         if point.get("type") != "version":
             continue
@@ -279,7 +281,7 @@ def _prescreen_version_points(points: List[Dict[str, Any]], period_start: str) -
         version = match.group(2) if match else point.get("version")
         result = check_ga_ordering(tech, version, period_start)
         point["prescreen"] = result
-        if result.get("status") == "off_table":
+        if result.get("status") == "off_table" and mode != "mock":
             point["state"] = "manual_review"
             point["manual_reason"] = "off_table"
 
@@ -347,7 +349,7 @@ async def _extract_points(
             ]
 
     _mark_overflow(points)
-    _prescreen_version_points(points, env.period_start)
+    _prescreen_version_points(points, env.period_start, mode)
     return points
 
 
@@ -379,7 +381,10 @@ async def _run_lanes(
     context: Dict[str, Any],
     lane_models: Dict[str, Optional[str]],
     budget: pipeline.CallBudget,
+    mode: str = "material",
 ) -> Dict[str, Dict[str, Any]]:
+    # mock material is fictional: KB evidence (lane A) can only ever fail it
+    lane_ids = ("B", "C") if mode == "mock" else ("A", "B", "C")
     results = await asyncio.gather(
         *[
             pipeline.verify_point_lane(
@@ -389,11 +394,12 @@ async def _run_lanes(
                 context=context,
                 budget=budget,
                 lane_model=lane_models[lane],
+                mode=mode,
             )
-            for lane in ("A", "B", "C")
+            for lane in lane_ids
         ]
     )
-    return dict(zip(("A", "B", "C"), results))
+    return dict(zip(lane_ids, results))
 
 
 async def _process_point(
@@ -403,6 +409,7 @@ async def _process_point(
     context: Dict[str, Any],
     lane_models: Dict[str, Optional[str]],
     budget: pipeline.CallBudget,
+    mode: str,
     max_rounds: int,
 ) -> List[Dict[str, Any]]:
     """Verify + bounded correction loop for one point. Returns NEW points
@@ -418,7 +425,7 @@ async def _process_point(
             break
 
         async with sem:
-            lanes = await _run_lanes(point, context, lane_models, budget)
+            lanes = await _run_lanes(point, context, lane_models, budget, mode)
         point["lanes"] = lanes
 
         # R5 pre-screen fail overrides lane B (never let memory judge GA)
@@ -563,14 +570,11 @@ async def _converge(
 ) -> str:
     """Run row first, then env (ordering asserted by tests)."""
     summary = _summarize(points)
-    errors = [p for p in points if p.get("state") == "error"]
-    if errors and not budget.exhausted:
-        await _save_run(
-            run, status="aborted", points=points, summary=summary, llm_calls=budget.used
-        )
-        raise RuntimeError(
-            f"{len(errors)} points in error state; worker retry resumes them"
-        )
+    for point in points:
+        if point.get("state") == "error":
+            # single-point model failures degrade to a retryable manual claim,
+            # never a whole-run RuntimeError that fails the env
+            point["manual_reason"] = "llm_error"
 
     ok_states = {"passed", "dismissed", "rewritten", "exempt"}
     if not await _token_current(str(env.id), str(run.get("token") or "")):
@@ -634,11 +638,9 @@ async def verify_project_env_command(
         await _require_model_configured(lane_models)
 
         # kb_empty must be known before the run row is created: degraded flags
-        # are persisted with the row, never patched in afterwards
-        kb_empty = await _knowledge_base_empty()
-        if kb_empty and input_data.mode == "mock":
-            await _fail_env(env_id, KB_EMPTY_MOCK_MESSAGE, input_data.token)
-            raise ValueError(KB_EMPTY_MOCK_MESSAGE)
+        # are persisted with the row, never patched in afterwards. Mock runs
+        # never read the KB (no lane A), so they skip the check entirely.
+        kb_empty = input_data.mode != "mock" and await _knowledge_base_empty()
         if kb_empty:
             degraded["lane_a"] = "kb_empty_anchor_only"
             degraded["kb_empty"] = True
@@ -688,17 +690,25 @@ async def verify_project_env_command(
         while work and not budget.exhausted:
             round_no += 1
             settled = sum(1 for p in points if p.get("state") in FINAL_STATES)
+            lane_word = "双路" if input_data.mode == "mock" else "三路"
             await _set_progress(
                 env_id,
                 "verifying",
                 min(30 + int(55 * settled / total_points), 85),
-                f"三路验证 · 第 {round_no} 轮：{settled}/{total_points} 个断言点已判定",
+                f"{lane_word}验证 · 第 {round_no} 轮：{settled}/{total_points} 个断言点已判定",
                 token=input_data.token,
             )
             batches = await asyncio.gather(
                 *[
                     _process_point(
-                        sem, p, env, context, lane_models, budget, max_rounds
+                        sem,
+                        p,
+                        env,
+                        context,
+                        lane_models,
+                        budget,
+                        input_data.mode,
+                        max_rounds,
                     )
                     for p in work
                 ]
@@ -714,7 +724,7 @@ async def verify_project_env_command(
                     points.append(point)
                     work.append(point)
             _mark_overflow(points)
-            _prescreen_version_points(work, env.period_start)
+            _prescreen_version_points(work, env.period_start, input_data.mode)
 
         if budget.exhausted:
             for point in points:

@@ -551,24 +551,6 @@ def test_create_session_validates_env_binding():
 # --- T6: mock-generate / polish / verification / reverify / claims ---
 
 
-def test_mock_generate_empty_kb_returns_422_with_guidance():
-    client = _client()
-
-    async def empty_kb(query, params=None):
-        if "FROM source" in query or "FROM note" in query:
-            return [{"total": 0}]
-        return []
-
-    with patch("api.routers.project_envs.repo_query", side_effect=empty_kb):
-        response = client.post(
-            "/api/project-envs/mock-generate",
-            json={"keywords": ["微服务", "高并发"]},
-        )
-
-    assert response.status_code == 422
-    assert "知识库" in response.json()["detail"]["message"]
-
-
 def test_mock_generate_creates_pending_row_and_submits_mock_job():
     client = _client()
     saved: list[ProjectEnv] = []
@@ -610,6 +592,42 @@ def test_mock_generate_creates_pending_row_and_submits_mock_job():
     submit_args = mock_submit.await_args
     assert submit_args is not None
     assert submit_args.args[2]["mode"] == "mock"
+
+
+def test_mock_generate_on_empty_kb_succeeds_without_kb_reads():
+    """The empty-KB 422 guard is gone: mock generation runs no knowledge-base
+    query at all, so an empty library still creates the row and submits."""
+    client = _client()
+    saved: list[ProjectEnv] = []
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+        saved.append(env)
+
+    async def no_kb_reads(query, params=None):
+        assert "FROM source" not in query and "FROM note" not in query, query[:100]
+        return []
+
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=no_kb_reads),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate",
+            json={"keywords": ["微服务", "高并发"]},
+        )
+
+    assert response.status_code == 201, response.text
+    assert saved and saved[0].source_type == "mock"
+    assert mock_submit.await_args is not None
 
 
 def test_mock_generate_rejects_illegal_period_with_422():
@@ -797,6 +815,78 @@ def test_reverify_mock_env_without_draft_uses_mock_mode():
     assert submitted[0][2]["mode"] == "mock"
 
 
+def test_reverify_mock_env_with_draft_still_uses_mock_mode():
+    """A mock env with an existing draft re-verifies through the mock lanes
+    (B/C) — mode must follow source_type, and the command's draft guard keeps
+    regeneration to the dedicated regenerate endpoint."""
+    client = _client()
+    env = _env(
+        source_type="mock",
+        status="needs_review",
+        background="已提升的内容。",
+        draft_content={"background": "草稿内容采用 Redis 7.0。"},
+    )
+    submitted = []
+
+    async def _submit(*args, **kwargs):
+        submitted.append(args)
+        return "command:job1"
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+        patch("api.routers.project_envs.CommandService.cancel_command_job"),
+    ):
+        mock_submit.side_effect = _submit
+        response = client.post("/api/project-envs/project_env:e1/reverify")
+
+    assert response.status_code == 200
+    assert submitted[0][2]["mode"] == "mock"
+    # the existing draft survives: reverify must not wipe it for regeneration
+    assert env.draft_content == {"background": "草稿内容采用 Redis 7.0。"}
+
+
+def test_update_mock_env_trigger_field_resubmits_with_mock_mode():
+    """Editing a trigger field on a mock env resubmits the mock pipeline —
+    mode="material" would wrongly run the KB-evidence lane on fiction."""
+    client = _client()
+    env = _env(source_type="mock", status="verified", verified_snapshot={"name": "old"})
+    submitted = []
+
+    async def _submit(*args, **kwargs):
+        submitted.append(args)
+        return "command:job1"
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+        patch("api.routers.project_envs.CommandService.cancel_command_job"),
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+    ):
+        mock_submit.side_effect = _submit
+        response = client.put(
+            "/api/project-envs/project_env:e1", json={"background": "新背景"}
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "pending"
+    assert submitted[0][2]["mode"] == "mock"
+
+
 def _run_row(points):
     return {
         "id": "project_env_verification:r1",
@@ -905,8 +995,10 @@ def test_rewrite_pass_replaces_text_and_verifies():
         ]
     )
     lane_pass = {"verdict": "pass", "issues": []}
+    lane_calls = []
 
-    async def lane_result(lane, quote, field, context):
+    async def lane_result(lane, quote, field, context, mode="material"):
+        lane_calls.append((lane, mode))
         return lane_pass
 
     with (
@@ -931,6 +1023,12 @@ def test_rewrite_pass_replaces_text_and_verifies():
     body = response.json()
     assert body["passed"] is True
     assert body["env"]["status"] == "verified"
+    # material rewrite keeps all three lanes (mock drops only A)
+    assert {(lane, mode) for lane, mode in lane_calls} == {
+        ("A", "material"),
+        ("B", "material"),
+        ("C", "material"),
+    }
     assert env.background == "系统采用 Redis 7.0 缓存。后续扩展。"
 
 
@@ -953,7 +1051,7 @@ def test_rewrite_fail_keeps_manual_review_with_lane_opinions():
         "C": {"verdict": "pass", "issues": []},
     }
 
-    async def lane_result(lane, quote, field, context):
+    async def lane_result(lane, quote, field, context, mode="material"):
         return verdicts[lane]
 
     with (
@@ -1045,7 +1143,7 @@ def test_rewrite_with_rotated_env_token_returns_409():
         ]
     )
 
-    async def lane_result(lane, quote, field, context):
+    async def lane_result(lane, quote, field, context, mode="material"):
         return {"verdict": "pass", "issues": []}
 
     with (
@@ -1073,6 +1171,66 @@ def test_rewrite_with_rotated_env_token_returns_409():
     mock_save.assert_not_awaited()  # nothing persisted to the env
 
 
+def test_rewrite_mock_env_runs_only_lanes_b_and_c_with_mock_mode():
+    """Mock envs have no KB lane: the rewrite re-verify must run B/C only and
+    pass mode="mock" so lane B judges plausibility instead of off_table."""
+    client = _client()
+    env = _env(
+        source_type="mock",
+        status="needs_review",
+        draft_content={
+            "background": "系统采用 Redis 9.9 缓存。后续扩展。",
+            "tech_background": "技术栈。",
+            "tuning_process": "调优。",
+            "problems_solutions": "问题。",
+            "my_role": "我担任架构师。",
+            "scale": "团队 20 人。",
+        },
+        pending_claims=[{"point_id": "p1", "quote": "Redis 9.9 缓存"}],
+    )
+    run = _run_row(
+        [
+            {
+                "point_id": "p1",
+                "quote": "系统采用 Redis 9.9 缓存",
+                "field": "background",
+                "state": "manual_review",
+            }
+        ]
+    )
+    calls = []
+
+    async def lane_result(lane, quote, field, context, mode="material"):
+        calls.append((lane, mode))
+        return {"verdict": "pass", "issues": []}
+
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch(
+            "api.routers.project_envs.repo_query",
+            side_effect=_usage_dispatch(verification_rows=[run]),
+        ),
+        patch("api.routers.project_envs.verify_point_lane", side_effect=lane_result),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+    ):
+        response = client.post(
+            "/api/project-envs/project_env:e1/claims/p1/rewrite",
+            json={"text": "系统采用 Redis 7.0 缓存"},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["passed"] is True
+    assert len(calls) == 2
+    assert {(lane, mode) for lane, mode in calls} == {("B", "mock"), ("C", "mock")}
+    # rewrite landed in the draft and promotion copied it to the main field
+    assert env.background == "系统采用 Redis 7.0 缓存。后续扩展。"
+
+
 def test_rewrite_pass_quote_drift_keeps_manual_review():
     """Lanes passing is worthless when the original sentence is no longer in
     the material: the rewrite was never applied, so the point must not count
@@ -1094,7 +1252,7 @@ def test_rewrite_pass_quote_drift_keeps_manual_review():
         ]
     )
 
-    async def lane_result(lane, quote, field, context):
+    async def lane_result(lane, quote, field, context, mode="material"):
         return {"verdict": "pass", "issues": []}
 
     with (

@@ -16,8 +16,13 @@ Field: {{ field }}
 {{ anchor_table }}
 
 # VERDICT RULES
+- If the claim contains no technology+version/release-time assertion at all (pure amounts, dates, narrative sentences): verdict must be "pass" (this lane does not apply).
 - If the claim's technology+version appears in the anchors: pass when its GA month is on or before period_start; fail when the GA month falls inside or after the project window (the technology could not have been in use then).
+{% if mode == "mock" %}
+- This project is AI-simulated fiction. If the technology or version is NOT in the anchor table: judge from general knowledge whether that technology was already publicly released and production-usable before period_start (plausibility only — exact dates not required); pass if plausible, fail only if clearly impossible.
+{% else %}
 - If the technology or version is NOT in the anchor table: verdict must be "off_table" — NEVER judge a GA date from memory.
+{% endif %}
 - Timeline arithmetic must respect the 6-10 month window above.
 - List each contradiction as a short issue string.
 

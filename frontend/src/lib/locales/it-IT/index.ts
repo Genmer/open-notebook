@@ -2457,6 +2457,7 @@ export const itIT = {
     reasonCostCap: "Budget di chiamate raggiunto",
     reasonUncovered: "Oltre la capacità di verifica",
     reasonLanesFailed: "Corsie di verifica non superate",
+    reasonLlmError: "Chiamata al modello non riuscita — riprovare la verifica",
     roundsHistory: "Storico correzioni ({{count}})",
     fieldBackground: "Background",
     fieldTechBackground: "Background tecnico",

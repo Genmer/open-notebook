@@ -51,6 +51,7 @@ function reasonLabel(reason: string | undefined, t: (k: string) => string): stri
     case 'cost_cap': return t('projectEnvs.reasonCostCap')
     case 'uncovered': return t('projectEnvs.reasonUncovered')
     case 'lanes_failed': return t('projectEnvs.reasonLanesFailed')
+    case 'llm_error': return t('projectEnvs.reasonLlmError')
     default: return null
   }
 }
@@ -207,7 +208,7 @@ function PointCard({
         {state === 'manual_review' && point.manual_reason === 'uncovered' && (
           <span>({t('projectEnvs.stateUncovered')})</span>
         )}
-        {isManual && reasonLabel(point.manual_reason, t) && (
+        {(isManual || state === 'error') && reasonLabel(point.manual_reason, t) && (
           <span className="text-warn">{reasonLabel(point.manual_reason, t)}</span>
         )}
       </div>

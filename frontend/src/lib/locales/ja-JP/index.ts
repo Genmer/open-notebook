@@ -2457,6 +2457,7 @@ export const jaJP = {
     reasonCostCap: "呼び出し予算の上限に到達",
     reasonUncovered: "検証容量を超過",
     reasonLanesFailed: "検証レーンが不合格",
+    reasonLlmError: "モデル呼び出しに失敗 — 検証を再試行してください",
     roundsHistory: "修正履歴（{{count}}）",
     fieldBackground: "プロジェクト背景",
     fieldTechBackground: "技術背景",

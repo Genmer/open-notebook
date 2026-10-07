@@ -2457,6 +2457,7 @@ export const caES = {
     reasonCostCap: "Pressupost de crides assolit",
     reasonUncovered: "Fora de la capacitat de verificació",
     reasonLanesFailed: "Carrils de verificació fallits",
+    reasonLlmError: "Error de crida al model — torneu a intentar la verificació",
     roundsHistory: "Historial de correccions ({{count}})",
     fieldBackground: "Context",
     fieldTechBackground: "Context tècnic",

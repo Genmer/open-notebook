@@ -61,6 +61,8 @@ GA_ANCHORS: Dict[str, Dict[str, str]] = {
     "pytorch": {"2.0": "2023.03", "2.3": "2024.04"},
     "qwen": {"2.5": "2024.09", "3": "2025.04"},
     "llama": {"3": "2024.04", "3.1": "2024.07"},
+    "vllm": {"0.6": "2024.10"},
+    "milvus": {"2.4": "2024.05"},
 }
 
 
@@ -316,6 +318,13 @@ def check_ga_ordering(
         parts = version.split(".")
         if len(parts) > 2:
             ga = versions.get(f"{parts[0]}.{parts[1]}")
+    if not ga and version.isdigit():
+        # bare major ("Spring Boot 3") only: earliest GA within that major —
+        # the most conservative anchor. Versioned minors (3.4, 1.50) stay
+        # off_table: a mid-major release cannot be dated by the major's GA.
+        same_major = [g for v, g in versions.items() if v.startswith(f"{version}.")]
+        if same_major:
+            ga = min(same_major, key=month_index)
     if not ga:
         return {"status": "off_table", "tech": key, "version": version}
     if month_index(ga) <= month_index(period_start):

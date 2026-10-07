@@ -2456,6 +2456,7 @@ export const zhCN = {
     reasonCostCap: "调用预算已达上限",
     reasonUncovered: "超出验证容量",
     reasonLanesFailed: "验证通道未通过",
+    reasonLlmError: "模型调用失败，请重试验证",
     roundsHistory: "修正历史（{{count}}）",
     fieldBackground: "项目背景",
     fieldTechBackground: "技术背景",

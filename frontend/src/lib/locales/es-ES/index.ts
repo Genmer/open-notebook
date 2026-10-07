@@ -2458,6 +2458,7 @@ export const esES = {
     reasonCostCap: "Presupuesto de llamadas alcanzado",
     reasonUncovered: "Fuera de la capacidad de verificación",
     reasonLanesFailed: "Carriles de verificación fallidos",
+    reasonLlmError: "Error de llamada al modelo: reintente la verificación",
     roundsHistory: "Historial de correcciones ({{count}})",
     fieldBackground: "Contexto",
     fieldTechBackground: "Contexto técnico",

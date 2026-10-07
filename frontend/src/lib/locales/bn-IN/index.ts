@@ -2458,6 +2458,7 @@ export const bnIN = {
     reasonCostCap: "কল বাজেট শেষ",
     reasonUncovered: "যাচাই ক্ষমতার বাইরে",
     reasonLanesFailed: "যাচাই লেন ব্যর্থ",
+    reasonLlmError: "মডেল কল ব্যর্থ — যাচাই আবার চালান",
     roundsHistory: "সংশোধনের ইতিহাস ({{count}})",
     fieldBackground: "প্রেক্ষাপট",
     fieldTechBackground: "প্রযুক্তিগত প্রেক্ষাপট",

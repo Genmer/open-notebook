@@ -2457,6 +2457,7 @@ export const zhTW = {
     reasonCostCap: "呼叫預算已達上限",
     reasonUncovered: "超出驗證容量",
     reasonLanesFailed: "驗證通道未通過",
+    reasonLlmError: "模型呼叫失敗，請重新驗證",
     roundsHistory: "修正歷史（{{count}}）",
     fieldBackground: "專案背景",
     fieldTechBackground: "技術背景",

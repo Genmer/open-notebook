@@ -2460,6 +2460,7 @@ export const deDE = {
     reasonCostCap: "Aufrufbudget erreicht",
     reasonUncovered: "Jenseits der Verifizierungskapazität",
     reasonLanesFailed: "Verifizierungslanes fehlgeschlagen",
+    reasonLlmError: "Modellaufruf fehlgeschlagen – Verifizierung erneut versuchen",
     roundsHistory: "Korrekturverlauf ({{count}})",
     fieldBackground: "Hintergrund",
     fieldTechBackground: "Technischer Hintergrund",

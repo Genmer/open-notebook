@@ -2456,6 +2456,7 @@ export const enUS = {
     reasonCostCap: "Call budget reached",
     reasonUncovered: "Beyond verification capacity",
     reasonLanesFailed: "Verification lanes failed",
+    reasonLlmError: "Model call failed — retry verification",
     roundsHistory: "Correction history ({{count}})",
     fieldBackground: "Background",
     fieldTechBackground: "Technical background",

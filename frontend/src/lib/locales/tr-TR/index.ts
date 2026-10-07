@@ -2457,6 +2457,7 @@ export const trTR = {
     reasonCostCap: "Çağrı bütçesine ulaşıldı",
     reasonUncovered: "Doğrulama kapasitesi dışı",
     reasonLanesFailed: "Doğrulama şeritleri başarısız",
+    reasonLlmError: "Model çağrısı başarısız — doğrulamayı yeniden deneyin",
     roundsHistory: "Düzeltme geçmişi ({{count}})",
     fieldBackground: "Arka plan",
     fieldTechBackground: "Teknik arka plan",

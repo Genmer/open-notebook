@@ -493,6 +493,9 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 ### 2026-10-06：数据导出导入范围维护约定（新表必须纳入）
 确立 fork 级约定：**今后所有新增的"项目数据相关"表（用户创建/编辑的领域数据，如智能体、项目环境这类）上线时必须同步加入数据导出/导入范围**——即 `commands/data_transfer_commands.py` 中的 `DATA_TABLES` / `EDGE_TABLES` 等清单，保证备份与跨机迁移不丢用户资产（聊天历史、任务记录、用量统计属刻意排除项，不受此约束）。当前已知缺口：`agent`（智能体）与 `project_env`（软考项目环境）两张表尚未纳入导出，属待办，本次仅在代码白名单处加注释立约，暂不扩表。
 
+### 2026-10-07：项目环境模拟验证语义重设计（第一性原则：逻辑合理 + 技术前沿、防穿帮）
+按"mock 项目是 AI 虚构背景，验收标准 = 逻辑自洽 + 技术选型在项目周期前已 GA 且较新（防论文穿帮）"重设计验证语义：mock 模式不再跑 A 路（本地知识库证据——虚构项目必然无证据、永远过不了），只跑 B/C 两路；B 路（GA 锚点）判定规则重写——纯金额/日期/叙事句直接 pass（不再误判"不在锚点表"），锚点表查不到的技术在 mock 模式下按常识判断"period_start 前是否已公开发布可用于生产"（禁 off_table），material 模式保持 off_table 进人工；`check_ga_ordering` 新增大版本匹配（"Spring Boot 3" 取该大版本最早 GA，最保守），GA 锚点表补充 vllm 0.6 / milvus 2.4；mock 生成提示词加"选型必须在 period_start 前 GA、前提下优先较新版本"约束；单点模型调用/解析失败不再抛 RuntimeError 整单 failed，降级为 needs_review 下 reason_code=llm_error 的待人工断言（前端 14 语言新增"模型调用失败，请重试验证"标签），可走重试验证恢复；rewrite 端点对 mock 环境同步只过 B/C；空知识库不再阻断 mock 生成与验证（mock 链路零知识库读取，API 422 守卫与 worker fail-fast 均已移除）。涉及：`commands/project_env_commands.py`、`open_notebook/ai/project_env_pipeline.py`、`open_notebook/domain/project_env_rules.py`、`api/routers/project_envs.py`、`prompts/project_env/verify_b.jinja`、`prompts/project_env/mock_generate.jinja`、`frontend/src/components/project-envs/VerificationPanel.tsx` 与全部 locale 文件。
+
 ---
 
 ## 后续体验优化与新功能规划路线图 (Roadmap)

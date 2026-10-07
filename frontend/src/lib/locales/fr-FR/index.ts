@@ -2457,6 +2457,7 @@ export const frFR = {
     reasonCostCap: "Budget d’appels atteint",
     reasonUncovered: "Au-delà de la capacité de vérification",
     reasonLanesFailed: "Couloirs de vérification en échec",
+    reasonLlmError: "Échec de l'appel au modèle — relancez la vérification",
     roundsHistory: "Historique des corrections ({{count}})",
     fieldBackground: "Contexte",
     fieldTechBackground: "Contexte technique",

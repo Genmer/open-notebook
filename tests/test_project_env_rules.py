@@ -143,11 +143,25 @@ def test_runtime_consistency(text, passed):
         ("python", "3.13", "2024.01", "fail"),  # GA 2024.10 after start
         ("Spring Boot", "3.2", "2023.11", "pass"),
         ("Spring Boot", "3.2", "2023.10", "fail"),
+        (
+            "Spring Boot",
+            "3",
+            "2022.11",
+            "pass",
+        ),  # bare major -> earliest 3.x GA 2022.11
+        ("Spring Boot", "3", "2022.10", "fail"),  # earliest 3.x GA after start
         ("MySQL", "8.0.32", "2023.01", "pass"),  # 8.0.x falls back to 8.0
         ("Redis", "7.0", "2022.05", "pass"),
         ("Redis", "7.0", "2022.04", "fail"),
         ("Rust", "1.80", "2024.01", "off_table"),  # tech not in table
-        ("Kubernetes", "1.50", "2024.01", "off_table"),  # version not in table
+        ("Kubernetes", "2.0", "2024.01", "off_table"),  # major not in table
+        ("Kubernetes", "1.50", "2024.01", "off_table"),  # minor not in table
+        ("Spring Boot", "3.4", "2024.01", "off_table"),  # minor not in table
+        ("Python", "3.99", "2024.01", "off_table"),  # minor not in table
+        ("vLLM", "0.6", "2024.10", "pass"),  # vllm 0.6 GA 2024.10
+        ("vLLM", "0.6", "2024.09", "fail"),
+        ("Milvus", "2.4", "2024.05", "pass"),  # milvus 2.4 GA 2024.05
+        ("Milvus", "2.4", "2024.04", "fail"),  # milvus 2.4 GA after start
         ("Qwen", "2.5", "2025.01", "pass"),
         ("Kafka", None, "2023.01", "unspecified"),  # no version stated
     ],

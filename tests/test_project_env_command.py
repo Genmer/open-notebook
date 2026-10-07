@@ -14,6 +14,7 @@ import pytest
 
 from commands.project_env_commands import (
     VerifyProjectEnvInput,
+    _prescreen_version_points,
     verify_project_env_command,
 )
 from open_notebook.ai.project_env_pipeline import MockDraft
@@ -110,7 +111,9 @@ def _patches(recorder, env, **pipeline_overrides):
         },
     )
 
-    async def lane_call(lane, quote, field, context, budget=None, lane_model=None):
+    async def lane_call(
+        lane, quote, field, context, budget=None, lane_model=None, mode="material"
+    ):
         result = lanes(lane, quote, field, context, budget, lane_model)
         if hasattr(result, "__await__"):
             result = await result
@@ -266,7 +269,7 @@ class TestConvergence:
         correct.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_lane_error_marks_point_error_and_raises_for_retry(self):
+    async def test_lane_error_degrades_to_needs_review_with_llm_error_reason(self):
         def lanes(lane, quote, field, context, budget=None, lane_model=None):
             if lane == "B":
                 return {"verdict": "error", "issues": ["timeout"]}
@@ -275,18 +278,58 @@ class TestConvergence:
         env = _env()
         recorder = Recorder()
         correct = AsyncMock()
-        patches, mocks = _patches(recorder, env, lanes=lanes, correct_point=correct)
-        with ExitStack() as stack:
-            for p in patches:
-                stack.enter_context(p)
-            with pytest.raises(RuntimeError):
-                await verify_project_env_command(
-                    VerifyProjectEnvInput(env_id=ENV_ID, mode="material", token=TOKEN)
-                )
+        result, _ = await _run(env, recorder, lanes=lanes, correct_point=correct)
+
         correct.assert_not_awaited()  # error points never enter correction
-        # retry exhausts eventually; the env must not stay pending at 90%
-        assert "env_failed" in recorder.events
-        assert recorder.progress_updates[-1]["error"]
+        assert result.status == "needs_review"
+        assert result.summary["failed"] == 2  # both points degraded to error
+        claims = env.pending_claims or []
+        assert claims and all(c["reason_code"] == "llm_error" for c in claims)
+        # the run completes and persists the error points for the retry path
+        final_run = recorder.run_updates[-1]
+        assert final_run["status"] == "completed"
+        assert all(p["state"] == "error" for p in final_run["points"])
+        assert "env_failed" not in recorder.events
+        assert not recorder.progress_updates[-1]["error"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_error_and_pass_points_degrade_only_the_error_point(self):
+        """One erroring point must not take the passed ones down with it: the
+        run completes, only the error point lands in pending_claims."""
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            if lane == "B" and "Redis" in quote:
+                return {"verdict": "error", "issues": ["timeout"]}
+            return {"verdict": "pass", "issues": []}
+
+        env = _env()  # Redis 7.0 point + Spring Boot 3.2 point
+        recorder = Recorder()
+        correct = AsyncMock()
+        result, _ = await _run(env, recorder, lanes=lanes, correct_point=correct)
+
+        correct.assert_not_awaited()  # error points never enter correction
+        assert result.status == "needs_review"
+        assert env.status == "needs_review"
+        assert result.summary == {
+            "total": 2,
+            "passed": 1,
+            "failed": 1,
+            "manual": 0,
+            "uncovered": 0,
+        }
+        claims = env.pending_claims
+        assert len(claims) == 1  # only the error point, passed point excluded
+        assert "Redis" in claims[0]["quote"]
+        assert claims[0]["reason_code"] == "llm_error"
+        assert claims[0]["lanes_summary"]["B"]["verdict"] == "error"
+        final_run = recorder.run_updates[-1]
+        assert final_run["status"] == "completed"
+        states = {p["quote"]: p["state"] for p in final_run["points"]}
+        assert states == {
+            "系统采用 Redis 7.0 作为缓存。": "error",
+            "Spring Boot 3.2 微服务架构。": "passed",
+        }
+        assert "env_failed" not in recorder.events
 
     @pytest.mark.asyncio
     async def test_lane_timeout_retries_once_then_verdict_error(self, monkeypatch):
@@ -328,6 +371,95 @@ class TestConvergence:
 
         assert verdict["verdict"] == "error"
         assert calls["n"] == 2  # one retry, still failing
+
+
+class TestMockModeLanes:
+    """Mock mode drops lane A (a fictional project has no KB evidence) and
+    off_table prescreens defer to lane B's plausibility judgement."""
+
+    @pytest.mark.asyncio
+    async def test_mock_mode_runs_only_lanes_b_and_c(self):
+        env = _env(
+            source_type="mock",
+            draft_content={"background": "推理服务采用 vLLM 0.6 部署。"},
+            background="",
+        )
+        recorder = Recorder()
+        seen_lanes = []
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            seen_lanes.append(lane)
+            return {"verdict": "pass", "issues": []}
+
+        result, _ = await _run(env, recorder, mode="mock", lanes=lanes)
+
+        assert set(seen_lanes) == {"B", "C"}
+        assert result.status == "verified"
+
+    @pytest.mark.asyncio
+    async def test_mock_mode_off_table_prescreen_defers_to_lane_b(self):
+        env = _env(
+            source_type="mock",
+            draft_content={"background": "数据管道采用 Flink 1.18 计算。"},
+            background="",
+        )
+        recorder = Recorder()
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            return {"verdict": "pass", "issues": []}
+
+        result, _ = await _run(env, recorder, mode="mock", lanes=lanes)
+
+        assert result.status == "verified"
+        run_points = recorder.run_updates[-1]["points"]
+        off_table = [
+            p
+            for p in run_points
+            if (p.get("prescreen") or {}).get("status") == "off_table"
+        ]
+        assert off_table, "Flink is not in the anchor table"
+        assert all(p.get("state") == "passed" for p in off_table)
+        assert all("manual_reason" not in p for p in off_table)
+
+    @pytest.mark.asyncio
+    async def test_material_mode_off_table_prescreen_still_routes_manual_review(self):
+        env = _env(tech_background="服务端采用 Flink 1.18 开发。")
+        recorder = Recorder()
+        result, _ = await _run(env, recorder, mode="material")
+
+        assert result.status == "needs_review"
+        claims = env.pending_claims or []
+        assert claims
+        assert any(c["reason_code"] == "off_table" for c in claims)
+
+
+class TestPrescreenModes:
+    def _version_point(self):
+        return [
+            {
+                "point_id": "p1",
+                "quote": "采用 Flink 1.18 计算",
+                "field": "background",
+                "type": "version",
+                "state": "pending",
+            }
+        ]
+
+    def test_material_mode_off_table_marks_manual_review(self):
+        points = self._version_point()
+        _prescreen_version_points(points, "2025.01", mode="material")
+
+        assert points[0]["state"] == "manual_review"
+        assert points[0]["manual_reason"] == "off_table"
+        assert points[0]["prescreen"]["status"] == "off_table"
+
+    def test_mock_mode_off_table_only_marks_prescreen(self):
+        points = self._version_point()
+        _prescreen_version_points(points, "2025.01", mode="mock")
+
+        assert points[0]["state"] == "pending"
+        assert "manual_reason" not in points[0]
+        assert points[0]["prescreen"]["status"] == "off_table"
 
 
 class TestIdempotency:
@@ -703,15 +835,88 @@ class TestLaneFailures:
         assert "env_failed" in recorder.events
 
 
+class TestLaneModeSemantics:
+    @pytest.mark.asyncio
+    async def test_lane_b_mock_mode_rejects_off_table_and_reaches_template(self):
+        import open_notebook.ai.project_env_pipeline as pipeline
+        from open_notebook.ai.project_env_pipeline import LaneVerdict
+
+        captured = {}
+
+        async def fake_invoke(
+            template, data, result_model, model_id, budget, validator=None
+        ):
+            captured["data"] = data
+            captured["validator"] = validator
+            return LaneVerdict(verdict="pass", issues=[])
+
+        with patch(
+            "open_notebook.ai.project_env_pipeline._invoke_json", new=fake_invoke
+        ):
+            verdict = await pipeline.verify_point_lane(
+                lane="B", quote="x", field="background", context={}, mode="mock"
+            )
+
+        assert verdict["verdict"] == "pass"
+        assert captured["data"]["mode"] == "mock"
+        # mock mode must force a plausibility judgement, never a table bounce
+        assert captured["validator"](LaneVerdict(verdict="off_table")) != ""
+        assert captured["validator"](LaneVerdict(verdict="pass")) == ""
+
+    @pytest.mark.asyncio
+    async def test_lane_b_material_mode_still_allows_off_table(self):
+        import open_notebook.ai.project_env_pipeline as pipeline
+        from open_notebook.ai.project_env_pipeline import LaneVerdict
+
+        captured = {}
+
+        async def fake_invoke(
+            template, data, result_model, model_id, budget, validator=None
+        ):
+            captured["validator"] = validator
+            return LaneVerdict(verdict="pass", issues=[])
+
+        with patch(
+            "open_notebook.ai.project_env_pipeline._invoke_json", new=fake_invoke
+        ):
+            verdict = await pipeline.verify_point_lane(
+                lane="B", quote="x", field="background", context={}
+            )
+
+        assert verdict["verdict"] == "pass"
+        assert captured["validator"](LaneVerdict(verdict="off_table")) == ""
+
+
 class TestPreconditions:
     @pytest.mark.asyncio
-    async def test_empty_kb_mock_fails_fast(self):
-        env = _env(source_type="mock")
-        recorder = Recorder(sources=0, notes=0)
-        with pytest.raises(ValueError):
-            await _run(env, recorder, mode="mock")
-        assert "env_failed" in recorder.events
-        assert recorder.failed
+    async def test_empty_kb_mock_runs_without_kb_reads(self):
+        """Mock verification never reads the KB: an empty library must neither
+        block the run nor mark it degraded (the fail-fast is gone)."""
+
+        class NoKbReadRecorder(Recorder):
+            async def query(self, sql, params=None):
+                assert "FROM source" not in sql and "FROM note" not in sql, (
+                    f"mock run must not read the KB, got: {sql[:80]}"
+                )
+                return await super().query(sql, params)
+
+        env = _env(
+            source_type="mock",
+            draft_content={"background": "推理服务采用 vLLM 0.6 部署。"},
+            background="",
+        )
+        recorder = NoKbReadRecorder(sources=0, notes=0)
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            return {"verdict": "pass", "issues": []}
+
+        result, _ = await _run(env, recorder, mode="mock", lanes=lanes)
+
+        assert result.status == "verified"
+        assert "env_failed" not in recorder.events
+        created = dict(recorder.created_rows[0][1])
+        assert "kb_empty" not in created["degraded"]
+        assert "lane_a" not in created["degraded"]
 
     @pytest.mark.asyncio
     async def test_empty_kb_material_degrades_lane_a(self):
@@ -830,3 +1035,65 @@ class TestWriteOrdering:
         assert final_run["status"] == "completed"
         assert final_run["summary"]["total"] >= 1
         assert "llm_calls" in final_run  # patched lanes spend nothing
+
+
+class TestRateLimitBackoff:
+    @pytest.mark.asyncio
+    async def test_invoke_json_sleeps_before_retrying_rate_limit(self):
+        from open_notebook.ai import project_env_pipeline as pipeline
+
+        calls = {"n": 0}
+        sleeps: list[float] = []
+
+        class _Prov:
+            langchain_model = None
+
+        async def fake_provision(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError(
+                    "Error code: 429 - {'error': {'code': '1302', "
+                    "'message': 'rate limit'}}"
+                )
+            raise AssertionError("second attempt must not run after cap")  # noqa
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        with (
+            patch.object(
+                pipeline, "provision_langchain_model_with_info", fake_provision
+            ),
+            patch.object(pipeline.asyncio, "sleep", fake_sleep),
+        ):
+            result = await pipeline._invoke_json(
+                "project_env/verify_c", {}, pipeline.LaneVerdict, None, None
+            )
+
+        assert result is None  # both attempts failed (second is a parse path)
+        assert calls["n"] >= 1
+        assert 8 in sleeps  # backoff fired on the 429 before retrying
+
+    @pytest.mark.asyncio
+    async def test_invoke_json_no_backoff_on_plain_errors(self):
+        from open_notebook.ai import project_env_pipeline as pipeline
+
+        sleeps: list[float] = []
+
+        async def fake_provision(*args, **kwargs):
+            raise RuntimeError("connection reset by peer")
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        with (
+            patch.object(
+                pipeline, "provision_langchain_model_with_info", fake_provision
+            ),
+            patch.object(pipeline.asyncio, "sleep", fake_sleep),
+        ):
+            await pipeline._invoke_json(
+                "project_env/verify_c", {}, pipeline.LaneVerdict, None, None
+            )
+
+        assert sleeps == []  # non-rate-limit errors retry immediately
