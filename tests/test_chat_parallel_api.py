@@ -873,3 +873,165 @@ def test_astream_usage_kwargs_skips_router_overrides():
     assert _astream_usage_kwargs(_Plain()) == {}
     assert _astream_usage_kwargs(_Router()) == {}
     assert _astream_usage_kwargs(_Base()) == {}
+
+
+# --- Review fixes: strong task refs, in-flight guard, blank-answer rejection
+
+
+@pytest.fixture(autouse=True)
+def _clean_parallel_guards():
+    """Module-level guard sets must not leak across tests."""
+    from api.routers import chat_parallel as cp
+
+    cp._inflight.clear()
+    yield
+    cp._inflight.clear()
+    cp._background_tasks.clear()
+
+
+def test_parallel_409_when_session_already_generating():
+    """A session with a live generation (stream or parallel) 409s a new
+    parallel fan-out instead of double-spending on the same snapshot."""
+    client = _client()
+    session, patches = _wire_common()
+
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        from api.routers import chat_parallel as cp
+
+        cp._inflight.add("chat_session:s1")
+        response = client.post(
+            "/api/chat/sessions/chat_session:s1/parallel",
+            json={"message": "hi", "context": {}, "runs": ["default"]},
+        )
+
+    assert response.status_code == 409
+    assert "already" in response.json()["detail"]
+
+
+def test_parallel_inflight_released_after_run():
+    """The in-flight slot frees once the orchestration settles."""
+    client = _client()
+    session, patches = _wire_common()
+
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        response = client.post(
+            "/api/chat/sessions/chat_session:s1/parallel",
+            json={"message": "hi", "context": {}, "runs": ["default"]},
+        )
+        assert response.status_code == 200
+        from api.routers import chat_parallel as cp
+
+        assert cp.inflight_session_ids() == set()
+        # and the orchestration task is strongly referenced while it ran
+        assert isinstance(cp._background_tasks, set)
+
+
+def test_parallel_orchestration_failure_emits_error_event():
+    """A top-level archive failure surfaces the `error` event and the stream
+    still closes (sentinel), instead of hanging until the client watchdog."""
+    client = _client()
+    session, patches = _wire_common()
+
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            patch(
+                "api.routers.chat_parallel.chat_graph.update_state",
+                side_effect=RuntimeError("archive boom"),
+            )
+        )
+        response = client.post(
+            "/api/chat/sessions/chat_session:s1/parallel",
+            json={"message": "hi", "context": {}, "runs": ["default"]},
+        )
+
+    assert response.status_code == 200
+    events = _sse_events(response)
+    types = [e["type"] for e in events]
+    assert "error" in types
+    error = next(e for e in events if e["type"] == "error")
+    assert "archive boom" in error["message"]
+    assert "archived" not in types
+    assert types[-1] in ("error", "complete")  # sentinel closes the stream
+
+
+def test_parallel_all_runs_fail_archives_human_only():
+    """Every participant failing still archives the question once (so the
+    group's history entry exists) and closes with `complete`."""
+    client = _client()
+    session, patches = _wire_common()
+
+    async def failing_provision(content, model_id, default_type, **kwargs):
+        raise RuntimeError("model down")
+
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            patch(
+                "api.routers.chat_parallel.provision_langchain_model_with_info",
+                side_effect=failing_provision,
+            )
+        )
+        response = client.post(
+            "/api/chat/sessions/chat_session:s1/parallel",
+            json={"message": "hi", "context": {}, "runs": ["default", "model:m1"]},
+        )
+
+    assert response.status_code == 200
+    events = _sse_events(response)
+    types = [e["type"] for e in events]
+    assert types.count("run_error") == 2
+    assert types.count("run_complete") == 0
+    archived = next(e for e in events if e["type"] == "archived")
+    assert [m["type"] for m in archived["messages"]] == ["human"]
+    assert types[-1] == "complete"
+
+
+def test_parallel_blank_answer_degrades_to_run_error():
+    """An all-whitespace answer (or pure <think>) is refused instead of
+    archived as a blank message — same contract as the chat graph."""
+    client = _client()
+    session, patches = _wire_common()
+
+    class _BlankProv:
+        model_name = "gpt-test"
+
+        class _Model:
+            async def astream(self, payload, **kwargs):
+                yield AIMessageChunk(content="  ", id="blank")
+
+            def model_copy(self, *, update=None, **kwargs):
+                return self
+
+        def __init__(self):
+            self.langchain_model = self._Model()
+
+    async def blank_provision(content, model_id, default_type, **kwargs):
+        return _BlankProv()
+
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            patch(
+                "api.routers.chat_parallel.provision_langchain_model_with_info",
+                side_effect=blank_provision,
+            )
+        )
+        response = client.post(
+            "/api/chat/sessions/chat_session:s1/parallel",
+            json={"message": "hi", "context": {}, "runs": ["default"]},
+        )
+
+    assert response.status_code == 200
+    events = _sse_events(response)
+    types = [e["type"] for e in events]
+    assert "run_error" in types
+    assert "run_complete" not in types
+    assert types[-1] == "complete"

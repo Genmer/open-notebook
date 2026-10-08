@@ -158,22 +158,25 @@ async def resolve_agent_binding(agent_id: Optional[str]) -> Optional[Any]:
 
 # --- In-flight guard helpers (history-edit mutual exclusion) ------------------
 #
-# The notebook stream router (chat_stream.py) and the source stream router
-# (source_chat.py) each own a module-level in-flight set. History-editing
-# endpoints (chat_history.py, session deletion) must treat the two as one
-# merged guard, so a delete cannot race a generation on either stream path.
+# The notebook stream router (chat_stream.py), the source stream router
+# (source_chat.py) and the parallel fan-out router (chat_parallel.py) each own
+# a module-level in-flight set. History-editing endpoints (chat_history.py,
+# session deletion) must treat the three as one merged guard, so a delete
+# cannot race a generation on any stream path.
 
 
 def get_merged_inflight_session_ids() -> set[str]:
-    """Snapshot the union of both stream routers' in-flight session ids.
+    """Snapshot the union of the stream routers' in-flight session ids.
 
-    The imports are lazy on purpose: chat_stream/source_chat import from this
-    module, so module-level imports here would create a router import cycle.
+    The imports are lazy on purpose: chat_stream/source_chat/chat_parallel
+    import from this module, so module-level imports here would create a
+    router import cycle.
     """
+    from api.routers.chat_parallel import inflight_session_ids as parallel_ids
     from api.routers.chat_stream import inflight_session_ids as notebook_stream_ids
     from api.routers.source_chat import inflight_session_ids as source_stream_ids
 
-    return notebook_stream_ids() | source_stream_ids()
+    return notebook_stream_ids() | source_stream_ids() | parallel_ids()
 
 
 def session_in_generation(session_id: str) -> bool:

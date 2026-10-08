@@ -193,7 +193,7 @@ async def test_parallel_stream_endpoint_wires_env_context_into_render_state():
     cannot catch a router that never passes the context through): the SSE
     endpoint must resolve session.project_env through the real render gate and
     hand the snapshot text to every participant's render state."""
-    from langchain_core.messages import AIMessage
+    from langchain_core.messages import AIMessageChunk
 
     from api.main import app
     from api.routers.chat_parallel import build_render_state as real_build
@@ -222,8 +222,13 @@ async def test_parallel_stream_endpoint_wires_env_context_into_render_state():
         model_name = "gpt-test"
 
         class _Model:
-            async def ainvoke(self, payload):
-                return AIMessage(content="answer")
+            # _answer_once streams (astream) and flips a throwaway streaming
+            # copy — the fake must speak both, not the pre-streaming ainvoke.
+            async def astream(self, payload, **kwargs):
+                yield AIMessageChunk(content="answer", id="env-ctx")
+
+            def model_copy(self, *, update=None, **kwargs):
+                return self
 
         def __init__(self):
             self.langchain_model = self._Model()
@@ -282,7 +287,7 @@ async def test_parallel_stream_endpoint_wires_env_context_into_render_state():
 async def test_parallel_stream_endpoint_closed_gate_sends_none():
     """A session bound to a non-injectable env (needs_review, no snapshot)
     must render with project_env_context=None — the gate closes, chat lives."""
-    from langchain_core.messages import AIMessage
+    from langchain_core.messages import AIMessageChunk
 
     from api.main import app
     from api.routers.chat_parallel import build_render_state as real_build
@@ -311,8 +316,13 @@ async def test_parallel_stream_endpoint_closed_gate_sends_none():
         model_name = "gpt-test"
 
         class _Model:
-            async def ainvoke(self, payload):
-                return AIMessage(content="answer")
+            # _answer_once streams (astream) and flips a throwaway streaming
+            # copy — the fake must speak both, not the pre-streaming ainvoke.
+            async def astream(self, payload, **kwargs):
+                yield AIMessageChunk(content="answer", id="env-ctx")
+
+            def model_copy(self, *, update=None, **kwargs):
+                return self
 
         def __init__(self):
             self.langchain_model = self._Model()

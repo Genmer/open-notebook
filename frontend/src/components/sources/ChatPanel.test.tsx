@@ -189,10 +189,12 @@ describe('ChatPanel parallel composer', () => {
     const parallelChat = {
       phase: 'idle' as const,
       runs: [],
+      groupId: null,
       synthesis: null,
       isSynthesizing: false,
       send: vi.fn(),
       synthesize: vi.fn(),
+      cancel: vi.fn(),
     }
     render(
       <ChatPanel
@@ -673,10 +675,12 @@ describe('ChatPanel session manager entry', () => {
             ? {
                 phase: options.parallelPhase,
                 runs: [],
+                groupId: null,
                 synthesis: null,
                 isSynthesizing: false,
                 send: vi.fn(),
                 synthesize: vi.fn(),
+                cancel: vi.fn(),
               }
             : undefined
         }
@@ -801,10 +805,12 @@ describe('ChatPanel message delete entries (bubble history editing)', () => {
             ? {
                 phase: options.parallelPhase,
                 runs: [],
+                groupId: null,
                 synthesis: null,
                 isSynthesizing: false,
                 send: vi.fn(),
                 synthesize: vi.fn(),
+                cancel: vi.fn(),
               }
             : undefined
         }
@@ -1090,5 +1096,80 @@ describe('ChatPanel live stream window', () => {
       />
     )
     expect(screen.queryByTestId('chat-stream-window')).not.toBeInTheDocument()
+  })
+})
+
+describe('ChatPanel parallel composer review fixes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('a running fan-out disables the input and turns the send button into the parallel stop', () => {
+    const cancel = vi.fn()
+    const onSendMessage = vi.fn()
+    render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={onSendMessage}
+        parallelChat={{
+          phase: 'running',
+          runs: [],
+          groupId: null,
+          synthesis: null,
+          isSynthesizing: false,
+          send: vi.fn(),
+          synthesize: vi.fn(),
+          cancel,
+        }}
+      />
+    )
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    const stop = screen.getByRole('button', { name: 'chat.streamStop' })
+    fireEvent.click(stop)
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(onSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('the settled live card hides the archived copy of the same group and keeps it after done', () => {
+    const groupMessage = {
+      id: 'm-human',
+      type: 'human' as const,
+      content: 'question',
+      additional_kwargs: { group_id: 'par_1' },
+    }
+    render(
+      <ChatPanel
+        messages={[groupMessage] as never}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        parallelChat={{
+          phase: 'done',
+          runs: [
+            {
+              key: 'default',
+              kind: 'default',
+              name: 'default',
+              status: 'done',
+              content: 'answer',
+            },
+          ],
+          groupId: 'par_1',
+          synthesis: null,
+          isSynthesizing: false,
+          send: vi.fn(),
+          synthesize: vi.fn(),
+          cancel: vi.fn(),
+        }}
+      />
+    )
+    // The archived group view for par_1 is deduped away while the live card
+    // stands in for it — even after the phase reached 'done'.
+    expect(screen.queryByTestId('parallel-group-par_1')).toBeNull()
+    expect(screen.getByTestId('parallel-live-card')).toBeInTheDocument()
+    expect(screen.getByTestId('parallel-synthesis-bar')).toBeInTheDocument()
   })
 })

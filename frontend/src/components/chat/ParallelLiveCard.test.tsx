@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { ParallelLiveCard } from './ParallelLiveCard'
 import { ParallelRunState } from '@/lib/hooks/use-parallel-chat'
 
@@ -206,5 +206,79 @@ describe('ParallelLiveCard', () => {
     expect(card).toHaveAttribute('data-state', 'done')
     expect(within(card).queryByTestId('parallel-run-preview')).toBeNull()
     expect(within(card).getByTestId('markdown-renderer')).toBeInTheDocument()
+  })
+})
+
+describe('ParallelLiveCard review fixes', () => {
+  const base = {
+    isSynthesizing: false,
+    synthesis: null,
+    onSynthesize: noop,
+  }
+
+  it('resets the stopwatch when a fresh active round starts on the same card key', () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = render(
+        <ParallelLiveCard
+          {...base}
+          runs={[makeRun({ key: 'default', status: 'streaming' })]}
+        />
+      )
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+      expect(screen.getByTestId('parallel-run-timer')).toHaveTextContent('00:03')
+
+      // Settle the round; the timer unmounts with the active header.
+      rerender(
+        <ParallelLiveCard
+          {...base}
+          runs={[makeRun({ key: 'default', status: 'done', content: 'final' })]}
+        />
+      )
+      expect(screen.queryByTestId('parallel-run-timer')).toBeNull()
+
+      // A second round reuses the card instance (same key) — seconds start over.
+      rerender(
+        <ParallelLiveCard
+          {...base}
+          runs={[makeRun({ key: 'default', status: 'streaming' })]}
+        />
+      )
+      expect(screen.getByTestId('parallel-run-timer')).toHaveTextContent('00:00')
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(screen.getByTestId('parallel-run-timer')).toHaveTextContent('00:01')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides empty synthesis optgroups when only the default run settled', () => {
+    render(
+      <ParallelLiveCard
+        {...base}
+        runs={[makeRun({ key: 'default', status: 'done', content: 'a' })]}
+      />
+    )
+    expect(screen.getByTestId('parallel-synthesis-bar')).toBeInTheDocument()
+    expect(document.querySelectorAll('optgroup')).toHaveLength(0)
+  })
+
+  it('renders only the optgroups that have settled runs', () => {
+    render(
+      <ParallelLiveCard
+        {...base}
+        runs={[
+          makeRun({ key: 'agent:agent:1', kind: 'agent', name: 'A', status: 'done', content: 'x' }),
+          makeRun({ key: 'default', status: 'done', content: 'y' }),
+        ]}
+      />
+    )
+    const groups = document.querySelectorAll('optgroup')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].getAttribute('label')).toBe('chat.groupAgents')
   })
 })

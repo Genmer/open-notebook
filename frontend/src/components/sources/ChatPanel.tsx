@@ -82,14 +82,18 @@ interface ChatPanelProps {
   onProjectEnvChange?: (env: string | null) => void
   onNewSessionWithEnv?: (env: string) => void
   // Parallel answers (PDR-004, notebook chat only): live fan-out state plus
-  // send/synthesize handlers. Absent on source chats.
+  // send/synthesize/cancel handlers. Absent on source chats.
   parallelChat?: {
     phase: 'idle' | 'running' | 'done'
     runs: import('@/lib/hooks/use-parallel-chat').ParallelRunState[]
+    /** Group the live/settled card currently stands in for (dedup key against
+     * the archived history view). Null until runs_started arrives. */
+    groupId: string | null
     synthesis: import('@/lib/hooks/use-parallel-chat').SynthesisState | null
     isSynthesizing: boolean
     send: (message: string, runs: string[]) => void
     synthesize: (participant: { agent?: string; model?: string }) => void
+    cancel: () => void
   }
   // Session management props
   sessions?: BaseChatSession[]
@@ -402,7 +406,9 @@ export function ChatPanel({
                         : undefined
                     }
                   />
-                ) : (
+                ) : parallelChat &&
+                  parallelChat.phase !== 'idle' &&
+                  item.groupId === parallelChat.groupId ? null : (
                   <ParallelGroupView
                     key={item.groupId}
                     item={item}
@@ -413,7 +419,12 @@ export function ChatPanel({
                 )
               )
             )}
-            {parallelChat && parallelChat.phase === 'running' && (
+            {/* Kept mounted through 'done' (not just 'running'): error/watchdog
+                paths must not evaporate, and the synthesis bar stays reachable
+                after the runs settle. The archived copy of the SAME group is
+                hidden above by groupId while this card is up; the next send
+                resets the hook and the history view takes over. */}
+            {parallelChat && parallelChat.phase !== 'idle' && (
               <ParallelLiveCard
                 runs={parallelChat.runs}
                 isSynthesizing={parallelChat.isSynthesizing}
@@ -762,6 +773,7 @@ interface ChatComposerProps {
   parallelChat?: {
     phase: 'idle' | 'running' | 'done'
     send: (message: string, runs: string[]) => void
+    cancel: () => void
   }
 }
 
@@ -786,9 +798,13 @@ function ChatComposer({
   const enterToSend = hasHydrated ? enterToSendRaw : false
   // Safari 的 compositionend 先于选词确认的 keydown 派发，isComposing 已复位，需用 ref 兜底
   const composingRef = useRef(false)
+  // A running parallel fan-out owns the composer: single sends would race the
+  // five answers into one checkpoint, and the send button doubles as the
+  // parallel stop (the live card has no stop of its own).
+  const parallelRunning = parallelChat?.phase === 'running'
 
   const handleSend = () => {
-    if (input.trim() && !isStreaming) {
+    if (input.trim() && !isStreaming && !parallelRunning) {
       onSendMessage(input.trim(), modelOverride)
       setInput('')
     }
@@ -892,7 +908,7 @@ function ChatComposer({
             }, 0)
           }}
           placeholder={`${t('chat.sendPlaceholder')} (${sendHint})`}
-          disabled={isStreaming}
+          disabled={isStreaming || parallelRunning}
           className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
           rows={1}
         />
@@ -903,18 +919,28 @@ function ChatComposer({
           />
         )}
         <Button
-          onClick={isStreaming ? onStopStreaming : handleSend}
-          disabled={isStreaming ? !onStopStreaming : !input.trim()}
+          onClick={
+            isStreaming ? onStopStreaming : parallelRunning ? parallelChat?.cancel : handleSend
+          }
+          disabled={isStreaming ? !onStopStreaming : parallelRunning ? false : !input.trim()}
           size="icon"
           className="h-[40px] w-[40px] flex-shrink-0"
-          aria-label={isStreaming && onStopStreaming ? t('chat.streamStop') : undefined}
-          title={isStreaming && onStopStreaming ? t('chat.streamStop') : undefined}
+          aria-label={
+            (isStreaming && onStopStreaming) || parallelRunning ? t('chat.streamStop') : undefined
+          }
+          title={
+            (isStreaming && onStopStreaming) || parallelRunning ? t('chat.streamStop') : undefined
+          }
         >
-          {isStreaming ? (
-            onStopStreaming ? (
-              <Square className="h-4 w-4" />
+          {isStreaming || parallelRunning ? (
+            isStreaming ? (
+              onStopStreaming ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )
             ) : (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Square className="h-4 w-4" />
             )
           ) : (
             <Send className="h-4 w-4" />

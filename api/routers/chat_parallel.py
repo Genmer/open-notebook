@@ -42,6 +42,7 @@ from api.routers._chat_shared import (
     extract_chat_messages,
     get_session_or_404,
     resolve_agent_binding,
+    session_in_generation,
 )
 from open_notebook.ai.provision import provision_langchain_model_with_info
 from open_notebook.ai.usage import record_llm_usage_sync
@@ -57,6 +58,25 @@ from open_notebook.utils.timestamps import utc_now_iso
 router = APIRouter()
 
 MAX_PARALLEL_RUNS = 5
+
+# In-flight guard (same semantics as chat_stream's): one parallel fan-out per
+# session at a time — a second POST 409s instead of double-spending tokens on
+# the same history snapshot and interleaving two group archives in one
+# checkpoint. Also surfaced through the merged guard in _chat_shared, so
+# history-edit/delete endpoints see a running fan-out exactly like a stream.
+_inflight: set[str] = set()
+
+
+def inflight_session_ids() -> set[str]:
+    """Snapshot of sessions with a parallel orchestration still running."""
+    return set(_inflight)
+
+
+# Strong references to in-flight orchestration tasks: asyncio only keeps weak
+# references to tasks, so an unreferenced orchestration could be garbage
+# collected mid-stream (answers never archived, SSE pings forever). The done
+# callback both frees the slot and surfaces any non-cancel failure.
+_background_tasks: set[asyncio.Task] = set()
 
 # SSE keep-alive cadence (aligned with chat_stream): when the queue has been
 # idle this long the generator emits a ping data event. It must be a `data:`
@@ -223,6 +243,10 @@ async def _answer_once(
 
     content = extract_text_content(ai_message.content)
     cleaned = clean_thinking_content(content)
+    if not cleaned.strip():
+        # Same contract as the chat graph's IncompleteGenerationError path:
+        # never archive a blank answer (all-<think> or whitespace streams).
+        raise ExternalServiceError("Model returned an empty response for parallel run")
     extra = dict(ai_message.additional_kwargs or {})
     extra.update(
         {
@@ -369,6 +393,7 @@ async def _orchestrate(
         )
         await queue.put({"type": "error", "message": str(e)})
     finally:
+        _inflight.discard(full_session_id)
         await queue.put(None)
 
 
@@ -391,6 +416,12 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
         raise HTTPException(status_code=400, detail="runs contains duplicates")
 
     full_session_id, session = await get_session_or_404(session_id)
+    if session_in_generation(full_session_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Session already has a generation in progress",
+        )
+    _inflight.add(full_session_id)
 
     # Fetch notebook linked to this session (same as /chat/execute).
     notebook: Optional[Notebook] = None
@@ -443,7 +474,8 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
     project_env_context = env_context["text"] if env_context else None
 
     queue: asyncio.Queue = asyncio.Queue()
-    asyncio.create_task(
+    _inflight.add(full_session_id)
+    task = asyncio.create_task(
         _orchestrate(
             queue=queue,
             full_session_id=full_session_id,
@@ -457,6 +489,10 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
             project_env_context=project_env_context,
         )
     )
+    # The loop only holds weak references to tasks — keep this one alive for
+    # as long as it runs (same rationale as chat_stream.py's task ref).
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     async def event_stream():
         try:

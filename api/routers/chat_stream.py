@@ -53,6 +53,10 @@ router = APIRouter()
 # Per-session in-flight guard (see module docstring for the atomicity note).
 _inflight: set[str] = set()
 
+# Strong references to in-flight orchestration tasks (asyncio only keeps weak
+# task references; an unreferenced orchestration could be GC'd mid-stream).
+_background_tasks: set[asyncio.Task] = set()
+
 # SSE keep-alive cadence: emit a ``: ping`` comment when the queue has been
 # idle this long so intermediaries don't close the connection during long
 # model calls. The frontend watchdog re-arms on ANY received bytes, including
@@ -220,6 +224,10 @@ async def stream_chat(session_id: str, request: StreamChatRequest) -> StreamingR
         _orchestrate(queue, full_session_id, session, state_values, config)
     )
     task.add_done_callback(lambda _t: _inflight.discard(full_session_id))
+    # The loop only holds weak references to tasks: without this strong ref the
+    # orchestration could be garbage collected mid-stream (never archives).
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     async def event_stream():
         try:

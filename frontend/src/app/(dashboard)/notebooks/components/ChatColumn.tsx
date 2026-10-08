@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNotebookChat } from '@/lib/hooks/use-notebook-chat'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { ChatPanel } from '@/components/sources/ChatPanel'
@@ -65,6 +65,19 @@ export function ChatColumn({
     notes,
     contextSelections
   })
+
+  // The settled live card persists past 'done' (error states readable, the
+  // synthesis bar stays reachable) — but it belongs to the session it ran in.
+  // Switching sessions releases it: the server-side archive lands in the
+  // history either way, so the group view renders there.
+  const sessionIdRef = useRef(chat.currentSessionId)
+  useEffect(() => {
+    if (sessionIdRef.current !== chat.currentSessionId) {
+      sessionIdRef.current = chat.currentSessionId
+      chat.parallel.reset()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.currentSessionId])
 
   // Context stats for the indicator, counted from the selection maps so
   // sources picked via the context picker (beyond the loaded pages) count too.
@@ -141,10 +154,12 @@ export function ChatColumn({
       parallelChat={{
         phase: chat.parallel.phase,
         runs: chat.parallel.runs,
+        groupId: chat.parallel.groupId,
         synthesis: chat.parallel.synthesis,
         isSynthesizing: chat.parallel.isSynthesizing,
         send: (message, runs) => chat.sendParallelMessage(message, runs),
         synthesize: (participant) => chat.synthesizeParallel(participant),
+        cancel: chat.parallel.cancel,
       }}
       sessions={chat.sessions}
       currentSessionId={chat.currentSessionId}

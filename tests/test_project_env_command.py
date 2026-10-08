@@ -250,6 +250,7 @@ class TestConvergence:
 
         assert result.status == "verified"
         mock_render.assert_awaited_once()
+        assert mock_render.await_args is not None
         kwargs = mock_render.await_args.kwargs
         assert kwargs["industry"] == "物流行业"
         assert kwargs["candidate"] == env.candidate_fields()
@@ -300,9 +301,11 @@ class TestConvergence:
         assert result.status == "needs_review"
         assert env.status == "needs_review"
         mock_render.assert_awaited_once()
+        assert mock_render.await_args is not None
         kwargs = mock_render.await_args.kwargs
         assert kwargs["industry"] == "物流行业"
         assert len(recorder.paragraph_updates) == 1
+        assert recorder.paragraph_updates[0][1] is not None
         assert recorder.paragraph_updates[0][1]["paragraph"] == "待复核环境的通用段落。"
 
     @pytest.mark.asyncio
@@ -332,6 +335,7 @@ class TestConvergence:
         assert env.status == "verified"
         assert env.generic_paragraph is None
         assert env.verified_snapshot and "frozen_at" in env.verified_snapshot
+        assert env.verification_progress is not None
         assert env.verification_progress["stage"] == "done"
         assert "env_save" in recorder.events
         assert recorder.paragraph_updates == []

@@ -128,17 +128,35 @@ export function useParallelChat(): UseParallelChatResult {
     timeoutRef.current = setTimeout(() => {
       abortRef.current?.abort()
       if (mountedRef.current) {
+        // Terminal states for whatever is still live: the stream is gone, so
+        // 'streaming'/'pending' cards would freeze that way forever.
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.status === 'done' || r.status === 'error'
+              ? r
+              : { ...r, status: 'error', error: r.error ?? t('chat.parallelRunFailed'), deltaText: undefined }
+          )
+        )
         setPhase((prev) => (prev === 'running' ? 'done' : prev))
       }
     }, STREAM_IDLE_TIMEOUT_MS)
-  }, [clearTimeout_])
+  }, [clearTimeout_, t])
 
   const cancel = useCallback(() => {
     clearTimeout_()
     clearDeltaFlush()
     abortRef.current?.abort()
     abortRef.current = null
-    if (mountedRef.current) setPhase('done')
+    if (mountedRef.current) {
+      setRuns((prev) =>
+        prev.map((r) =>
+          r.status === 'done' || r.status === 'error'
+            ? r
+            : { ...r, status: 'error', deltaText: undefined }
+        )
+      )
+      setPhase('done')
+    }
   }, [clearDeltaFlush, clearTimeout_])
 
   const reset = useCallback(() => {
@@ -161,7 +179,11 @@ export function useParallelChat(): UseParallelChatResult {
       onArchived?: () => void
     ) => {
       abortRef.current?.abort()
-      abortRef.current = new AbortController()
+      // Drop any unflushed deltas from a previous round: their trailing timer
+      // would otherwise append stale text into the fresh run cards.
+      clearDeltaFlush()
+      const controller = new AbortController()
+      abortRef.current = controller
       setPhase('running')
       // Optimistically materialize pending cards from the run keys so the
       // grid never renders 0/0 while runs_started is still in flight; kind
@@ -180,6 +202,11 @@ export function useParallelChat(): UseParallelChatResult {
       armTimeout()
 
       const handleEvent = (event: ParallelStreamEvent) => {
+        // Generational guard: events from a stale stream (aborted moments ago,
+        // in-flight read already resolved) must not touch the new round's
+        // state — an old runs_started would drop the new roster, an old
+        // run_complete would mark a fresh card done with old content.
+        if (abortRef.current !== controller) return
         // Watchdog first: every event (deltas included) re-arms the idle timer.
         armTimeout()
         if (event.type === 'runs_started') {
@@ -228,6 +255,22 @@ export function useParallelChat(): UseParallelChatResult {
                 : r
             )
           )
+        } else if (event.type === 'error') {
+          // Orchestration-level failure (archive write blew up etc.): nothing
+          // else is coming — settle every live card and surface the reason.
+          clearDeltaFlush()
+          setRuns((prev) =>
+            prev.map((r) =>
+              r.status === 'done' || r.status === 'error'
+                ? r
+                : { ...r, status: 'error', error: r.error ?? event.message, deltaText: undefined }
+            )
+          )
+          if (mountedRef.current) {
+            toast.error(t('chat.parallelFailed'), {
+              description: getApiErrorMessage(event.message || '', (key) => t(key)),
+            })
+          }
         } else if (event.type === 'archived') {
           onArchived?.()
         }
@@ -238,11 +281,12 @@ export function useParallelChat(): UseParallelChatResult {
           sessionId,
           { message, runs: runKeys, context },
           handleEvent,
-          abortRef.current.signal
+          controller.signal
         )
-        if (mountedRef.current) setPhase('done')
+        if (mountedRef.current && abortRef.current === controller) setPhase('done')
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
+        if (mountedRef.current && abortRef.current !== controller) return
         const err = error as { response?: { data?: { detail?: string } }; message?: string }
         console.error('Parallel chat failed:', error)
         toast.error(t('chat.parallelFailed'), {
@@ -251,12 +295,21 @@ export function useParallelChat(): UseParallelChatResult {
             (key) => t(key)
           ),
         })
-        if (mountedRef.current) setPhase('done')
+        if (mountedRef.current) {
+          setRuns((prev) =>
+            prev.map((r) =>
+              r.status === 'done' || r.status === 'error'
+                ? r
+                : { ...r, status: 'error', deltaText: undefined }
+            )
+          )
+          setPhase('done')
+        }
       } finally {
         clearTimeout_()
       }
     },
-    [armTimeout, clearTimeout_, scheduleDeltaFlush, t]
+    [armTimeout, clearDeltaFlush, clearTimeout_, scheduleDeltaFlush, t]
   )
 
   const synthesize = useCallback(

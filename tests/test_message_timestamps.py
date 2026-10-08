@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from open_notebook.domain.notebook import ChatSession
@@ -219,9 +219,17 @@ async def test_ts3_parallel_archive_stamps_user_and_answer_messages(tmp_path):
     graph, _ = _make_graphs(tmp_path)
     prov = MagicMock()
     prov.model_name = "fake-model"
-    prov.langchain_model.ainvoke = AsyncMock(
-        return_value=AIMessage(content="parallel answer")
-    )
+
+    class _StreamModel:
+        # _answer_once consumes the model as a token stream (and flips a
+        # throwaway streaming copy); ainvoke alone feeds it nothing.
+        async def astream(self, payload, **kwargs):
+            yield AIMessageChunk(content="parallel answer", id="ts3")
+
+        def model_copy(self, *, update=None, **kwargs):
+            return self
+
+    prov.langchain_model = _StreamModel()
 
     patches = [
         patch(

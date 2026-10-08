@@ -31,9 +31,14 @@ function formatElapsed(seconds: number): string {
 }
 
 // Per-card 1s stopwatch while the run is live; interval clears on settle.
+// The card instance survives across rounds (same run key), so the seconds
+// reset whenever a fresh active period starts (inactive -> active).
 function useElapsedSeconds(active: boolean): string {
   const [seconds, setSeconds] = useState(0)
+  const prevActiveRef = useRef(false)
   useEffect(() => {
+    if (active && !prevActiveRef.current) setSeconds(0)
+    prevActiveRef.current = active
     if (!active) return
     const id = setInterval(() => setSeconds((s) => s + 1), 1000)
     return () => clearInterval(id)
@@ -277,24 +282,34 @@ export function ParallelLiveCard({
             data-testid="parallel-synthesis-select"
           >
             <option value="">{t('chat.synthesisDefaultPicker')}</option>
-            <optgroup label={t('chat.groupAgents')}>
-              {runs
-                .filter((r) => r.kind === 'agent' && r.status === 'done')
-                .map((r) => (
-                  <option key={r.key} value={`agent:${r.key.slice('agent:'.length)}`}>
-                    {r.name}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label={t('chat.groupModels')}>
-              {runs
-                .filter((r) => r.kind === 'model' && r.status === 'done')
-                .map((r) => (
-                  <option key={r.key} value={`model:${r.key.slice('model:'.length)}`}>
-                    {r.name}
-                  </option>
-                ))}
-            </optgroup>
+            {(() => {
+              // Empty optgroups render as bare group headers in some browsers
+              // — only show a group when it has a settled run to pick.
+              const doneAgents = runs.filter((r) => r.kind === 'agent' && r.status === 'done')
+              const doneModels = runs.filter((r) => r.kind === 'model' && r.status === 'done')
+              return (
+                <>
+                  {doneAgents.length > 0 && (
+                    <optgroup label={t('chat.groupAgents')}>
+                      {doneAgents.map((r) => (
+                        <option key={r.key} value={`agent:${r.key.slice('agent:'.length)}`}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {doneModels.length > 0 && (
+                    <optgroup label={t('chat.groupModels')}>
+                      {doneModels.map((r) => (
+                        <option key={r.key} value={`model:${r.key.slice('model:'.length)}`}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              )
+            })()}
           </select>
           <Button
             size="sm"

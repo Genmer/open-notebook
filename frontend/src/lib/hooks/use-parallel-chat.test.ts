@@ -251,3 +251,132 @@ describe('useParallelChat', () => {
     })
   })
 })
+
+describe('useParallelChat review fixes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    events.length = 0
+  })
+
+  it('an orchestration-level error event settles live runs and finishes', async () => {
+    events.push(
+      {
+        type: 'runs_started',
+        group_id: 'par_9',
+        runs: [{ key: 'default', kind: 'default', name: 'default' }],
+      },
+      { type: 'run_delta', key: 'default', delta: 'partial' },
+      { type: 'error', message: 'archive boom' },
+    )
+    const { result } = renderHook(() => useParallelChat())
+    await act(async () => {
+      await result.current.start('s', 'q', ['default'], {})
+    })
+    const run = result.current.runs.find((r) => r.key === 'default')
+    expect(run?.status).toBe('error')
+    expect(run?.error).toBe('archive boom')
+    expect(run?.deltaText).toBeUndefined()
+    expect(result.current.phase).toBe('done')
+  })
+
+  it('start clears stale delta buffers so a previous round cannot leak in', async () => {
+    events.push(
+      {
+        type: 'runs_started',
+        group_id: 'par_1',
+        runs: [{ key: 'default', kind: 'default', name: 'default' }],
+      },
+      { type: 'run_delta', key: 'default', delta: 'STALE' },
+    )
+    const { result } = renderHook(() => useParallelChat())
+    await act(async () => {
+      await result.current.start('s', 'q1', ['default'], {})
+    })
+    // Round 2 starts before round 1's 50ms flush timer fires.
+    events.length = 0
+    events.push({
+      type: 'runs_started',
+      group_id: 'par_2',
+      runs: [{ key: 'default', kind: 'default', name: 'default' }],
+    })
+    await act(async () => {
+      await result.current.start('s', 'q2', ['default'], {})
+    })
+    await waitForDeltaFlush()
+    const run = result.current.runs.find((r) => r.key === 'default')
+    expect(run?.deltaText ?? '').not.toContain('STALE')
+  })
+
+  it('ignores events from a superseded stream (generational guard)', async () => {
+    const staleDeliver: Array<(e: ParallelStreamEvent) => void> = []
+    vi.mocked((await import('@/lib/api/chat')).chatApi.parallelRun).mockImplementationOnce(
+      async (_sessionId, _data, onEvent) => {
+        staleDeliver.push(onEvent)
+        await new Promise(() => {}) // old stream hangs until aborted
+      },
+    )
+    const { result } = renderHook(() => useParallelChat())
+    await act(async () => {
+      result.current.start('s', 'q1', ['default'], {})
+    })
+    // Round 2 takes over the controller.
+    events.push({
+      type: 'runs_started',
+      group_id: 'par_2',
+      runs: [{ key: 'default', kind: 'default', name: 'Renamed' }],
+    })
+    await act(async () => {
+      await result.current.start('s', 'q2', ['default'], {})
+    })
+    // A stale runs_started from round 1 must not replace round 2's roster.
+    await act(async () => {
+      staleDeliver[0]?.({
+        type: 'runs_started',
+        group_id: 'par_1',
+        runs: [{ key: 'default', kind: 'default', name: 'OLD' }],
+      })
+      staleDeliver[0]?.({ type: 'run_complete', key: 'default', group_id: 'par_1', content: 'OLD' })
+    })
+    const run = result.current.runs.find((r) => r.key === 'default')
+    expect(run?.name).toBe('Renamed')
+    expect(run?.status).not.toBe('done')
+    expect(run?.content).toBeUndefined()
+  })
+
+  it('the idle watchdog settles live runs into terminal error states', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked((await import('@/lib/api/chat')).chatApi.parallelRun).mockImplementationOnce(
+        async () => new Promise(() => {}),
+      )
+      const { result } = renderHook(() => useParallelChat())
+      await act(async () => {
+        result.current.start('s', 'q', ['default'], {})
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000)
+      })
+      expect(result.current.phase).toBe('done')
+      expect(result.current.runs[0]?.status).toBe('error')
+      expect(result.current.runs[0]?.deltaText).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancel aborts, settles live runs and ends the phase', async () => {
+    vi.mocked((await import('@/lib/api/chat')).chatApi.parallelRun).mockImplementationOnce(
+      async () => new Promise(() => {}),
+    )
+    const { result } = renderHook(() => useParallelChat())
+    await act(async () => {
+      result.current.start('s', 'q', ['default'], {})
+    })
+    expect(result.current.phase).toBe('running')
+    await act(async () => {
+      result.current.cancel()
+    })
+    expect(result.current.phase).toBe('done')
+    expect(result.current.runs[0]?.status).toBe('error')
+  })
+})
