@@ -1369,3 +1369,71 @@ describe.each([
     },
   )
 })
+
+// Pinned inventory of the i18n keys added by the 2026-10 parallel live-card
+// rewrite (progress header states, streaming label, failure title, stopwatch
+// aria strings). Same guarding contract as NEW_KEYS above: exists in both
+// zh-CN and en-US, and every other locale resolves it without crashing — via
+// its own translation or the en-US fallback.
+const PARALLEL_LIVE_KEYS = [
+  'chat.parallelConnecting',
+  'chat.parallelGenerating',
+  'chat.parallelAllDone',
+  'chat.parallelStreaming',
+  'chat.parallelRunFailed',
+  'chat.parallelTimerAria',
+  'chat.parallelElapsedHint',
+]
+
+describe('New i18n keys (2026-10 parallel live card)', () => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = PARALLEL_LIVE_KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = PARALLEL_LIVE_KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of PARALLEL_LIVE_KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of PARALLEL_LIVE_KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of PARALLEL_LIVE_KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})

@@ -58,22 +58,45 @@ def _env(**overrides) -> ProjectEnv:
 class Recorder:
     """Routes SQL to canned results and records every write in order."""
 
-    def __init__(self, resume_rows=None, sources=5, notes=2, token=TOKEN):
+    def __init__(
+        self,
+        resume_rows=None,
+        sources=5,
+        notes=2,
+        token=TOKEN,
+        db_generic_paragraph=None,
+        rotate_token_after=None,
+    ):
         self.resume_rows = resume_rows or []
         self.sources = sources
         self.notes = notes
         self.token = token  # what the DB would return for verification_token
+        self.db_generic_paragraph = db_generic_paragraph
+        # models a user PUT rotating the token mid-run: after the Nth
+        # verification_token read the DB starts returning a different token
+        self.rotate_token_after = rotate_token_after
+        self.token_reads = 0
         self.events = []  # ordered write log for ordering assertions
         self.progress_updates = []
         self.created_rows = []
         self.run_updates = []
+        self.paragraph_updates = []  # (sql, params) of fenced paragraph writes
         self.failed = False
 
     async def query(self, sql, params=None):
         if "FROM ONLY" in sql:
             return [{"default_chat_model": "model:chat"}]
         if "SELECT verification_token FROM project_env" in sql:
-            return [{"verification_token": self.token}]
+            self.token_reads += 1
+            current = self.token
+            if (
+                self.rotate_token_after is not None
+                and self.token_reads > self.rotate_token_after
+            ):
+                current = "tok-rotated"
+            return [{"verification_token": current}]
+        if "SELECT generic_paragraph FROM project_env" in sql:
+            return [{"generic_paragraph": self.db_generic_paragraph}]
         if "count() AS total FROM source" in sql:
             return [{"total": self.sources}]
         if "count() AS total FROM note" in sql:
@@ -89,6 +112,10 @@ class Recorder:
             return []
         if "verification_progress = $progress" in sql:
             self.progress_updates.append(params["progress"])
+            return []
+        if "SET generic_paragraph = $paragraph" in sql:
+            self.paragraph_updates.append((sql, params))
+            self.events.append("paragraph_write")
             return []
         if sql.startswith("UPDATE $run_id"):
             self.run_updates.append(params)
@@ -136,6 +163,8 @@ def _patches(recorder, env, **pipeline_overrides):
         "correct_point": AsyncMock(return_value=None),
         "render_mock": AsyncMock(return_value=None),
         "compress_draft": AsyncMock(return_value=None),
+        # _converge auto-generates a generic paragraph for converged envs
+        "render_generic_paragraph": AsyncMock(return_value="自动生成的通用段落。"),
     }
     default_overrides.update(pipeline_overrides)
 
@@ -209,6 +238,131 @@ class TestConvergence:
         assert progress and progress["stage"] == "done"
         last = recorder.progress_updates[-1]
         assert last["stage"] == "verified" and last["percent"] == 100
+
+    @pytest.mark.asyncio
+    async def test_converge_generates_generic_paragraph_when_empty(self):
+        """收敛成功且段落为空 → 生成结果经围栏 UPDATE 落库（industry 透传），
+        不进内存 env、不随 env.save() 走。"""
+        env = _env(industry="物流行业")
+        recorder = Recorder()
+        mock_render = AsyncMock(return_value="自动生成的通用段落。")
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        mock_render.assert_awaited_once()
+        kwargs = mock_render.await_args.kwargs
+        assert kwargs["industry"] == "物流行业"
+        assert kwargs["candidate"] == env.candidate_fields()
+        assert env.generic_paragraph is None  # in-memory env stays untouched
+        assert "env_save" in recorder.events
+        assert recorder.events.index("paragraph_write") > recorder.events.index(
+            "env_save"
+        ), "段落必须在验证结果落库之后才写"
+        assert len(recorder.paragraph_updates) == 1
+        sql, params = recorder.paragraph_updates[0]
+        assert params["paragraph"] == "自动生成的通用段落。"
+        assert params["fence"] == TOKEN
+        # WHERE 双条件：token 未轮换 + DB 段落仍为空白
+        assert "verification_token = $fence" in sql
+        assert "generic_paragraph = NONE OR string::trim(generic_paragraph) = ''" in sql
+
+    @pytest.mark.asyncio
+    async def test_converge_generates_generic_paragraph_when_whitespace_only(self):
+        """段落是纯空白（"  \\n  "）等同于为空：必须触发生成，围栏 UPDATE 的
+        WHERE 也按 trim 后判空，能把旧空白值覆盖掉。"""
+        env = _env(generic_paragraph="  \n  ")
+        recorder = Recorder()
+        mock_render = AsyncMock(return_value="空白后生成的段落。")
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        mock_render.assert_awaited_once()
+        assert len(recorder.paragraph_updates) == 1
+        assert recorder.paragraph_updates[0][1]["paragraph"] == "空白后生成的段落。"
+
+    @pytest.mark.asyncio
+    async def test_converge_needs_review_also_generates_generic_paragraph(self):
+        """needs_review 收敛路径同样默认生成：生成发生在收敛写库之后，与
+        最终状态无关，两条路径行为必须一致。"""
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            if lane == "B":
+                return {"verdict": "error", "issues": ["timeout"]}
+            return {"verdict": "pass", "issues": []}
+
+        env = _env(industry="物流行业")
+        recorder = Recorder()
+        mock_render = AsyncMock(return_value="待复核环境的通用段落。")
+        result, mocks = await _run(
+            env, recorder, lanes=lanes, render_generic_paragraph=mock_render
+        )
+
+        assert result.status == "needs_review"
+        assert env.status == "needs_review"
+        mock_render.assert_awaited_once()
+        kwargs = mock_render.await_args.kwargs
+        assert kwargs["industry"] == "物流行业"
+        assert len(recorder.paragraph_updates) == 1
+        assert recorder.paragraph_updates[0][1]["paragraph"] == "待复核环境的通用段落。"
+
+    @pytest.mark.asyncio
+    async def test_converge_keeps_existing_generic_paragraph(self):
+        """用户已写过的段落绝不被自动生成覆盖。"""
+        env = _env(generic_paragraph="用户手写的段落。")
+        recorder = Recorder()
+        mock_render = AsyncMock(return_value="不应出现的自动段落。")
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        mock_render.assert_not_awaited()
+        assert env.generic_paragraph == "用户手写的段落。"
+        assert recorder.paragraph_updates == []
+
+    @pytest.mark.asyncio
+    async def test_converge_generic_paragraph_failure_does_not_affect_verification(
+        self,
+    ):
+        """生成抛异常只是 warning：状态/快照/进度照常落库。"""
+        env = _env()
+        recorder = Recorder()
+        mock_render = AsyncMock(side_effect=RuntimeError("model boom"))
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        assert env.status == "verified"
+        assert env.generic_paragraph is None
+        assert env.verified_snapshot and "frozen_at" in env.verified_snapshot
+        assert env.verification_progress["stage"] == "done"
+        assert "env_save" in recorder.events
+        assert recorder.paragraph_updates == []
+
+    @pytest.mark.asyncio
+    async def test_converge_merges_db_paragraph_before_save(self):
+        """运行中用户保存的段落（DB 有、内存空）必须在 env.save() 前合并回
+        内存，否则全字段 save 会回滚用户写入；合并后不再触发生成。"""
+        env = _env()
+        recorder = Recorder(db_generic_paragraph="用户运行中保存的段落。")
+        mock_render = AsyncMock(return_value="不应生成。")
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        assert env.generic_paragraph == "用户运行中保存的段落。"
+        mock_render.assert_not_awaited()
+        assert recorder.paragraph_updates == []
+
+    @pytest.mark.asyncio
+    async def test_converge_skips_paragraph_write_when_token_rotated(self):
+        """生成窗口内用户 PUT 轮换了 token → 写前复查失败，静默放弃：
+        验证结果已落库，不得 raise，也不得写段落。"""
+        env = _env()
+        # 第一次 token 读（收敛围栏）返回原 token，之后读返回轮换值
+        recorder = Recorder(rotate_token_after=1)
+        mock_render = AsyncMock(return_value="迟到的段落。")
+        result, mocks = await _run(env, recorder, render_generic_paragraph=mock_render)
+
+        assert result.status == "verified"
+        mock_render.assert_awaited_once()
+        assert recorder.paragraph_updates == []
 
     @pytest.mark.asyncio
     async def test_mock_all_pass_promotes_draft_to_main_fields(self):

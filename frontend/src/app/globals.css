@@ -856,3 +856,46 @@
     background-size: 100% 100%;
   }
 }
+
+/* 并发直播卡：身份条流光（机制同 env-accent-ribbon，2px 微面积）+ 错误单次抖动 */
+@keyframes parallel-ribbon-drift {
+  from {
+    background-position: 50% 0%;
+  }
+  to {
+    background-position: 50% 100%;
+  }
+}
+
+.parallel-ribbon {
+  background-size: 100% 320%;
+  animation: parallel-ribbon-drift 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes parallel-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.parallel-shake {
+  animation: parallel-shake 0.3s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parallel-ribbon {
+    animation: none;
+    background-size: 100% 100%;
+  }
+
+  .parallel-shake {
+    animation: none;
+  }
+}

@@ -20,4 +20,10 @@ You write ONE reusable generic paragraph (通用段落) for a 软考高级 essay
 {% else %}
 - This is a real project: use ONLY facts from the verified material — never invent versions, metrics, dates or org names; use `____` where you have no fact.
 {% endif %}
+{% if industry %}
+- 本人所在公司属于「{{ industry }}」，本项目是公司为自身业务建设——这是隐性视角设定，绝不写进段落：不得出现"自研/自主研发/公司自研"等字样，不得出现甲方/乙方、外包、中标、承建、承接、验收交付等交付方叙事。
+{% else %}
+- 本项目是公司为自身业务建设——这是隐性视角设定，绝不写进段落：不得出现"自研/自主研发/公司自研"等字样，不得出现甲方/乙方、外包、中标、承建、承接、验收交付等交付方叙事。
+{% endif %}
+- 开头按论文惯例（勿用公司简介体）：先以行业趋势或业务痛点一句切入，再写建设动机（如"为了××，我司启动了××系统的项目建设"），随后交代本人角色（"我作为该项目的××"）；素材里若有承建方措辞，改写为公司自身视角表述。
 - Output ONLY the paragraph text — no preamble, no explanation, no markdown fences.

@@ -140,6 +140,35 @@ async def _fail_env(env_id: str, message: str, token: Optional[str] = None) -> N
     await _set_progress(env_id, "failed", 100, error=message[:500], token=token)
 
 
+async def _db_generic_paragraph(env_id: str) -> str:
+    rows = await repo_query(
+        "SELECT generic_paragraph FROM project_env WHERE id = $id",
+        {"id": ensure_record_id(env_id)},
+    )
+    return str((rows[0] or {}).get("generic_paragraph") or "") if rows else ""
+
+
+async def _save_generic_paragraph_fenced(
+    env_id: str, token: str, paragraph: str
+) -> None:
+    """One-field fenced UPDATE, never env.save(): lands only while this run
+    still owns the env AND the stored paragraph is still blank, so a user
+    write that landed during the LLM call can never be clobbered."""
+    try:
+        await repo_query(
+            "UPDATE $env_id SET generic_paragraph = $paragraph "
+            "WHERE verification_token = $fence "
+            "AND (generic_paragraph = NONE OR string::trim(generic_paragraph) = '')",
+            {
+                "env_id": ensure_record_id(env_id),
+                "fence": token,
+                "paragraph": paragraph,
+            },
+        )
+    except Exception as e:
+        logger.warning(f"auto generic paragraph write did not land for {env_id}: {e}")
+
+
 async def _require_model_configured(lane_models: Dict[str, Optional[str]]) -> None:
     if any(lane_models.values()):
         return  # explicit model ids: provisioning validates them on first call
@@ -670,7 +699,38 @@ async def _converge(
         "error": None,
         "updated": datetime.now().isoformat(),
     }
+    # The run started before this paragraph could exist: a user write that
+    # landed mid-run must survive the full-field env.save() below.
+    if not str(env.generic_paragraph or "").strip():
+        db_paragraph = await _db_generic_paragraph(str(env.id))
+        if db_paragraph.strip():
+            env.generic_paragraph = db_paragraph
     await env.save()
+
+    # Default paragraph generation runs only after the verification result is
+    # durable: it never touches the in-memory env or env.save(), and lands via
+    # a fenced one-field UPDATE. Failure degrades to a warning.
+    if not str(env.generic_paragraph or "").strip():
+        token = str(run.get("token") or "")
+        try:
+            paragraph = await asyncio.wait_for(
+                pipeline.render_generic_paragraph(
+                    name=env.name,
+                    period_start=env.period_start,
+                    period_end=env.period_end,
+                    source_type=env.source_type,
+                    industry=env.industry,
+                    candidate=env.candidate_fields(),
+                ),
+                timeout=300,
+            )
+            # give up silently on a rotated token: a newer run owns the env.
+            # Inside the try: a transient DB hiccup must cost at most the
+            # paragraph, never a full command retry (the run is already done).
+            if await _token_current(str(env.id), token):
+                await _save_generic_paragraph_fenced(str(env.id), token, paragraph)
+        except Exception as e:
+            logger.warning(f"auto generic paragraph failed for {env.id}: {e}")
     return final_status
 
 

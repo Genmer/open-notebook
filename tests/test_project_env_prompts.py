@@ -282,13 +282,14 @@ def test_suggest_rewrite_template_renders_issues_and_format_instructions():
     assert '"suggestion"' in text and '"explanation"' in text  # schema injected
 
 
-def _render_generic_paragraph(source_type: str) -> str:
+def _render_generic_paragraph(source_type: str, industry: str = "") -> str:
     return Prompter(prompt_template="project_env/generic_paragraph").render(
         data={
             "name": "电商平台重构",
             "period_start": "2025.01",
             "period_end": "2025.08",
             "source_type": source_type,
+            "industry": industry,
             "fields": [{"field": "background", "text": "微服务化改造"}],
         }
     )
@@ -305,6 +306,75 @@ def test_generic_paragraph_template_mock_vs_real_branches_differ():
     assert _render_generic_paragraph("mock") != _render_generic_paragraph("real")
     assert "AI-simulated" in _render_generic_paragraph("mock")
     assert "ONLY facts" in _render_generic_paragraph("real")
+
+
+# --- 自研视角约束（四类叙事生成模板不得产出承建/交付腔） ---
+
+
+def test_generic_paragraph_template_carries_self_developed_constraint_with_industry():
+    text = _render_generic_paragraph("real", industry="物流行业")
+    assert "「物流行业」" in text
+    assert "公司自研" in text  # 禁令点名禁写的字样
+    assert "隐性视角" in text  # 自研是隐性设定，不写进正文
+    assert "我司启动" in text  # 论文惯例开头句式
+    assert "公司简介" in text  # 禁公司简介式开头
+    assert "甲方/乙方、外包、中标、承建、承接、验收交付" in text
+
+
+def test_generic_paragraph_template_self_developed_degrades_without_industry():
+    text = _render_generic_paragraph("real", industry="")
+    assert "公司自研" in text
+    assert "隐性视角" in text
+    assert "我司启动" in text
+    assert "「」" not in text  # 空行业不得渲染出空括号
+
+
+def test_suggest_rewrite_template_carries_self_developed_constraint():
+    from open_notebook.ai.project_env_pipeline import SuggestRewrite
+
+    parser: PydanticOutputParser[SuggestRewrite] = PydanticOutputParser(
+        pydantic_object=SuggestRewrite
+    )
+    text = Prompter(
+        prompt_template="project_env/suggest_rewrite",
+        parser=parser,  # type: ignore[arg-type]
+    ).render(
+        data={
+            "quote": "缓存采用 Redis 9.9。",
+            "field": "background",
+            "issues": [],
+            "narrative": "",
+            "period_start": "2025.01",
+            "period_end": "2025.08",
+        }
+    )
+    assert "隐性视角" in text
+    assert "甲方/乙方、外包、中标、承建、承接、验收交付" in text
+
+
+def test_corrector_template_carries_self_developed_constraint():
+    text = Prompter(prompt_template="project_env/corrector").render(
+        data={
+            "quote": "缓存采用 Redis 9.9。",
+            "field": "background",
+            "issues": [],
+            "narrative": "",
+            "period_start": "2025.01",
+            "period_end": "2025.08",
+        }
+    )
+    assert "隐性视角" in text
+    assert "甲方/乙方、外包、中标、承建、承接、验收交付" in text
+
+
+def test_compress_template_carries_self_developed_constraint():
+    # compress_draft renders with data={"draft": ...} only; format_instructions
+    # stays undefined (renders empty) — same as the pipeline call.
+    text = Prompter(prompt_template="project_env/compress").render(
+        data={"draft": {"background": "微服务化改造。"}}
+    )
+    assert "隐性视角" in text
+    assert "甲方/乙方、外包、中标、承建、承接、验收交付" in text
 
 
 # --- 行业 + 自研视角改造（industry 参数与负面约束） ---

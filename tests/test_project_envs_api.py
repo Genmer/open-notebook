@@ -3115,7 +3115,7 @@ def test_generate_generic_paragraph_requires_material():
 
 def test_generate_generic_paragraph_passes_env_context():
     client = _client()
-    env = _env(status="verified")
+    env = _env(status="verified", industry="物流行业")
     for mock_type in ("real", "mock"):
         env.source_type = mock_type
         with (
@@ -3147,6 +3147,7 @@ def test_generate_generic_paragraph_passes_env_context():
         kwargs = mock_render.await_args.kwargs
         assert kwargs["source_type"] == mock_type
         assert kwargs["name"] == env.name
+        assert kwargs["industry"] == env.industry  # 透传行业给模板渲染
         assert "background" in kwargs["candidate"]
         mock_save.assert_not_awaited()  # stateless: user saves via PUT
 

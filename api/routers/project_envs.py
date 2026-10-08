@@ -1155,6 +1155,7 @@ async def generate_generic_paragraph(env_id: str):
                     period_end=env.period_end,
                     source_type=env.source_type,
                     candidate=candidate,
+                    industry=env.industry,
                 ),
                 timeout=SUGGEST_TIMEOUT_SECONDS,
             )

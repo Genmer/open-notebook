@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,50 @@ export function GenericParagraphSection({ env }: GenericParagraphSectionProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [autoGenerating, setAutoGenerating] = useState(false)
+  // One silent auto-generate attempt per env.id: invalidate refreshes must not
+  // retrigger it, and a failed attempt is never retried. Only converged envs
+  // qualify — a pending env would race the running verification.
+  const autoAttemptedRef = useRef<Set<string>>(new Set())
   const generateMutation = useGenerateGenericParagraph()
   const paragraph = (env.generic_paragraph ?? '').trim()
+
+  useEffect(() => {
+    if ((env.generic_paragraph ?? '').trim()) return
+    if (env.status !== 'verified' && env.status !== 'needs_review') return
+    if (autoAttemptedRef.current.has(env.id)) return
+    autoAttemptedRef.current.add(env.id)
+    setAutoGenerating(true)
+    projectEnvsApi
+      .generateGenericParagraph(env.id)
+      .then((data) => {
+        // A user save during the in-flight generate must win over the AI
+        // text: re-check the freshest cached copy before any write.
+        const userFilled = queryClient
+          .getQueriesData({ queryKey: ['project-envs'] })
+          .some(([, cached]) => {
+            const rows = Array.isArray(cached) ? cached : [cached]
+            return rows.some(
+              (row) =>
+                row &&
+                typeof row === 'object' &&
+                (row as ProjectEnv).id === env.id &&
+                !!((row as ProjectEnv).generic_paragraph ?? '').trim()
+            )
+          })
+        if (userFilled) return
+        return projectEnvsApi
+          .update(env.id, {
+            generic_paragraph: data.paragraph.slice(0, GENERIC_PARAGRAPH_MAX_CHARS),
+          })
+          .then(() =>
+            queryClient.invalidateQueries({ queryKey: ['project-envs'] })
+          )
+      })
+      // Silent by design: the hint stays and manual generate still works.
+      .catch(() => undefined)
+      .finally(() => setAutoGenerating(false))
+  }, [env.id, env.status, env.generic_paragraph, queryClient])
 
   const save = () => {
     setSaving(true)
@@ -76,7 +118,7 @@ export function GenericParagraphSection({ env }: GenericParagraphSectionProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={generateMutation.isPending}
+            disabled={generateMutation.isPending || autoGenerating}
             onClick={generate}
             data-testid="generic-paragraph-generate"
           >
@@ -91,6 +133,7 @@ export function GenericParagraphSection({ env }: GenericParagraphSectionProps) {
             <Button
               size="sm"
               variant="outline"
+              disabled={autoGenerating}
               onClick={startEdit}
               data-testid="generic-paragraph-edit"
             >
@@ -144,6 +187,14 @@ export function GenericParagraphSection({ env }: GenericParagraphSectionProps) {
           data-testid="generic-paragraph-text"
         >
           {paragraph}
+        </p>
+      ) : autoGenerating ? (
+        <p
+          className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+          data-testid="generic-paragraph-auto-pending"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('projectEnvs.genericParagraphAutoPending')}
         </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">

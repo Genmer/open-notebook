@@ -499,6 +499,7 @@ async def render_generic_paragraph(
     period_end: Optional[str],
     source_type: str,
     candidate: Dict[str, Any],
+    industry: Optional[str] = None,
 ) -> str:
     """Stateless generation of the reusable generic paragraph; never persisted
     by this call — the user reviews and saves it via PUT."""
@@ -508,6 +509,7 @@ async def render_generic_paragraph(
             "period_start": period_start or "",
             "period_end": period_end or "",
             "source_type": source_type,
+            "industry": (industry or "").strip(),
             "fields": [
                 {"field": field, "text": str(text or "")}
                 for field, text in candidate.items()

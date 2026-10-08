@@ -18,7 +18,7 @@ vi.mock('@/lib/hooks/use-project-envs', () => ({
 }))
 
 vi.mock('@/lib/api/project-envs', () => ({
-  projectEnvsApi: { update: vi.fn() },
+  projectEnvsApi: { update: vi.fn(), generateGenericParagraph: vi.fn() },
 }))
 
 vi.mock('@/lib/utils/error-handler', () => ({
@@ -35,6 +35,7 @@ const mockVerification = vi.mocked(useProjectEnvVerification)
 const mockEnv = vi.mocked(useProjectEnv)
 const mockGenerate = vi.mocked(useGenerateGenericParagraph)
 const mockUpdate = vi.mocked(projectEnvsApi.update)
+const mockAutoGenerate = vi.mocked(projectEnvsApi.generateGenericParagraph)
 
 const baseEnv = {
   id: 'project_env:e1',
@@ -90,6 +91,10 @@ describe('EnvDetailDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUpdate.mockResolvedValue(baseEnv)
+    // The dialog tests don't exercise the silent auto-generate path (it has
+    // its own test file): default it to a silently-caught rejection so a
+    // blank paragraph never fires update/invalidate here.
+    mockAutoGenerate.mockRejectedValue(new Error('auto-generate off'))
     mockGenerate.mockReturnValue(
       mutationStub() as unknown as ReturnType<typeof useGenerateGenericParagraph>
     )
@@ -210,7 +215,7 @@ describe('EnvDetailDialog', () => {
     )
   })
 
-  it('fills the edit box with an AI-generated paragraph without saving it', () => {
+  it('fills the edit box with an AI-generated paragraph without saving it', async () => {
     const generateMutate = vi.fn((_envId: string, opts?: { onSuccess?: (d: { paragraph: string }) => void }) => {
       opts?.onSuccess?.({ paragraph: 'AI 生成的通用段落，规模____。' })
     })
@@ -223,6 +228,11 @@ describe('EnvDetailDialog', () => {
     )
     render(<EnvDetailDialog env={baseEnv} open onOpenChange={vi.fn()} />)
 
+    // blank paragraph: the silent mount-time auto-generate (mocked rejected)
+    // disables the button until it settles — wait, then the manual flow works
+    await waitFor(() =>
+      expect(screen.getByTestId('generic-paragraph-generate')).not.toBeDisabled()
+    )
     fireEvent.click(screen.getByTestId('generic-paragraph-generate'))
 
     const input = screen.getByTestId('generic-paragraph-input') as HTMLTextAreaElement

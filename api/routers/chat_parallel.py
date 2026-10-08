@@ -16,13 +16,18 @@ Design points (PDR-004 §4 + review fixes):
 - Events flow through an unbounded asyncio.Queue; a None sentinel closes the
   generator. The generator's finally block never awaits (awaiting inside a
   cancelled scope re-raises CancelledError).
+- Each participant streams its tokens as `run_delta` events (raw text, keyed
+  per run; `run_complete` later supersedes them with the cleaned full text),
+  and the generator emits a `ping` data event when the queue goes idle, so
+  client watchdogs survive long provider queues.
 """
 
 import asyncio
+import inspect
 import json
 import traceback
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from ai_prompter import Prompter
 from fastapi import APIRouter, HTTPException
@@ -43,6 +48,7 @@ from open_notebook.ai.usage import record_llm_usage_sync
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.agent import Agent
 from open_notebook.domain.notebook import Notebook
+from open_notebook.exceptions import ExternalServiceError
 from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.text_utils import extract_text_content
@@ -51,6 +57,39 @@ from open_notebook.utils.timestamps import utc_now_iso
 router = APIRouter()
 
 MAX_PARALLEL_RUNS = 5
+
+# SSE keep-alive cadence (aligned with chat_stream): when the queue has been
+# idle this long the generator emits a ping data event. It must be a `data:`
+# event, not a `: ping` comment — the frontend SSE parser only dispatches
+# data lines, and its watchdog re-arms on any known-or-unknown event type.
+_KEEPALIVE_SECONDS = 15.0
+
+_PING_LINE = f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+
+def _astream_usage_kwargs(model: Any) -> Dict[str, Any]:
+    """`{'stream_usage': True}` only when the model's `_astream` names it.
+
+    ChatOpenAI._astream is a pure (*args, **kwargs) router onto
+    BaseChatOpenAI._astream, so the MRO walk skips router overrides and
+    inspects the first signature with named parameters; passing the kwarg to
+    models without it (Google/Ollama/Groq/Mistral) would leak into their SDK.
+    """
+    for klass in type(model).__mro__:
+        fn = klass.__dict__.get("_astream")
+        if fn is None:
+            continue
+        try:
+            sig = inspect.signature(fn)
+        except (TypeError, ValueError):
+            continue
+        params = list(sig.parameters.values())
+        if all(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params[1:]):
+            continue
+        if "stream_usage" in sig.parameters:
+            return {"stream_usage": True}
+        return {}
+    return {}
 
 
 class SynthesizeRequest(BaseModel):
@@ -127,9 +166,13 @@ async def _answer_once(
     model_id: Optional[str],
     group_id: str,
     project_env_context: Optional[str] = None,
+    on_delta: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> Tuple[AIMessage, Any, AIMessage]:
     """Checkpoint-free single answer, mirroring call_model_with_messages.
 
+    The model is consumed as a token stream; each non-empty text chunk is
+    forwarded to `on_delta` raw (thinking tags can only be cleaned on the
+    full text, so `run_complete` carries the authoritative cleaned content).
     Returns (archived_message, provisioned_model, raw_ai_message) — the raw
     message feeds usage recording, the archived copy carries the cleaned
     content plus run metadata.
@@ -151,7 +194,32 @@ async def _answer_once(
     prov = await provision_langchain_model_with_info(
         str(payload), model_id, "chat", **provision_kwargs
     )
-    ai_message = await prov.langchain_model.ainvoke(payload)
+    # Esperanto products carry an explicit streaming=False that langchain-core
+    # treats as a hard opt-out; flip a throwaway copy (same trick as the chat
+    # graph's stream_tokens path).
+    stream_model = prov.langchain_model.model_copy(update={"streaming": True})
+    chunks: List[Any] = []
+    async for chunk in stream_model.astream(
+        payload, **_astream_usage_kwargs(stream_model)
+    ):
+        chunks.append(chunk)
+        delta = extract_text_content(chunk.content)
+        if delta and on_delta is not None:
+            await on_delta(delta)
+    if not chunks:
+        raise ExternalServiceError("Model returned an empty stream for parallel run")
+    aggregated = chunks[0]
+    for chunk in chunks[1:]:
+        aggregated = aggregated + chunk
+    # Summed chunks stay type 'AIMessageChunk'; rewrap so consumers filtering
+    # type == 'ai' (synthesize endpoint, archived events) keep matching.
+    ai_message = AIMessage(
+        content=aggregated.content,
+        additional_kwargs=aggregated.additional_kwargs,
+        usage_metadata=aggregated.usage_metadata,
+        response_metadata=aggregated.response_metadata,
+        id=aggregated.id,
+    )
 
     content = extract_text_content(ai_message.content)
     cleaned = clean_thinking_content(content)
@@ -225,6 +293,17 @@ async def _orchestrate(
                 )
                 return None
             try:
+
+                async def put_delta(delta: str) -> None:
+                    await queue.put(
+                        {
+                            "type": "run_delta",
+                            "key": p["key"],
+                            "group_id": group_id,
+                            "delta": delta,
+                        }
+                    )
+
                 ai_message, prov, raw = await _answer_once(
                     notebook,
                     context,
@@ -234,6 +313,7 @@ async def _orchestrate(
                     p.get("model_id"),
                     group_id,
                     project_env_context,
+                    on_delta=put_delta,
                 )
                 await _record_usage(prov, raw, full_session_id, None)
                 await queue.put(
@@ -381,7 +461,13 @@ async def parallel_chat(session_id: str, request: ParallelChatRequest):
     async def event_stream():
         try:
             while True:
-                item = await queue.get()
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=_KEEPALIVE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    yield _PING_LINE
+                    continue
                 if item is None:
                     break
                 yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"

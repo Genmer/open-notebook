@@ -26,17 +26,20 @@ export interface ParallelRunStarted {
 export interface ParallelStreamEvent {
   type:
     | 'runs_started'
+    | 'run_delta'
     | 'run_complete'
     | 'run_error'
     | 'archived'
     | 'complete'
     | 'error'
+    | 'ping'
   group_id?: string
   runs?: ParallelRunStarted[]
   key?: string
   name?: string
   message?: string
   content?: string
+  delta?: string
   model_name?: string | null
   agent_name?: string | null
   messages?: NotebookChatMessage[]
@@ -158,7 +161,9 @@ export const chatApi = {
   },
 
   // Parallel answers (PDR-004): one SSE stream fanning out to N participants.
-  // Relative URL + fetch like searchApi.askKnowledgeBase (dev proxy & Docker).
+  // Direct-to-API fetch (same reason as streamRun below): `next dev` buffers
+  // proxied streaming responses, which would collapse runs_started/run_delta
+  // into one final chunk and starve the live cards.
   parallelRun: async (
     sessionId: string,
     data: { message: string; context: Record<string, unknown>; runs: string[] },
@@ -166,7 +171,8 @@ export const chatApi = {
     signal?: AbortSignal
   ) => {
     const token = getAuthToken()
-    const response = await fetch(`/api/chat/sessions/${sessionId}/parallel`, {
+    const apiUrl = await getApiUrl()
+    const response = await fetch(`${apiUrl}/api/chat/sessions/${sessionId}/parallel`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
