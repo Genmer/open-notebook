@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatPanel } from './ChatPanel'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
@@ -915,6 +915,52 @@ describe('ChatPanel message delete entries (bubble history editing)', () => {
     // group's anchor — carries no delete entry.
     expect(screen.getByTestId('parallel-group-g1')).toBeInTheDocument()
     expect(screen.queryByTestId('message-delete-q-1')).not.toBeInTheDocument()
+  })
+
+  it('enlarges archived group answers into focus windows', () => {
+    renderPanel([
+      {
+        id: 'q-1',
+        type: 'human' as const,
+        content: 'Compare the two models',
+        group_id: 'g1',
+      },
+      {
+        id: 'a-1',
+        type: 'ai' as const,
+        content: 'Answer one',
+        group_id: 'g1',
+        run_role: 'member',
+        agent_name: 'Coach',
+      },
+      {
+        id: 'a-2',
+        type: 'ai' as const,
+        content: 'Answer two',
+        group_id: 'g1',
+        run_role: 'member',
+        model_name: 'gpt',
+      },
+    ])
+
+    const expand1 = screen.getByTestId('parallel-expand-a-1')
+    expect(expand1).toHaveAttribute('aria-pressed', 'false')
+    // One click from a cold overlay drives the whole comparison open.
+    fireEvent.click(expand1)
+
+    // Both archived answers open as 80% windows keyed by message id, with the
+    // answeredBy header the grid shows and Esc dismissing them.
+    const dialog = screen.getByRole('dialog', { name: 'chat.parallelFocusLabel' })
+    expect(within(dialog).getByTestId('parallel-window-a-1')).toBeInTheDocument()
+    expect(within(dialog).getByTestId('parallel-window-a-2')).toBeInTheDocument()
+    expect(within(dialog).getByText('Answer one')).toBeInTheDocument()
+    expect(within(dialog).getByText('Answer two')).toBeInTheDocument()
+    expect(expand1).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('parallel-expand-a-2')).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByTestId('parallel-expand-a-1')).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('shows the header clear entry when onClearMessages is wired, confirmed via ConfirmDialog', () => {

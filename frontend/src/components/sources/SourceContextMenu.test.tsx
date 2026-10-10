@@ -109,6 +109,51 @@ describe('SourceContextMenuContent', () => {
     expect(screen.queryByText('sources.grouping.ungroupAction')).toBeNull()
     expect(screen.getByText('sources.grouping.moveToFolder')).toBeInTheDocument()
   })
+
+  it('renders the copy-path trio only when handlers are provided', () => {
+    renderSourceMenu({ onRename: vi.fn() })
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+
+    expect(screen.queryByText('sources.copyFileName')).toBeNull()
+    expect(screen.queryByText('sources.copyRelativePath')).toBeNull()
+    expect(screen.queryByText('sources.copyAbsolutePath')).toBeNull()
+  })
+
+  it.each([
+    ['sources.copyFileName', 'onCopyFileName'],
+    ['sources.copyRelativePath', 'onCopyRelativePath'],
+    ['sources.copyAbsolutePath', 'onCopyAbsolutePath'],
+  ] as const)('clicking %s fires its handler', (label, handler) => {
+    const props = {
+      ...handlers(),
+      onCopyFileName: vi.fn(),
+      onCopyRelativePath: vi.fn(),
+      onCopyAbsolutePath: vi.fn(),
+    }
+    renderSourceMenu(props)
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+    fireEvent.click(screen.getByText(label))
+    expect(props[handler]).toHaveBeenCalledTimes(1)
+  })
+
+  it('greys out copy absolute path when disableCopyAbsolutePath is set', () => {
+    renderSourceMenu({
+      ...handlers(),
+      onCopyFileName: vi.fn(),
+      onCopyRelativePath: vi.fn(),
+      onCopyAbsolutePath: vi.fn(),
+      disableCopyAbsolutePath: true,
+    })
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+
+    const item = screen.getByText('sources.copyAbsolutePath').closest('[role="menuitem"]')
+    expect(item).not.toBeNull()
+    expect(item).toHaveAttribute('data-disabled', '')
+
+    // 其余两个复制项不受置灰影响
+    expect(screen.getByText('sources.copyFileName')).toBeInTheDocument()
+    expect(screen.getByText('sources.copyRelativePath')).toBeInTheDocument()
+  })
 })
 
 describe('GroupContextMenuContent', () => {

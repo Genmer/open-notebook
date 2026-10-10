@@ -27,6 +27,8 @@ import {
   Link as LinkIcon,
   Link2,
   Database,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { SourceListResponse } from '@/lib/types/api'
@@ -43,7 +45,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
-import { SourceContextMenuContent } from '@/components/sources/SourceContextMenu'
+import {
+  GroupContextMenuContent,
+  SourceContextMenuContent,
+} from '@/components/sources/SourceContextMenu'
 import { RenameSourceDialog } from '@/components/sources/RenameSourceDialog'
 import { GroupPickerDialog } from '@/components/sources/GroupPickerDialog'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -59,9 +64,17 @@ import { displayViewName } from '@/lib/utils/view-display'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
 import { GroupNameDialog } from '@/components/sources/GroupNameDialog'
+import { GroupDialogs } from '@/components/sources/GroupDialogs'
+import { useGroupDialogs } from '@/components/sources/use-group-dialogs'
 import { useContextTree } from '@/lib/hooks/use-context-tree'
-import { buildGroupTree, GroupNode } from '@/lib/utils/group-tree'
-import { useCreateGroup, useSourceViews, useViewGroups } from '@/lib/hooks/use-source-views'
+import { buildGroupTree, GroupNode, MAX_GROUP_DEPTH, getAncestorChain } from '@/lib/utils/group-tree'
+import {
+  useCreateGroup,
+  useDeleteGroup,
+  useSourceViews,
+  useUpdateGroup,
+  useViewGroups,
+} from '@/lib/hooks/use-source-views'
 import { toast } from 'sonner'
 import { sourcesApi } from '@/lib/api/sources'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
@@ -255,7 +268,34 @@ export function GeminiSourcesColumn({
     }))
   }
 
+  // 一键展开/收起覆盖树上全部文件夹（含嵌套）+ 未分组段
+  const collectTreeGroupIds = (nodes: GroupNode[], acc: string[] = []): string[] => {
+    for (const node of nodes) {
+      acc.push(node.group.id)
+      collectTreeGroupIds(node.children, acc)
+    }
+    return acc
+  }
+
+  const setAllFoldersCollapsed = (collapsed: boolean) => {
+    const next: Record<string, boolean> = {}
+    for (const id of [...collectTreeGroupIds(groupTree), 'ungrouped']) {
+      next[id] = collapsed
+    }
+    setCollapsedOverrides(next)
+  }
+
   const createGroup = useCreateGroup()
+  const updateGroup = useUpdateGroup()
+  const deleteGroup = useDeleteGroup()
+  // 文件夹头右键菜单的 create/rename/move/delete 弹窗状态机（sources 页同款）
+  const dialogs = useGroupDialogs()
+
+  // 分组 mutation 的 hook 只失效 sourceViews+sources；本列树来自 contextTree，需补刷
+  const refreshTreeAfterGroupMutation = () => {
+    queryClient.invalidateQueries({ queryKey: ['contextTree'] })
+    refetchTree()
+  }
 
   // ===== 右键操作处理（完整移植默认视图能力）=====
 
@@ -332,6 +372,56 @@ export function GeminiSourcesColumn({
     } catch {
       // error toast comes from the mutation hook
     }
+  }
+
+  // ===== 右键复制三项：文件名 / 应用内相对路径 / 服务器绝对路径 =====
+
+  const writeClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(t('sources.copiedToClipboard'))
+    } catch {
+      toast.error(t('common.error'))
+    }
+  }
+
+  const handleCopyFileName = (source: SourceListResponse) => {
+    writeClipboard(source.title ?? '')
+  }
+
+  // 相对路径 = 所在文件夹链（根在前）+ 文件名；未分组来源只有文件名
+  const handleCopyRelativePath = (source: SourceListResponse, groupId: string | null) => {
+    const fileName = source.title ?? ''
+    if (!groupId) {
+      writeClipboard(fileName)
+      return
+    }
+    const groups = (treeData?.groups ?? []).map(asSourceGroupResponse)
+    const folderChain = getAncestorChain(groups, groupId).map((g) => g.name)
+    const currentName = groups.find((g) => g.id === groupId)?.name
+    if (currentName) folderChain.push(currentName)
+    writeClipboard([...folderChain, fileName].join('/'))
+  }
+
+  // 绝对路径：上传文件取 asset.file_path，URL 来源取 asset.url。
+  // 树合并出的行 asset 恒为 null，此时按 id 拉详情再复制。
+  const handleCopyAbsolutePath = async (source: SourceListResponse) => {
+    let asset = source.asset
+    if (!asset) {
+      try {
+        const detail = await sourcesApi.get(source.id)
+        asset = detail.asset
+      } catch {
+        toast.error(t('common.error'))
+        return
+      }
+    }
+    const absolute = asset?.file_path || asset?.url
+    if (!absolute) {
+      toast.error(t('common.error'))
+      return
+    }
+    writeClipboard(absolute)
   }
 
   const handleDeleteConfirm = async () => {
@@ -556,73 +646,85 @@ export function GeminiSourcesColumn({
 
     return (
       <div key={group.id} className="space-y-1 mb-2">
-        {/* 文件夹标题栏 */}
-        <div
-          className={`flex items-center gap-1.5 p-1.5 rounded-md hover:bg-muted/50 transition-colors group cursor-pointer ${
-            depth > 0 ? 'ml-3 border-l border-border/40 pl-2' : ''
-          }`}
-          onClick={() => toggleGroupCollapse(group.id, hasSources)}
-        >
-          {/* 折叠箭头 */}
-          <button
-            type="button"
-            className="h-4 w-4 p-0 flex items-center justify-center text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleGroupCollapse(group.id, hasSources)
-            }}
-          >
+        {/* 文件夹标题栏：右键菜单（sources 页同款四件）；radix ContextMenu 不触发 click，折叠/勾选不受影响 */}
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              data-testid="gemini-folder-row"
+              className={`flex items-center gap-1.5 p-1.5 rounded-md hover:bg-muted/50 transition-colors group cursor-pointer ${
+                depth > 0 ? 'ml-3 border-l border-border/40 pl-2' : ''
+              }`}
+              onClick={() => toggleGroupCollapse(group.id, hasSources)}
+            >
+            {/* 折叠箭头 */}
+            <button
+              type="button"
+              className="h-4 w-4 p-0 flex items-center justify-center text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleGroupCollapse(group.id, hasSources)
+              }}
+            >
+              {isCollapsed ? (
+                <ChevronRight className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {/* 文件夹级批量勾选框 */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center"
+            >
+              <Checkbox
+                checked={isSomeChecked ? 'indeterminate' : isAllChecked}
+                onCheckedChange={() => handleFolderCheckboxToggle(allFolderSources)}
+                disabled={allFolderSources.length === 0}
+                className="h-3.5 w-3.5"
+              />
+            </div>
+
+            {/* 文件夹图标与名称 */}
             {isCollapsed ? (
-              <ChevronRight className="h-3.5 w-3.5" />
+              <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
+              <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" />
             )}
-          </button>
 
-          {/* 文件夹级批量勾选框 */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center justify-center"
-          >
-            <Checkbox
-              checked={isSomeChecked ? 'indeterminate' : isAllChecked}
-              onCheckedChange={() => handleFolderCheckboxToggle(allFolderSources)}
-              disabled={allFolderSources.length === 0}
-              className="h-3.5 w-3.5"
-            />
-          </div>
+            <span className="text-xs font-semibold text-foreground truncate flex-1">
+              {group.name}
+            </span>
 
-          {/* 文件夹图标与名称 */}
-          {isCollapsed ? (
-            <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" />
-          )}
-
-          <span className="text-xs font-semibold text-foreground truncate flex-1">
-            {group.name}
-          </span>
-
-          {/* 双数字徽标：本笔记本数 / 知识库全局总数（解答"默认视图徽标是全局数"的困惑） */}
-          <Badge
-            variant="secondary"
-            className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
-            title={
-              totalCount > allFolderSources.length
-                ? t('geminiSources.folderBadgeMixed', {
-                    local: allFolderSources.length,
-                    total: totalCount,
-                    missing: totalCount - allFolderSources.length,
-                  })
-                : t('geminiSources.folderBadgeLocal', { count: allFolderSources.length })
-            }
-          >
-            {allFolderSources.length}
-            {totalCount > allFolderSources.length && (
-              <span className="text-muted-foreground/60"> / {totalCount}</span>
-            )}
-          </Badge>
-        </div>
+            {/* 双数字徽标：本笔记本数 / 知识库全局总数（解答"默认视图徽标是全局数"的困惑） */}
+            <Badge
+              variant="secondary"
+              className="text-[10px] px-1.5 py-0 h-4 font-normal text-muted-foreground"
+              title={
+                totalCount > allFolderSources.length
+                  ? t('geminiSources.folderBadgeMixed', {
+                      local: allFolderSources.length,
+                      total: totalCount,
+                      missing: totalCount - allFolderSources.length,
+                    })
+                  : t('geminiSources.folderBadgeLocal', { count: allFolderSources.length })
+              }
+            >
+              {allFolderSources.length}
+              {totalCount > allFolderSources.length && (
+                <span className="text-muted-foreground/60"> / {totalCount}</span>
+              )}
+            </Badge>
+            </div>
+          </ContextMenuTrigger>
+          <GroupContextMenuContent
+            canHaveChildren={node.depth < MAX_GROUP_DEPTH}
+            onNewSubgroup={() => dialogs.openCreate(group.id)}
+            onRename={() => dialogs.openRename(group)}
+            onMove={() => dialogs.openMove(group)}
+            onDelete={() => dialogs.openDelete(group)}
+          />
+        </ContextMenu>
 
         {/* 展开后的子来源列表 */}
         {!isCollapsed && (
@@ -661,7 +763,7 @@ export function GeminiSourcesColumn({
                 </div>
               </div>
             ) : (
-              directSources.map((source) => renderSourceItem(source))
+              directSources.map((source) => renderSourceItem(source, group.id))
             )}
 
             {/* 递归渲染子文件夹 */}
@@ -672,8 +774,8 @@ export function GeminiSourcesColumn({
     )
   }
 
-  // 渲染单条来源项（带右键菜单，完整移植默认视图能力）
-  const renderSourceItem = (source: SourceListResponse) => {
+  // 渲染单条来源项（带右键菜单，完整移植默认视图能力）；groupId 供相对路径拼文件夹链
+  const renderSourceItem = (source: SourceListResponse, groupId: string | null = null) => {
     const mode = contextSelections[source.id] ?? 'full'
     const isChecked = mode !== 'off'
     const isLink = !!source.asset?.url
@@ -762,6 +864,12 @@ export function GeminiSourcesColumn({
           onRename={() => setRowAction({ kind: 'rename', source })}
           onMove={() => setRowAction({ kind: 'move', source })}
           onCopy={() => setRowAction({ kind: 'copy', source })}
+          onCopyFileName={() => handleCopyFileName(source)}
+          onCopyRelativePath={() => handleCopyRelativePath(source, groupId)}
+          onCopyAbsolutePath={() => handleCopyAbsolutePath(source)}
+          disableCopyAbsolutePath={
+            !!source.asset && !source.asset.file_path && !source.asset.url
+          }
           onNewFolder={() => setNewFolderOpen(true)}
           onUngroup={
             isGrouped ? () => handleUngroupSource(source) : undefined
@@ -793,6 +901,26 @@ export function GeminiSourcesColumn({
             </Badge>
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs shadow-none px-2"
+              onClick={() => setAllFoldersCollapsed(true)}
+              title={t('geminiSources.collapseAll')}
+              aria-label={t('geminiSources.collapseAll')}
+            >
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs shadow-none px-2"
+              onClick={() => setAllFoldersCollapsed(false)}
+              title={t('geminiSources.expandAll')}
+              aria-label={t('geminiSources.expandAll')}
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5" />
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -1248,6 +1376,35 @@ export function GeminiSourcesColumn({
             setNewFolderOpen(false)
           } catch {
             toast.error(t('geminiSources.folderCreateFailed'))
+          }
+        }}
+      />
+
+      {/* 文件夹头右键菜单配套的 create/rename/move/delete 弹窗（sources 页同款）。
+          分组 mutation 只失效 sourceViews+sources，树刷新走 refreshTreeAfterGroupMutation */}
+      <GroupDialogs
+        dialogs={dialogs}
+        groups={viewGroups ?? []}
+        viewName={resolvedView ? displayViewName(resolvedView, t) : undefined}
+        onCreateGroup={async (name, parentId) => {
+          if (!resolvedViewId) {
+            toast.error(t('geminiSources.noViewError'))
+            return
+          }
+          await createGroup.mutateAsync({ viewId: resolvedViewId, name, parentId })
+          refreshTreeAfterGroupMutation()
+        }}
+        onRenameGroup={async (id, name) => {
+          await updateGroup.mutateAsync({ id, name })
+          refreshTreeAfterGroupMutation()
+        }}
+        onMoveGroup={(id, parentId) => {
+          updateGroup.mutate({ id, parentId }, { onSuccess: refreshTreeAfterGroupMutation })
+        }}
+        onDeleteGroup={(id, deleteSources) => {
+          deleteGroup.mutate({ id, deleteSources }, { onSuccess: refreshTreeAfterGroupMutation })
+          if (grouping?.group === id) {
+            onGroupingChange?.({ viewId: resolvedViewId, group: 'all' })
           }
         }}
       />

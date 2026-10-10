@@ -136,6 +136,7 @@ class AsyncMigrationManager:
             AsyncMigration.from_file("open_notebook/database/migrations/38.surrealql"),
             AsyncMigration.from_file("open_notebook/database/migrations/39.surrealql"),
             AsyncMigration.from_file("open_notebook/database/migrations/40.surrealql"),
+            AsyncMigration.from_file("open_notebook/database/migrations/41.surrealql"),
         ]
         self.down_migrations = [
             AsyncMigration.from_file(
@@ -257,6 +258,9 @@ class AsyncMigrationManager:
             ),
             AsyncMigration.from_file(
                 "open_notebook/database/migrations/40_down.surrealql"
+            ),
+            AsyncMigration.from_file(
+                "open_notebook/database/migrations/41_down.surrealql"
             ),
         ]
         self.runner = AsyncMigrationRunner(

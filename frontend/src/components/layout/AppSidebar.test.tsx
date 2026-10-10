@@ -40,13 +40,30 @@ describe('AppSidebar', () => {
     expect(screen.getByText('navigation.notebooks')).toBeDefined()
   })
 
-  it('carries the exam-essay hint as the project-environments link title when expanded', () => {
+  it('carries the exam-essay hint as the ruankao link title when expanded', () => {
     const { container } = render(<AppSidebar />)
 
-    const link = container.querySelector('a[href="/project-environments"]')
-    expect(link?.getAttribute('title')).toBe('navigation.projectEnvironmentsHint')
+    const link = container.querySelector('a[href="/ruankao"]')
+    expect(link?.getAttribute('title')).toBe('navigation.ruankaoHint')
     // entries without a hint keep no title attribute
     expect(container.querySelector('a[href="/sources"]')?.getAttribute('title')).toBeNull()
+  })
+
+  it('replaces the project-environments entry with the ruankao module entry', () => {
+    const { container } = render(<AppSidebar />)
+
+    expect(container.querySelector('a[href="/ruankao"]')).not.toBeNull()
+    expect(screen.getAllByText('navigation.ruankao').length).toBeGreaterThan(0)
+    expect(container.querySelector('a[href="/project-environments"]')).toBeNull()
+  })
+
+  it('highlights the ruankao entry on the /ruankao page', () => {
+    vi.mocked(usePathname).mockReturnValue('/ruankao')
+
+    const { container } = render(<AppSidebar />)
+
+    const ruankaoButton = container.querySelector('a[href="/ruankao"] button')
+    expect(ruankaoButton?.className).toContain('font-semibold')
   })
 
   it('uses consistent spacing for expanded footer actions', () => {
@@ -92,7 +109,7 @@ describe('AppSidebar', () => {
     expect(screen.queryByText('common.appName')).toBeNull()
   })
 
-  it('includes the exam-essay hint in the collapsed project-environments tooltip', () => {
+  it('includes the exam-essay hint in the collapsed ruankao tooltip', () => {
     vi.mocked(useSidebarStore).mockReturnValue({
       isCollapsed: true,
       toggleCollapse: vi.fn(),
@@ -102,6 +119,6 @@ describe('AppSidebar', () => {
 
     // TooltipContent is mocked to render its children inline, so the hint
     // line shows up next to the entry name without a real hover.
-    expect(screen.getByText('navigation.projectEnvironmentsHint')).toBeDefined()
+    expect(screen.getByText('navigation.ruankaoHint')).toBeDefined()
   })
 })

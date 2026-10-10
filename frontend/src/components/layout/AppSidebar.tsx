@@ -44,7 +44,7 @@ import {
   DatabaseBackup,
   HardDrive,
   ListTodo,
-  Building2,
+  GraduationCap,
 } from 'lucide-react'
 
 const getNavigation = (t: TFunction) => [
@@ -68,11 +68,16 @@ const getNavigation = (t: TFunction) => [
     ],
   },
   {
+    title: t('navigation.ruankao'),
+    items: [
+      { name: t('navigation.ruankao'), href: '/ruankao', icon: GraduationCap, iconClass: undefined, note: t('navigation.ruankaoHint') },
+    ],
+  },
+  {
     title: t('navigation.manage'),
     items: [
       { name: t('navigation.tasks'), href: '/tasks', icon: ListTodo, iconClass: undefined },
       { name: t('navigation.agents'), href: '/agents', icon: Bot, iconClass: undefined },
-      { name: t('navigation.projectEnvironments'), href: '/project-environments', icon: Building2, iconClass: undefined, note: t('navigation.projectEnvironmentsHint') },
       { name: t('navigation.models'), href: '/settings/models', icon: Bot, iconClass: undefined },
       { name: t('navigation.usage'), href: '/settings/usage', icon: Gauge, iconClass: undefined },
       { name: t('navigation.storage'), href: '/settings/storage', icon: HardDrive, iconClass: undefined },

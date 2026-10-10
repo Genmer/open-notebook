@@ -1781,3 +1781,77 @@ class SuggestClaimRewriteResponse(BaseModel):
 
 class GenericParagraphResponse(BaseModel):
     paragraph: str
+
+
+# Ruankao essay library mark API models (软考范文库标记)
+class EssayMarkToggleRequest(BaseModel):
+    target_type: str = Field(..., description="'source' or 'source_group'")
+    target_id: str = Field(..., min_length=1)
+
+
+class EssayMarkToggleResponse(BaseModel):
+    marked: bool
+    target_type: str
+    target_id: str
+
+
+class EssayMarkStats(BaseModel):
+    marked_sources: int
+    marked_groups: int
+    effective_total: int
+
+
+class EssayLibraryGroup(BaseModel):
+    id: str
+    name: str
+    parent_id: Optional[str] = None
+    depth: int
+    marked: bool
+    effective_count: int
+
+
+class EssayLibrarySource(BaseModel):
+    id: str
+    title: Optional[str] = None
+    extension: Optional[str] = None
+    updated: str = ""
+    marked_direct: bool
+    via_group_ids: List[str] = Field(default_factory=list)
+
+
+class DanglingMark(BaseModel):
+    id: str
+    target_type: str
+    target_id: str
+
+
+class EssayMarksLibraryResponse(BaseModel):
+    stats: EssayMarkStats
+    groups: List[EssayLibraryGroup]
+    sources: List[EssayLibrarySource]
+    dangling_marks: List[DanglingMark]
+
+
+class EssayMarkRecord(BaseModel):
+    id: str
+    target_type: str
+    target_id: str
+    created: str = ""
+
+
+class EssayMarkSourceStatus(BaseModel):
+    id: str
+    marked_direct: bool
+    via_group_ids: List[str]
+    effective: bool
+
+
+class EssayMarksResponse(BaseModel):
+    marks: List[EssayMarkRecord]
+    stats: EssayMarkStats
+    effective_source_ids: List[str]
+    source: Optional[EssayMarkSourceStatus] = None
+
+
+class DanglingCleanupResponse(BaseModel):
+    removed: int

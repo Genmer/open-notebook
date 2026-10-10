@@ -1265,7 +1265,8 @@ const INDUSTRY_KEYS = [
 // Same guarding contract as the blocks above.
 const RUANKAO_UX_KEYS = [
   'projectEnvs.ruankaoNote',
-  'navigation.projectEnvironmentsHint',
+  // `navigation.projectEnvironmentsHint` was removed with the sidebar entry
+  // (superseded by `navigation.ruankaoHint`, pinned in RUANKAO_SHELL_KEYS).
   'projectEnvs.openDetailAria',
   'projectEnvs.glossary.redis',
   'projectEnvs.glossary.memcached',
@@ -1309,6 +1310,44 @@ const RUANKAO_UX_KEYS = [
   'projectEnvs.glossary.jmeter',
 ]
 
+// Pinned inventory of the i18n keys added by the 2026-10 Gemini sources column
+// pass (folder expand/collapse-all header buttons, source context-menu copy
+// actions for file name / in-app relative path / absolute path, clipboard
+// success toast). Same guarding contract as the blocks above.
+const GEMINI_COLUMN_KEYS = [
+  'geminiSources.expandAll',
+  'geminiSources.collapseAll',
+  'sources.copyFileName',
+  'sources.copyRelativePath',
+  'sources.copyAbsolutePath',
+  'sources.copiedToClipboard',
+]
+
+// Pinned inventory of the i18n keys added by the 2026-10 ruankao module shell
+// changeset (sidebar module group + module page tabs + hot-topics placeholder +
+// industry pool section + industry combobox empty hint). The removed
+// `navigation.projectEnvironments`/`projectEnvironmentsHint` keys are
+// intentionally absent from this list. Same guarding contract as the blocks
+// above.
+const RUANKAO_SHELL_KEYS = [
+  'navigation.ruankao',
+  'navigation.ruankaoHint',
+  'ruankao.title',
+  'ruankao.description',
+  'ruankao.tabs.environments',
+  'ruankao.tabs.questionBank',
+  'ruankao.tabs.modelLibrary',
+  'ruankao.tabs.essay',
+  'ruankao.tabs.hotTopics',
+  'ruankao.hotTopics.plannedTitle',
+  'ruankao.hotTopics.plannedDesc',
+  'ruankao.industry.sectionTitle',
+  'ruankao.industry.sectionDesc',
+  'ruankao.industry.searchPlaceholder',
+  'ruankao.industry.emptyHint',
+  'ruankao.industry.noMatch',
+]
+
 describe.each([
   ['2026-10 project-env suggest panel', SUGGEST_KEYS],
   ['2026-10 project-env generic paragraph', GENERIC_PARAGRAPH_KEYS],
@@ -1317,6 +1356,8 @@ describe.each([
   ['2026-10 project-env detail visual redesign', DETAIL_VISUAL_KEYS],
   ['2026-10 project-env industry input', INDUSTRY_KEYS],
   ['2026-10 project-env ruankao UX pass', RUANKAO_UX_KEYS],
+  ['2026-10 Gemini sources column expand/collapse + copy paths', GEMINI_COLUMN_KEYS],
+  ['2026-10 ruankao module shell', RUANKAO_SHELL_KEYS],
 ])('New i18n keys (%s)', (_label, KEYS) => {
   it('every new key exists as a non-empty string in en-US', () => {
     const enLeaves = getLeafStrings(enUS)
@@ -1432,6 +1473,71 @@ describe('New i18n keys (2026-10 parallel live card)', () => {
       const enLeaves = getLeafStrings(enUS)
 
       for (const key of PARALLEL_LIVE_KEYS) {
+        expect(i18n.t(key)).toBe(enLeaves[key])
+      }
+    },
+  )
+})
+
+// Pinned inventory of the i18n keys added by the 2026-10 parallel focus
+// windows (enlarge toggle, per-window close, overlay dialog label, in-overlay
+// dock for opening collapsed answers). Same guarding contract as
+// PARALLEL_LIVE_KEYS above.
+const PARALLEL_FOCUS_KEYS = [
+  'chat.parallelExpand',
+  'chat.parallelWindowClose',
+  'chat.parallelFocusLabel',
+  'chat.parallelDockLabel',
+  'chat.parallelDockOpen',
+]
+
+describe('New i18n keys (2026-10 parallel focus windows)', () => {
+  it('every new key exists as a non-empty string in en-US', () => {
+    const enLeaves = getLeafStrings(enUS)
+    const missing = PARALLEL_FOCUS_KEYS.filter(key => !enLeaves[key]?.trim())
+    expect(missing, `Missing/empty in en-US: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('every new key exists as a non-empty string in zh-CN', () => {
+    const zhLeaves = getLeafStrings(zhCN)
+    const missing = PARALLEL_FOCUS_KEYS.filter(key => !zhLeaves[key]?.trim())
+    expect(missing, `Missing/empty in zh-CN: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it.each(fallbackLocales)(
+    '%s resolves every new key via i18next (own translation or en-US fallback, never the raw key)',
+    async code => {
+      const i18n = await makeI18n(code, allResources)
+      const localeLeaves = getLeafStrings(allResources[code].translation)
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of PARALLEL_FOCUS_KEYS) {
+        const expected = localeLeaves[key] ?? enLeaves[key]
+        const value = i18n.t(key)
+        expect(
+          value,
+          `${code} ${key}: expected "${expected}", got "${value}"`,
+        ).toBe(expected)
+        expect(value).not.toBe(key)
+      }
+    },
+  )
+
+  it.each(fallbackLocales)(
+    '%s falls back to en-US when a new key is missing from that locale',
+    async code => {
+      const stripped = JSON.parse(
+        JSON.stringify(allResources[code].translation),
+      ) as Record<string, unknown>
+      for (const key of PARALLEL_FOCUS_KEYS) deletePath(stripped, key)
+
+      const i18n = await makeI18n(code, {
+        'en-US': allResources['en-US'],
+        [code]: { translation: stripped },
+      })
+      const enLeaves = getLeafStrings(enUS)
+
+      for (const key of PARALLEL_FOCUS_KEYS) {
         expect(i18n.t(key)).toBe(enLeaves[key])
       }
     },

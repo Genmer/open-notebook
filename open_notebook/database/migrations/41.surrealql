@@ -1,0 +1,15 @@
+-- Migration 41: model essay library marks (软考范文库标记).
+-- Red line: the table holds only a discriminator and two record references —
+-- no content fields, essay text is never copied. The EVENTs drop marks whose
+-- target was deleted (same posture as source_membership_cleanup in 29).
+DEFINE TABLE IF NOT EXISTS model_essay_mark SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS target_type ON TABLE model_essay_mark TYPE string;
+-- "source" | "source_group" — validated by the service layer (invalid value → 400)
+DEFINE FIELD IF NOT EXISTS source ON TABLE model_essay_mark TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS source_group ON TABLE model_essay_mark TYPE option<record<source_group>>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE model_essay_mark DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE model_essay_mark DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_mem_source ON TABLE model_essay_mark FIELDS source;
+DEFINE INDEX IF NOT EXISTS idx_mem_group ON TABLE model_essay_mark FIELDS source_group;
+DEFINE EVENT IF NOT EXISTS model_essay_mark_source_cleanup ON TABLE source WHEN ($after == NONE) THEN { delete model_essay_mark where source == $before.id; };
+DEFINE EVENT IF NOT EXISTS model_essay_mark_group_cleanup ON TABLE source_group WHEN ($after == NONE) THEN { delete model_essay_mark where source_group == $before.id; };

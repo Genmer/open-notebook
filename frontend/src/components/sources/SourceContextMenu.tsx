@@ -3,8 +3,11 @@
 import {
   Copy,
   ExternalLink,
+  FileText,
   FolderInput,
   FolderPlus,
+  FolderTree,
+  HardDrive,
   Pencil,
   Trash2,
   Unlink,
@@ -18,6 +21,11 @@ interface SourceContextMenuContentProps {
   onRename?: () => void
   onMove?: () => void
   onCopy?: () => void
+  onCopyFileName?: () => void
+  onCopyRelativePath?: () => void
+  onCopyAbsolutePath?: () => void
+  /** asset 既无 file_path 也无 url 时绝对路径无值可复制，置灰。 */
+  disableCopyAbsolutePath?: boolean
   onNewFolder?: () => void
   onUngroup?: () => void
   onRemoveFromNotebook?: () => void
@@ -35,6 +43,10 @@ export function SourceContextMenuContent({
   onRename,
   onMove,
   onCopy,
+  onCopyFileName,
+  onCopyRelativePath,
+  onCopyAbsolutePath,
+  disableCopyAbsolutePath = false,
   onNewFolder,
   onUngroup,
   onRemoveFromNotebook,
@@ -51,6 +63,7 @@ export function SourceContextMenuContent({
     (!!onMove && !folderItemsHidden) ||
     (!!onCopy && !folderItemsHidden) ||
     (!!onNewFolder && !folderItemsHidden)
+  const hasCopyPaths = !!onCopyFileName || !!onCopyRelativePath || !!onCopyAbsolutePath
   const hasMiddle = showUngroup || !!onRemoveFromNotebook
 
   return (
@@ -85,7 +98,26 @@ export function SourceContextMenuContent({
           {t('sources.grouping.newFolder')}
         </ContextMenuItem>
       )}
-      {hasTop && hasMiddle && <ContextMenuSeparator />}
+      {hasTop && hasCopyPaths && <ContextMenuSeparator />}
+      {onCopyFileName && (
+        <ContextMenuItem onClick={onCopyFileName}>
+          <FileText className="h-4 w-4" />
+          {t('sources.copyFileName')}
+        </ContextMenuItem>
+      )}
+      {onCopyRelativePath && (
+        <ContextMenuItem onClick={onCopyRelativePath}>
+          <FolderTree className="h-4 w-4" />
+          {t('sources.copyRelativePath')}
+        </ContextMenuItem>
+      )}
+      {onCopyAbsolutePath && (
+        <ContextMenuItem disabled={disableCopyAbsolutePath} onClick={onCopyAbsolutePath}>
+          <HardDrive className="h-4 w-4" />
+          {t('sources.copyAbsolutePath')}
+        </ContextMenuItem>
+      )}
+      {(hasTop || hasCopyPaths) && hasMiddle && <ContextMenuSeparator />}
       {showUngroup && (
         <ContextMenuItem onClick={onUngroup}>
           <X className="h-4 w-4" />

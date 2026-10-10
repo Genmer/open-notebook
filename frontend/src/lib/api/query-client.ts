@@ -56,4 +56,6 @@ export const QUERY_KEYS = {
     ['project-envs', 'detail', id, 'verification'] as const,
   projectEnvMaterials: (id: string) =>
     ['project-envs', 'detail', id, 'materials'] as const,
+  essayMarksLibrary: (viewId: string) =>
+    ['ruankao-essay-marks', 'library', viewId] as const,
 }

@@ -11,6 +11,7 @@ from surrealdb import RecordID
 
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
+from open_notebook.domain.model_essay_mark import _is_excluded, get_marked_source_ids
 from open_notebook.exceptions import (
     DatabaseOperationError,
     InvalidInputError,
@@ -96,6 +97,18 @@ class Notebook(ObjectModel):
         opt-in full-content fetches and formats only substantive context blocks.
         """
         sources = await self.get_sources(include_full_text=True)
+        # Model-essay red line (mark landing ③): sources in the effective set
+        # never reach LLM contexts; their insights leave with them (R9).
+        # Fail-closed: a mark-table failure fails this call, not silently
+        # including the marked sources.
+        if sources:
+            excluded_source_ids = await get_marked_source_ids()
+            if excluded_source_ids:
+                sources = [
+                    source
+                    for source in sources
+                    if not (source.id and source.id in excluded_source_ids)
+                ]
         notes = await self.get_notes(include_content=True)
         context_blocks = []
 
@@ -1083,6 +1096,26 @@ async def _search_by_sub_terms(
     return [row for row, _count in ranked[:results]]
 
 
+async def _drop_marked_essay_rows(
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Model-essay red line filter for search results (mark landing ②).
+
+    Rows whose parent_id names a source in the mark effective set are dropped,
+    so title/full-text/chunk/insight shapes of a marked essay all disappear
+    while note rows pass through. Fail-closed: a mark-table failure fails the
+    search instead of returning unfiltered rows. New callers must go through
+    text_search/vector_search — do not query fn::text_search/fn::vector_search
+    directly, that bypasses this filter.
+    """
+    if not rows:
+        return rows
+    excluded = await get_marked_source_ids()
+    if not excluded:
+        return rows
+    return [row for row in rows if not _is_excluded(row.get("parent_id"), excluded)]
+
+
 async def text_search(
     keyword: str,
     results: int,
@@ -1092,8 +1125,8 @@ async def text_search(
 ):
     if not keyword:
         raise InvalidInputError("Search keyword cannot be empty")
-    search_results = await _raw_text_search(
-        keyword, results, source, note, notebook_ids
+    search_results = await _drop_marked_essay_rows(
+        await _raw_text_search(keyword, results, source, note, notebook_ids)
     )
     if search_results:
         return search_results
@@ -1107,7 +1140,9 @@ async def text_search(
         f"Text search for '{keyword}' returned no results; "
         f"retrying with split terms: {sub_terms}"
     )
-    return await _search_by_sub_terms(sub_terms, results, source, note, notebook_ids)
+    return await _drop_marked_essay_rows(
+        await _search_by_sub_terms(sub_terms, results, source, note, notebook_ids)
+    )
 
 
 async def vector_search(
@@ -1141,12 +1176,14 @@ async def vector_search(
         # SurrealDB fn::vector_search declares ORDER BY similarity DESC, but the
         # SELECT * FROM fn::... wrapper can still return rows out of rank order.
         # Enforce descending similarity (stable by id for ties) before returning.
-        return sorted(
-            search_results or [],
-            key=lambda item: (
-                -float(item.get("similarity") or 0.0),
-                str(item.get("id") or ""),
-            ),
+        return await _drop_marked_essay_rows(
+            sorted(
+                search_results or [],
+                key=lambda item: (
+                    -float(item.get("similarity") or 0.0),
+                    str(item.get("id") or ""),
+                ),
+            )
         )
     except Exception as e:
         logger.error(f"Error performing vector search: {str(e)}")

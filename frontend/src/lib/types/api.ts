@@ -830,3 +830,58 @@ export interface UsageRecordsResponse {
 export interface UsageClearResponse {
   deleted: number
 }
+
+// Ruankao essay library marks (软考范文库标记, /api/ruankao/essay-marks)
+export type EssayMarkTargetType = 'source' | 'source_group'
+
+export interface EssayMarkStats {
+  marked_sources: number
+  marked_groups: number
+  effective_total: number
+}
+
+export interface EssayLibraryGroup {
+  id: string
+  name: string
+  parent_id: string | null
+  depth: number
+  marked: boolean
+  effective_count: number
+}
+
+export interface EssayLibrarySource {
+  id: string
+  title: string | null
+  extension: string | null
+  updated: string
+  marked_direct: boolean
+  via_group_ids: string[]
+}
+
+export interface DanglingMark {
+  id: string
+  target_type: string
+  target_id: string
+}
+
+export interface EssayMarksLibraryResponse {
+  stats: EssayMarkStats
+  groups: EssayLibraryGroup[]
+  sources: EssayLibrarySource[]
+  dangling_marks: DanglingMark[]
+}
+
+export interface EssayMarkToggleRequest {
+  target_type: EssayMarkTargetType
+  target_id: string
+}
+
+export interface EssayMarkToggleResponse {
+  marked: boolean
+  target_type: EssayMarkTargetType
+  target_id: string
+}
+
+export interface DanglingCleanupResponse {
+  removed: number
+}

@@ -4,6 +4,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+
+@pytest.fixture(autouse=True)
+def _no_model_essay_marks():
+    """These tests predate the model-essay mark filter (landing ②③④); the
+    mark table is assumed empty so the filter is a no-op."""
+    with patch(
+        "open_notebook.domain.model_essay_mark.repo_query",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        yield
+
+
 MIGRATIONS_DIR = Path("open_notebook/database/migrations")
 
 

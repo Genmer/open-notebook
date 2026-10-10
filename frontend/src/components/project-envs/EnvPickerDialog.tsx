@@ -57,7 +57,8 @@ export function EnvPickerDialog({ open, onOpenChange, selectedEnvId, onSelect }:
                   variant="outline"
                   onClick={() => {
                     onOpenChange(false)
-                    window.open('/project-environments', '_blank')
+                    // 直连新地址，不走旧路由重定向
+                    window.open('/ruankao?tab=environments', '_blank')
                   }}
                 >
                   {t('projectEnvs.pickerEmptyAction')}

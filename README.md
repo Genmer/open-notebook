@@ -404,6 +404,15 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 
 > 本节为本地 fork 的定制改动记录，合并上游时请保留本节。每批改动完成后在此追加一条。
 
+### 2026-10-10：范文库标记与红线隔离（批次2后端，migration 41）
+红线=范文正文绝不进任何 AI 生成语境。新表 model_essay_mark（SCHEMAFULL，只存 target_type + source/source_group 两个 record 引用，无 content 字段；EVENT 级联清理悬空引用，参照 29 号先例）；统一过滤函数 get_marked_source_ids()（domain/model_essay_mark.py，生效集合=直接标记来源 ∪ 被标记文件夹子树成员，防御性截断在被标记根下第 5 层，运行时计算增删自动跟随，fail-closed 故障抛错不放行）落在三个公共读点：text_search/vector_search 收尾按 parent_id 后过滤（覆盖标题/全文/切块/insights 四形态，级联覆盖 gather_evidence/ask 图/MCP server 与分词重试、#648 溢出降级）、Notebook.get_context 在 include_full_text 后剔除（insights 随来源消失）、build_notebook_context 两分支分别过滤；例外通道仅两条：单来源对话 build_source_context 与按 id 读全文（新增 get_essay_full_text + 既有 GET /api/sources/{id}）。新端点 /api/ruankao/essay-marks 四个：GET /library?view_id=（文件夹+来源+标记态+统计+dangling 回报）、POST /toggle（幂等，非法 400/不存在 404）、GET ?source_id=（标记清单+统计+生效集合+单来源状态，第四段编辑公开范文确认提示的消费口）、DELETE ?dangling=true（悬空手动清理第三层兜底）。副作用：用户搜索页也看不到已标记范文片段（从严取向 R9，库内按 id 照常可达）；测试侧为存量 4 个测试文件补 file 级 autouse 空 mark 表桩以维持「CI 无 SurrealDB」契约。涉及：migrations/{41,41_down}.surrealql、async_migrate.py、domain/model_essay_mark.py（新）、domain/notebook.py、utils/context_builder.py、api/ruankao_essay_mark_service.py（新）、api/routers/ruankao_essay_marks.py（新）、api/models.py、api/main.py、tests/test_model_essay_mark_{isolation,api}.py（新）、tests/{test_search_api,test_text_search_split_terms,test_domain,test_context_endpoint_characterization}.py、ADR-017。
+
+### 2026-10-10：软考模块壳（/ruankao 五 tab 注册表 + 行业池并入项目环境 + 旧路由 307 重定向）
+侧边栏新增「软考模块」分组唯一入口 /ruankao（GraduationCap 图标），原「项目环境」导航项删除；模块页按 tasks 页先例做 AppShell+shadcn Tabs，tab 状态本地 useState 不记忆，?tab=<key> 仅作深链初始值（非法/未交付 key 回落第一项）。tab 注册表 frontend/src/lib/ruankao/tabs.ts 为全模块唯一事实源（key/labelKey/testid/renderContent 槽），内容槽 null 的 tab 不渲染——本期交付项目环境（原 /project-environments 主体原样平移，data-testid 不动）与考点热度榜「规划中」占位，题库/范文库标记/论文读写待各段填槽自动出现（ADR-016）。行业池 77 条中文静态常量（lib/ruankao/industry-pool.ts，O3 待用户过目）并入项目环境 tab 小节：本地搜索，点条目经一次性 wizardSeed 直开 mock 向导第 2 步带行业值；向导行业输入换 IndustryCombobox（池内过滤+回车选中+自由输入兜底，maxLength 20，localStorage 持久化不变，新增 preset prop）。旧路由 /project-environments 307 重定向 /ruankao?tab=environments，EnvPickerDialog 的 window.open 直连新地址。涉及：AppSidebar.tsx、ruankao/{page,EnvironmentsPanel,IndustryPoolPanel,IndustryCombobox,HotTopicsPanel}、CreateEnvWizard.tsx、EnvPickerDialog.tsx、project-environments/page.tsx、tabs.ts、industry-pool.ts、14 locale（导航键改名 navigation.ruankao* + ruankao 命名空间 16 键）、ADR-016。
+
+### 2026-10-10：Gemini 视图左栏文件夹一键展开收起 + 来源右键复制三项
+左栏 CardHeader 新增两个图标按钮：一键收起把文件夹树（含嵌套）与未分组段全部折叠只剩顶层行，一键展开全部恢复（覆盖"有来源默认展开"与用户手动切换）。来源行右键菜单新增复制文件名/相对路径/绝对路径三项：文件名=标题；相对路径=所在文件夹链+文件名（未分组只有文件名）；绝对路径=asset.file_path（URL 来源用 asset.url，两者皆无置灰，行内缺 asset 时点击按 id 拉详情再复制），复制成功 toast 提示。涉及：GeminiSourcesColumn.tsx、SourceContextMenu.tsx、14 locale 新增 6 键。
+
 ### 2026-10-07：项目环境详情弹窗结构化视觉重排
 弹窗内容从「小标题+纯文本竖排」升级为按字段定制的可视化（纯前端抽取，抽不到自动回退纯文本卡，real 手输任意文本不打崩）：头部时间范围改横向时间轴条（起止标签+身份色轨道+月数徽标）；规模/背景散落数字抽成关键指标卡行（如 15人/2.8万条/6000家门店，X→Y 改善型带趋势箭头图标与读屏文案）；技术背景抽成技术栈瓦片卡（名称+版本+类别图标，叙述降为次级 muted 文本）；本人角色抽头衔出角色卡，与规模卡同排；调优过程渲染为编号纵向流程图（语境节点+步骤+成果节点带改善 chips，原文折叠可展开）；问题与解决渲染为 warn 问题卡→fern 解决卡的纵叠配对。通用开头结尾与验证详情折叠区保持原样，弹窗加宽至 3xl。抽取层 frontend/src/lib/utils/env-structure.ts 为纯函数零依赖零抛错；新增 7 个 i18n key 补齐 14 locale。
 
@@ -517,6 +526,9 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 ### 2026-10-08：并发对话流式直播评审修复（后端 SSE + 前端直播卡，双路独立评审后落地）
 评审发现并修复：后端——①编排任务无强引用（asyncio 仅持弱引用，长流式期间可能被 GC 致答案永不归档），chat_parallel 与 chat_stream 两处均补模块级强引用集+done 回调；②parallel 端点无 in-flight 守卫（同会话可双开并发烧双倍 token、与单路流互踩、删除锁不可见），补 `_inflight` 409 守卫并并入 `_chat_shared` merged guard（删除/历史编辑端点自动覆盖并行运行态）；③空答案（纯 <think>/空白流）现在拒绝归档并走 run_error（对齐 chat graph 的 IncompleteGenerationError 契约）。前端——④后端顶层 `error` 事件此前被静默吞掉（直播卡瞬间蒸发、5 路答案无声消失），现在 settle 全部在跑的卡并 toast；⑤watchdog 超时/cancel 把未决卡置为终态 error（不再冻结在 streaming 假象）；⑥直播卡改为保留到 done 之后（错误可读、合成条真正可达），同 groupId 的归档视图由卡替身隐藏（dedup），下一次发送/切会话自动归还历史视图；⑦连续两次发起的代际守卫（旧流迟到事件不再污染新一轮）+start/watchdog 补清 delta 合帧缓冲；⑧卡片秒表跨轮次重置；⑨并行运行时输入框禁用、发送按钮兼作并行停止键（此前 5 路运行无法主动停止）；⑩合成选择器空 optgroup 不再渲染。测试：后端 +5（409 守卫/顶层 error 事件/全败归档/空答案拒绝/守卫释放）、前端 +10（error 分支/代际/缓冲清理/watchdog/cancel/秒表重置/空组/停止键接线/归档 dedup）；并把流式化改写后遗留的 3 个陈旧假模型测试（ainvoke 形态喂不进 astream 管线）修复为流式 fake（test_project_env_injection ×2、test_message_timestamps ts3）。真实 SSE 验收（真模型）：双路并发流式 delta 预览实时增长、进度 0/2 生成中→2/2 全部完成、合成点击→结果渲染、刷新后归档组视图（含合成块）正确、运行态输入禁用+停止键在位。
 
+### 2026-10-09：并发直播卡「放大窗口」对比视图
+每张并发直播卡（四态：等待/流式/完成/错误）右上角新增放大按钮，点击把该路回答打开进 80% 视口大小的浮层窗口（非原生 Fullscreen API，createPortal 挂 document.body 免聊天列 overflow 裁剪）：可同时放大多路并排对比，未拖拽过的窗口动态等分行宽（1 路独占 80vw、2 路各 ~40vw，大屏对比友好）；每窗右缘/下缘/右下角三向手柄可拖拽调大小（手写 pointer 事件，宽 clamp 320px~95% 视口宽、高 clamp 240px~90% 视口高，按 run key 记忆尺寸）；窗口内为 focus 变体卡片（完成态 markdown 与流式预览全高滚动、不再截 240 字尾巴）；单窗右上角关闭、Esc/点遮罩全关、放大按钮再点收起（toggle）、新一轮并发自动关掉已消失 run 的旧窗。并行卡片 memo 比较器忽略 onExpand 函数身份，保持"delta 刷新不重渲染已定格卡片"的既有优化。新增 8 个前端测试（开窗/多窗并排/单关/Esc/遮罩/新轮清理/拖拽 resize/toggle），3 个 i18n key 补齐 14 语言。涉及：`frontend/src/components/chat/ParallelLiveCard.tsx`、`ParallelLiveCard.test.tsx`、`frontend/src/lib/locales/`（14 语言）、`new-keys.test.ts`、CHANGELOG。
+
 ---
 
 ## 后续体验优化与新功能规划路线图 (Roadmap)
@@ -540,3 +552,6 @@ next build 生产构建需联网拉 Google Fonts，本机直连不通导致构�
 - [x] **整卡默认可点开详情**：点击卡片任意位置默认打开详情弹窗（当前只有名称/局部按钮触发），减少点不准的挫败感。
 - [x] **清除存量环境里的合同金额/团队规模残留**：交付三层防线——确定性幂等清洗函数（`open_notebook/domain/project_env_cleaner.py`，整句移除含禁词句子）+ 维护者脚本 `scripts/clean_project_env_forbidden_words.py`（默认 dry-run，`--apply` 前自动备份原值 JSON）+ 指标抽取层兜底过滤（`env-structure.ts` 的 `extractEnvStats` 不再渲染含禁词子句的指标卡）。注：核验时库中原先带残留的两个存量环境已不存在（库外操作所致），当前唯一环境为禁词生效后新生成、dry-run 确认无残留。
 - [x] **技术栈卡片 hover 显示解释**：技术卡当前只有 `title=技术名`，不认识的术语无从判断；hover 应显示一两句通俗解释（可静态维护术语表或走 LLM 生成后缓存）。→ 已走静态术语表路线：`tech-glossary.ts` 内置 40 个软考常见技术词条，解释文案走 i18n 14 语言，未命中词条回退原 `title=技术名` 行为。
+
+### 4. 聊天并发回答放大窗口（2026-10-09）
+- [x] **并发卡片一键放大对比**：并发问答的每张回答卡片新增放大按钮，点击弹出约 80% 视口大小的浮动窗口（非浏览器原生全屏），可同时打开多个窗口动态等分宽度（大屏左右对比），右/下/右下角拖拽调宽高，Esc/遮罩点击/单窗关闭按钮三种关闭方式，窗口尺寸按参与方记忆。首版仅覆盖进行中的实时卡片，本轮补齐归档历史：刷新页面后的历史并发组，每张回答卡同样有放大按钮，放大窗口内继续走聊天引用渲染器（引用标签仍可点击），14 语言文案齐备。随后修正关键交互漏洞：遮罩打开后盖住了页面上的卡片按钮，真实鼠标根本无法开第二窗——改为**一键开整组**（点击任一卡的放大按钮直接把本组全部回答并排双开/多开，Classic 与 Gemini 两种笔记本视图风格均生效），另在放大视图底部加深色胶囊 dock，单窗 ✕ 关闭后该回答回到 dock 可随时换入，全部开窗时 dock 自动隐藏。

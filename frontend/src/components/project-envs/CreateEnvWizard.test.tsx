@@ -9,6 +9,14 @@ import {
 } from '@/lib/hooks/use-project-envs'
 import type { ProjectEnv } from '@/lib/types/api'
 
+// cmdk 的 CommandList 需要 ResizeObserver，jsdom 没有实现
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
+
 // t() is mocked globally in setup.ts (returns the key string)
 
 vi.mock('@/lib/hooks/use-project-envs', () => ({
@@ -40,6 +48,16 @@ vi.mock('./TimeRangeField', () => ({
     >
       period
     </button>
+  ),
+}))
+
+// Radix Popover 在 jsdom 里打不开（NotesColumn/Select 先例手法无效）：
+// mock 成常开浮层，直接断言过滤列表与点选行为
+vi.mock('@/components/ui/popover', () => ({
+  Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PopoverContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="industry-popover">{children}</div>
   ),
 }))
 
@@ -245,5 +263,82 @@ describe('CreateEnvWizard industry input', () => {
     render(<CreateEnvWizard open onOpenChange={vi.fn()} />)
     fireEvent.click(screen.getByTestId('env-mode-mock'))
     expect(screen.getByTestId('env-mock-industry')).toHaveValue('金融行业')
+  })
+})
+
+describe('CreateEnvWizard industry combobox', () => {
+  let mutations: ReturnType<typeof setupMutationMocks>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    mutations = setupMutationMocks()
+  })
+
+  it('keeps a real input with maxLength 20 and Enter picks the first pool match', () => {
+    render(<CreateEnvWizard open onOpenChange={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('env-mode-mock'))
+
+    const input = screen.getByTestId('env-mock-industry')
+    expect(input).toHaveAttribute('maxlength', '20')
+
+    fireEvent.change(input, { target: { value: '银行' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input).toHaveValue('银行核心系统改造')
+  })
+
+  it('shows the filtered pool entries in the popover and sets the value on pick', () => {
+    render(<CreateEnvWizard open onOpenChange={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('env-mode-mock'))
+
+    const input = screen.getByTestId('env-mock-industry')
+    fireEvent.change(input, { target: { value: '银行' } })
+
+    expect(screen.getAllByRole('option').length).toBe(4)
+    fireEvent.click(screen.getByRole('option', { name: '银行统一收单平台' }))
+    expect(input).toHaveValue('银行统一收单平台')
+  })
+
+  it('accepts free text outside the pool as a valid industry (custom fallback)', () => {
+    render(<CreateEnvWizard open onOpenChange={vi.fn()} />)
+    fillMockForm()
+    fireEvent.change(screen.getByTestId('env-mock-industry'), {
+      target: { value: '航天行业' },
+    })
+    fireEvent.click(screen.getByTestId('env-mock-materials-submit'))
+
+    expect(
+      mutations.materialsMutation.mutate.mock.calls[0][0].industry
+    ).toBe('航天行业')
+    expect(localStorage.getItem('project-env-industry')).toBe('航天行业')
+  })
+})
+
+describe('CreateEnvWizard preset seed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setupMutationMocks()
+  })
+
+  it('opens straight at mock step 2 with the preset industry', () => {
+    render(
+      <CreateEnvWizard open onOpenChange={vi.fn()} preset={{ industry: '能源行业' }} />
+    )
+
+    expect(screen.getByTestId('env-mock-industry')).toHaveValue('能源行业')
+    expect(
+      screen.getByPlaceholderText('projectEnvs.mockKeywordsPlaceholder')
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('env-mode-real')).not.toBeInTheDocument()
+  })
+
+  it('preset wins over the persisted localStorage choice', () => {
+    localStorage.setItem('project-env-industry', '医疗行业')
+    render(
+      <CreateEnvWizard open onOpenChange={vi.fn()} preset={{ industry: '能源行业' }} />
+    )
+
+    expect(screen.getByTestId('env-mock-industry')).toHaveValue('能源行业')
   })
 })

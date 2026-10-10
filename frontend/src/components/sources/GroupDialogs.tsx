@@ -53,6 +53,20 @@ export function GroupDialogs({
     setDeleteSourcesChecked(false)
   }, [deleteTarget])
 
+  // 从右键菜单打开弹窗时，菜单层已把 body pointer-events 置为 none，弹窗关闭会把这个
+  // 旧值恢复回去导致整页点不动；全关后延迟一拍，无其他浮层仍卡 none 才补恢复
+  useEffect(() => {
+    if (nameDialog || moveTarget || deleteTarget || pendingCascade) return
+    const timer = window.setTimeout(() => {
+      if (document.body.style.pointerEvents !== 'none') return
+      const overlayOpen = document.querySelector(
+        '[role="menu"][data-state="open"], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+      )
+      if (!overlayOpen) document.body.style.pointerEvents = ''
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [nameDialog, moveTarget, deleteTarget, pendingCascade])
+
   const locationPath = useMemo(() => {
     if (!nameDialog || nameDialog.kind !== 'create') return undefined
     const parentId = nameDialog.parentId

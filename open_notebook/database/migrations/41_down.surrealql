@@ -1,0 +1,3 @@
+REMOVE EVENT IF NOT EXISTS model_essay_mark_source_cleanup ON TABLE source;
+REMOVE EVENT IF NOT EXISTS model_essay_mark_group_cleanup ON TABLE source_group;
+REMOVE TABLE IF EXISTS model_essay_mark;

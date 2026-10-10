@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from loguru import logger
 
+from open_notebook.domain.model_essay_mark import get_marked_source_ids
 from open_notebook.domain.notebook import (
     Note,
     Notebook,
@@ -280,6 +281,11 @@ async def build_notebook_context(
     context_data: Dict[str, list] = {"sources": [], "notes": []}
     total_content = ""
 
+    # Model-essay red line (mark landing ④): sources in the effective set are
+    # skipped in both branches. Fail-closed — a mark-table failure fails this
+    # request instead of injecting unfiltered sources.
+    excluded_source_ids = await get_marked_source_ids()
+
     if context_config:
         for source_id, status in context_config.get("sources", {}).items():
             if "not in" in status:
@@ -287,6 +293,8 @@ async def build_notebook_context(
 
             try:
                 full_source_id = _ensure_prefix("source", source_id)
+                if full_source_id in excluded_source_ids:
+                    continue
 
                 try:
                     source = await Source.get(full_source_id)
@@ -325,6 +333,12 @@ async def build_notebook_context(
     else:
         # Default behavior - include all sources and notes with short context
         sources = await notebook.get_sources()
+        if excluded_source_ids:
+            sources = [
+                source
+                for source in sources
+                if not (source.id and source.id in excluded_source_ids)
+            ]
         try:
             insights_by_source = await SourceInsight.get_for_sources(
                 [source.id for source in sources if source.id]
@@ -369,6 +383,9 @@ async def build_source_context(
     while space remains. When the source alone exceeds the budget, a bounded
     share is reserved for insights and the source is explicitly truncated into
     the remaining space instead of being dropped.
+
+    Deliberately NOT filtered by the model-essay mark red line: this is the
+    user-initiated single-source chat exception channel (requirements 0.2.2).
 
     Returns a dict with "sources", "notes" (always empty), "insights",
     "total_tokens", "total_items" and per-type counts in "metadata".

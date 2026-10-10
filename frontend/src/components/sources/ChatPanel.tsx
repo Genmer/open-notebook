@@ -25,7 +25,7 @@ import type { ContextBreakdown } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
 import { ChatParticipantSelector } from '@/components/chat/ChatParticipantSelector'
 import { ParallelRunsPicker } from '@/components/chat/ParallelRunsPicker'
-import { ParallelLiveCard } from '@/components/chat/ParallelLiveCard'
+import { ParallelLiveCard, ParallelFocusManager } from '@/components/chat/ParallelLiveCard'
 import { groupParallelMessages } from '@/lib/utils/parallel-messages'
 import { filterStreamingContent } from '@/lib/utils/stream-text'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
@@ -953,7 +953,9 @@ function ChatComposer({
 
 // Archived parallel group (PDR-004): the human question renders through the
 // normal ChatMessage row; the answers sit in a responsive grid, with the
-// synthesis conclusion highlighted below.
+// synthesis conclusion highlighted below. Enlarging reuses the live card's
+// 80% focus windows, but the window body renders AIMessageContent so
+// citation links stay clickable like in the grid.
 function ParallelGroupView({
   item,
   notebookId,
@@ -966,68 +968,110 @@ function ParallelGroupView({
   sourceGrouping?: NotebookSourceFilters
 }) {
   const { t } = useTranslation()
+  const answers = item.answers ?? []
+  const runs = answers.map((answer) => ({
+    key: answer.id,
+    kind: (answer.agent_name ? 'agent' : 'model') as 'agent' | 'model',
+    name: answer.agent_name || answer.model_name || t('chat.groupDefault'),
+    status: 'done' as const,
+    content: answer.content,
+  }))
   return (
-    <div className="space-y-2" data-testid={`parallel-group-${item.groupId}`}>
-      {item.question && (
-        <ChatMessage
-          message={item.question}
-          notebookId={notebookId}
-          onReferenceClick={onReferenceClick}
-          sourceGrouping={sourceGrouping}
-          // A12: the group question is the anchor of the archived group —
-          // deleting it alone would strand the answer cards, so the bubble's
-          // delete entry is suppressed here (the breakdown dialog's per-id
-          // entries remain the surgical path).
-          suppressDelete
-        />
-      )}
-      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-        {(item.answers ?? []).map((answer) => (
-          <div
-            key={answer.id}
-            className="rounded-lg border bg-card p-3 space-y-1.5 min-w-0"
-            data-testid={`parallel-answer-${answer.id}`}
-          >
-            <p className="text-xs font-medium text-muted-foreground truncate">
-              {t('chat.answeredBy', {
-                name: answer.agent_name || answer.model_name || t('chat.groupDefault'),
-              })}
-            </p>
-            <div className="max-h-72 overflow-y-auto text-sm">
-              <AIMessageContent
-                content={answer.content}
-                onReferenceClick={onReferenceClick}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      {item.synthesis && (
-        <div
-          className="rounded-lg border border-gold/40 bg-card p-3 space-y-1.5"
-          data-testid={`parallel-synthesis-${item.groupId}`}
-        >
-          <p className="text-xs font-medium text-gold flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('chat.synthesisResultTitle')}
-            <span className="text-muted-foreground font-normal">
-              {t('chat.answeredBy', {
-                name:
-                  item.synthesis.agent_name ||
-                  item.synthesis.model_name ||
-                  t('chat.groupDefault'),
-              })}
-            </span>
+    <ParallelFocusManager
+      runs={runs}
+      renderContent={(run) => (
+        <div className="flex h-full min-h-0 flex-col gap-1.5 px-4 pt-8">
+          <p className="text-xs font-medium text-muted-foreground truncate">
+            {t('chat.answeredBy', { name: run.name })}
           </p>
-          <div className="text-sm">
-            <AIMessageContent
-              content={item.synthesis.content}
-              onReferenceClick={onReferenceClick}
-            />
+          <div className="min-h-0 flex-1 overflow-y-auto text-sm">
+            <AIMessageContent content={run.content ?? ''} onReferenceClick={onReferenceClick} />
           </div>
         </div>
       )}
-    </div>
+    >
+      {({ expanded, toggle }) => (
+        <div className="space-y-2" data-testid={`parallel-group-${item.groupId}`}>
+          {item.question && (
+            <ChatMessage
+              message={item.question}
+              notebookId={notebookId}
+              onReferenceClick={onReferenceClick}
+              sourceGrouping={sourceGrouping}
+              // A12: the group question is the anchor of the archived group —
+              // deleting it alone would strand the answer cards, so the bubble's
+              // delete entry is suppressed here (the breakdown dialog's per-id
+              // entries remain the surgical path).
+              suppressDelete
+            />
+          )}
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {answers.map((answer) => {
+              const isExpanded = expanded.includes(answer.id)
+              return (
+                <div
+                  key={answer.id}
+                  className="relative rounded-lg border bg-card p-3 space-y-1.5 min-w-0"
+                  data-testid={`parallel-answer-${answer.id}`}
+                >
+                  <button
+                    type="button"
+                    data-testid={`parallel-expand-${answer.id}`}
+                    aria-label={t('chat.parallelExpand')}
+                    aria-pressed={isExpanded}
+                    title={t('chat.parallelExpand')}
+                    onClick={() => toggle(answer.id)}
+                    className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {isExpanded ? (
+                      <Minimize2 className="size-3.5" />
+                    ) : (
+                      <Maximize2 className="size-3.5" />
+                    )}
+                  </button>
+                  <p className="text-xs font-medium text-muted-foreground truncate pr-8">
+                    {t('chat.answeredBy', {
+                      name: answer.agent_name || answer.model_name || t('chat.groupDefault'),
+                    })}
+                  </p>
+                  <div className="max-h-72 overflow-y-auto text-sm">
+                    <AIMessageContent
+                      content={answer.content}
+                      onReferenceClick={onReferenceClick}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {item.synthesis && (
+            <div
+              className="rounded-lg border border-gold/40 bg-card p-3 space-y-1.5"
+              data-testid={`parallel-synthesis-${item.groupId}`}
+            >
+              <p className="text-xs font-medium text-gold flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t('chat.synthesisResultTitle')}
+                <span className="text-muted-foreground font-normal">
+                  {t('chat.answeredBy', {
+                    name:
+                      item.synthesis.agent_name ||
+                      item.synthesis.model_name ||
+                      t('chat.groupDefault'),
+                  })}
+                </span>
+              </p>
+              <div className="text-sm">
+                <AIMessageContent
+                  content={item.synthesis.content}
+                  onReferenceClick={onReferenceClick}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </ParallelFocusManager>
   )
 }
 

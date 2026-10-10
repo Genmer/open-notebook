@@ -46,6 +46,7 @@ from api.routers import (
     podcasts,
     project_envs,
     providers,
+    ruankao_essay_marks,
     search,
     settings,
     source_analysis,
@@ -431,6 +432,9 @@ app.include_router(
 app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(source_groups.router, prefix="/api", tags=["source-groups"])
+app.include_router(
+    ruankao_essay_marks.router, prefix="/api", tags=["ruankao-essay-marks"]
+)
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(explain.router, prefix="/api", tags=["explain"])

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GeminiSourcesColumn } from './GeminiSourcesColumn'
 import { useContextTree } from '@/lib/hooks/use-context-tree'
+import { sourcesApi } from '@/lib/api/sources'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { ContextTreeResponse } from '@/lib/types/notebook-context'
 
@@ -44,6 +45,10 @@ const {
   mockCopyMutateAsync,
   mockUngroupMutateAsync,
   mockRefetchTree,
+  mockUpdateGroupMutateAsync,
+  mockUpdateGroupMutate,
+  mockDeleteGroupMutate,
+  mockClipboardWrite,
 } = vi.hoisted(() => ({
   mockToastSuccess: vi.fn(),
   mockToastError: vi.fn(),
@@ -53,6 +58,10 @@ const {
   mockCopyMutateAsync: vi.fn(),
   mockUngroupMutateAsync: vi.fn(),
   mockRefetchTree: vi.fn(),
+  mockUpdateGroupMutateAsync: vi.fn(),
+  mockUpdateGroupMutate: vi.fn(),
+  mockDeleteGroupMutate: vi.fn(),
+  mockClipboardWrite: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('sonner', () => ({
@@ -73,6 +82,13 @@ vi.mock('@/lib/hooks/use-source-views', () => ({
   useCopyToGroup: () => ({ mutateAsync: (...args: unknown[]) => mockCopyMutateAsync(...args) }),
   useUngroupMembers: () => ({
     mutateAsync: (...args: unknown[]) => mockUngroupMutateAsync(...args),
+  }),
+  useUpdateGroup: () => ({
+    mutateAsync: (...args: unknown[]) => mockUpdateGroupMutateAsync(...args),
+    mutate: (...args: unknown[]) => mockUpdateGroupMutate(...args),
+  }),
+  useDeleteGroup: () => ({
+    mutate: (...args: unknown[]) => mockDeleteGroupMutate(...args),
   }),
 }))
 
@@ -128,8 +144,21 @@ vi.mock('@/components/sources/AddExistingSourceDialog', () => ({
 }))
 
 vi.mock('@/components/sources/GroupNameDialog', () => ({
-  GroupNameDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="group-name-dialog" /> : null,
+  GroupNameDialog: ({
+    open,
+    onConfirm,
+  }: {
+    open: boolean
+    onConfirm?: (name: string) => void | Promise<void>
+  }) =>
+    open ? (
+      <div data-testid="group-name-dialog">
+        <button
+          data-testid="group-name-confirm"
+          onClick={() => onConfirm?.('改名后的文件夹')}
+        />
+      </div>
+    ) : null,
 }))
 
 vi.mock('@/components/sources/EmbedMissingPanel', () => ({
@@ -180,6 +209,7 @@ vi.mock('@/lib/api/sources', () => ({
   sourcesApi: {
     list: vi.fn().mockImplementation(() => Promise.resolve(mockLibrarySources)),
     create: vi.fn(),
+    get: vi.fn(),
   },
 }))
 
@@ -228,10 +258,22 @@ const rowOf = (title: string) => {
 describe('GeminiSourcesColumn', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: mockClipboardWrite },
+      configurable: true,
+    })
     mockUseSourceViews.mockReturnValue({ data: [] })
     mockUseViewGroups.mockReturnValue({ data: [] })
     mockCopyMutateAsync.mockResolvedValue({ created: ['source:1-copy'], failed: [] })
     mockUngroupMutateAsync.mockResolvedValue({ ungrouped: 1 })
+    mockUpdateGroupMutateAsync.mockResolvedValue(undefined)
+    // mutate(vars, { onSuccess })：同步调 onSuccess 以覆盖树刷新回调
+    mockUpdateGroupMutate.mockImplementation(
+      (_vars: unknown, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.()
+    )
+    mockDeleteGroupMutate.mockImplementation(
+      (_vars: unknown, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.()
+    )
     vi.mocked(useContextTree).mockReturnValue({
       data: mockTreeData,
       isLoading: false,
@@ -449,6 +491,451 @@ describe('GeminiSourcesColumn', () => {
     fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
     fireEvent.click(screen.getByText('sources.grouping.newFolder'))
     expect(screen.getByTestId('group-name-dialog')).toBeInTheDocument()
+  })
+
+  it('context menu: copy file name writes the source title to the clipboard', async () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
+    fireEvent.click(screen.getByText('sources.copyFileName'))
+
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('系统架构设计.pdf'))
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalledWith('sources.copiedToClipboard'))
+  })
+
+  it('context menu: copy relative path joins the folder chain, ungrouped rows copy file name only', async () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 分组来源：文件夹链 + 文件名
+    fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() =>
+      expect(mockClipboardWrite).toHaveBeenCalledWith('核心架构文档/系统架构设计.pdf')
+    )
+
+    // 未分组来源：只有文件名
+    fireEvent.contextMenu(rowOf('SurrealDB 官方白皮书'))
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('SurrealDB 官方白皮书'))
+  })
+
+  it('context menu: copy relative path joins a multi-level ancestor chain root-first', async () => {
+    // 三层嵌套：论文库 / 2026 软考 / 高级架构，孙层挂来源
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        groups: [
+          { id: 'group:root', name: '论文库', parent_id: null },
+          { id: 'group:sub', name: '2026 软考', parent_id: 'group:root' },
+          { id: 'group:leaf', name: '高级架构', parent_id: 'group:sub' },
+        ],
+        sources: [
+          {
+            id: 'source:deep',
+            title: '架构真题.pdf',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+          {
+            id: 'source:loose',
+            title: '散落笔记.md',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+        ],
+        memberships: [{ source_id: 'source:deep', group_id: 'group:leaf' }],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+
+    // 分组来源：祖先链根在前 + 自身文件夹 + 文件名
+    fireEvent.contextMenu(rowOf('架构真题.pdf'))
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() =>
+      expect(mockClipboardWrite).toHaveBeenCalledWith('论文库/2026 软考/高级架构/架构真题.pdf')
+    )
+
+    // 同一棵树里的未分组来源：没有文件夹链，只复制文件名
+    fireEvent.contextMenu(rowOf('散落笔记.md'))
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('散落笔记.md'))
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalledWith('sources.copiedToClipboard'))
+  })
+
+  it('context menu: copy absolute path uses asset file_path and falls back to asset url', async () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 上传文件 → asset.file_path
+    fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('/path/to/架构.pdf'))
+
+    // URL 来源 → asset.url
+    fireEvent.contextMenu(rowOf('SurrealDB 官方白皮书'))
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('https://surrealdb.com'))
+    expect(sourcesApi.get).not.toHaveBeenCalled()
+  })
+
+  it('context menu: copy absolute path fetches the detail when the row lacks asset data', async () => {
+    // 分页未加载、仅存在于 context-tree 的行 asset 为 null，点击时按 id 拉详情
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        ...mockTreeData,
+        sources: [
+          ...mockTreeData.sources,
+          { id: 'source:4', title: '分页外文献', insights_count: 0, embedded: true, embedding_status: null },
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+    vi.mocked(sourcesApi.get).mockResolvedValue({
+      ...mockSources[0],
+      id: 'source:4',
+      title: '分页外文献',
+      full_text: '',
+      asset: { file_path: '/data/uploads/分页外文献.md' },
+    })
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+
+    fireEvent.contextMenu(rowOf('分页外文献'))
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:4'))
+    await waitFor(() =>
+      expect(mockClipboardWrite).toHaveBeenCalledWith('/data/uploads/分页外文献.md')
+    )
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalledWith('sources.copiedToClipboard'))
+  })
+
+  it('context menu: copy absolute path degrades to an error toast when the detail fetch fails', async () => {
+    // asset 缺失 → 按 id 拉详情；接口失败必须降级为错误提示，绝不写剪贴板
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        ...mockTreeData,
+        sources: [
+          ...mockTreeData.sources,
+          {
+            id: 'source:5',
+            title: '详情拉取失败文献',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+    vi.mocked(sourcesApi.get).mockRejectedValue(new Error('network down'))
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+
+    fireEvent.contextMenu(rowOf('详情拉取失败文献'))
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:5'))
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('common.error'))
+    expect(mockClipboardWrite).not.toHaveBeenCalled()
+    expect(mockToastSuccess).not.toHaveBeenCalledWith('sources.copiedToClipboard')
+  })
+
+  it('context menu: copy absolute path degrades to an error toast when the fetched detail has no asset', async () => {
+    // 详情拉通但 asset 仍为空（如纯文本来源）→ 无路径可复制，降级为错误提示
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        ...mockTreeData,
+        sources: [
+          ...mockTreeData.sources,
+          {
+            id: 'source:6',
+            title: '无资产文献',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+    vi.mocked(sourcesApi.get).mockResolvedValue({
+      ...mockSources[0],
+      id: 'source:6',
+      title: '无资产文献',
+      full_text: '',
+      asset: null,
+    })
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+
+    fireEvent.contextMenu(rowOf('无资产文献'))
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:6'))
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('common.error'))
+    expect(mockClipboardWrite).not.toHaveBeenCalled()
+    expect(mockToastSuccess).not.toHaveBeenCalledWith('sources.copiedToClipboard')
+  })
+
+  it('context menu: copy absolute path is greyed out when asset has neither file_path nor url', async () => {
+    render(
+      <GeminiSourcesColumn
+        {...baseProps}
+        sources={[{ ...mockSources[0], asset: {} }, mockSources[1]]}
+      />,
+      { wrapper: createWrapper().TestWrapper }
+    )
+
+    fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
+    const item = screen.getByText('sources.copyAbsolutePath').closest('[role="menuitem"]')
+    expect(item).not.toBeNull()
+    expect(item).toHaveAttribute('data-disabled', '')
+
+    // 点击置灰项不写剪贴板也不拉详情
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+    await waitFor(() => expect(sourcesApi.get).not.toHaveBeenCalled())
+    expect(mockClipboardWrite).not.toHaveBeenCalled()
+  })
+
+  it('folder header context menu offers subgroup/rename/move/delete entries', () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 根层文件夹 depth 1 < MAX_GROUP_DEPTH，四项全有
+    fireEvent.contextMenu(screen.getByTestId('gemini-folder-row'))
+    expect(screen.getByText('sources.grouping.newSubgroup')).toBeInTheDocument()
+    expect(screen.getByText('common.edit')).toBeInTheDocument()
+    expect(screen.getByText('sources.grouping.moveTo')).toBeInTheDocument()
+    expect(screen.getByText('common.delete')).toBeInTheDocument()
+  })
+
+  // 五层嵌套夹具：每层挂一个来源，保证全部默认展开、五层文件夹头都在 DOM 里
+  const renderDeepNestedTree = () => {
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        groups: [
+          { id: 'group:l1', name: '一级文件夹', parent_id: null },
+          { id: 'group:l2', name: '二级文件夹', parent_id: 'group:l1' },
+          { id: 'group:l3', name: '三级文件夹', parent_id: 'group:l2' },
+          { id: 'group:l4', name: '四级文件夹', parent_id: 'group:l3' },
+          { id: 'group:l5', name: '五级文件夹', parent_id: 'group:l4' },
+        ],
+        sources: Array.from({ length: 5 }, (_, i) => ({
+          id: `source:deep:${i + 1}`,
+          title: `层级来源${i + 1}`,
+          insights_count: 0,
+          embedded: true,
+          embedding_status: null,
+        })),
+        memberships: Array.from({ length: 5 }, (_, i) => ({
+          source_id: `source:deep:${i + 1}`,
+          group_id: `group:l${i + 1}`,
+        })),
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+    return screen.getAllByTestId('gemini-folder-row')
+  }
+
+  it('folder header context menu still offers new-subgroup one level above the depth cap', () => {
+    const rows = renderDeepNestedTree()
+    expect(rows).toHaveLength(5)
+
+    // 第 4 层（depth 4 < MAX_GROUP_DEPTH 5）仍可建子文件夹，防闸门误装过紧
+    fireEvent.contextMenu(rows[3])
+    expect(screen.getByText('sources.grouping.newSubgroup')).toBeInTheDocument()
+    expect(screen.getByText('common.edit')).toBeInTheDocument()
+    expect(screen.getByText('sources.grouping.moveTo')).toBeInTheDocument()
+    expect(screen.getByText('common.delete')).toBeInTheDocument()
+  })
+
+  it('folder header context menu hides new-subgroup at the max nesting depth', () => {
+    const rows = renderDeepNestedTree()
+    expect(rows).toHaveLength(5)
+
+    // 第 5 层已达 MAX_GROUP_DEPTH，隐藏「新建子文件夹」，其余三项不受影响
+    fireEvent.contextMenu(rows[4])
+    expect(screen.queryByText('sources.grouping.newSubgroup')).not.toBeInTheDocument()
+    expect(screen.getByText('common.edit')).toBeInTheDocument()
+    expect(screen.getByText('sources.grouping.moveTo')).toBeInTheDocument()
+    expect(screen.getByText('common.delete')).toBeInTheDocument()
+  })
+
+  it('collapse-all folds every nested folder to top-level rows and expand-all restores them', () => {
+    renderDeepNestedTree()
+
+    // 全部文件夹有来源 → 初始全部展开，五层文件夹头和全部来源可见
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(5)
+    expect(screen.getByText('层级来源5')).toBeInTheDocument()
+
+    // 一键收起：只剩顶层文件夹头，嵌套文件夹与来源全部隐藏
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.collapseAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(1)
+    expect(screen.queryByText('二级文件夹')).not.toBeInTheDocument()
+    expect(screen.queryByText('五级文件夹')).not.toBeInTheDocument()
+    expect(screen.queryByText('层级来源1')).not.toBeInTheDocument()
+
+    // 一键展开：五层文件夹头与来源全部恢复
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.expandAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(5)
+    expect(screen.getByText('五级文件夹')).toBeInTheDocument()
+    expect(screen.getByText('层级来源5')).toBeInTheDocument()
+  })
+
+  it('collapse-all/expand-all still cover the full tree and the ungrouped section under a search filter', () => {
+    // 五层嵌套 + 一条未分组来源；搜索只命中最深层的来源
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        groups: [
+          { id: 'group:l1', name: '一级文件夹', parent_id: null },
+          { id: 'group:l2', name: '二级文件夹', parent_id: 'group:l1' },
+          { id: 'group:l3', name: '三级文件夹', parent_id: 'group:l2' },
+          { id: 'group:l4', name: '四级文件夹', parent_id: 'group:l3' },
+          { id: 'group:l5', name: '五级文件夹', parent_id: 'group:l4' },
+        ],
+        sources: [
+          ...Array.from({ length: 5 }, (_, i) => ({
+            id: `source:deep:${i + 1}`,
+            title: `层级来源${i + 1}`,
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          })),
+          {
+            id: 'source:loose',
+            title: '未分组资料',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+        ],
+        memberships: Array.from({ length: 5 }, (_, i) => ({
+          source_id: `source:deep:${i + 1}`,
+          group_id: `group:l${i + 1}`,
+        })),
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+
+    const search = screen.getByPlaceholderText('geminiSources.searchPlaceholder')
+    fireEvent.change(search, { target: { value: '层级来源5' } })
+
+    // 命中路径上的五层文件夹头全部保留（过滤后的来源沿祖先链上浮）；
+    // 未命中来源行被过滤掉；未分组段整体隐藏
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(5)
+    expect(screen.getByText('层级来源5')).toBeInTheDocument()
+    expect(screen.queryByText('层级来源1')).not.toBeInTheDocument()
+    expect(screen.queryByText('未分组资料')).not.toBeInTheDocument()
+    expect(screen.queryByText('geminiSources.ungrouped')).not.toBeInTheDocument()
+
+    // 过滤态一键收起：作用于全树（含被过滤隐藏的层级），只剩顶层文件夹头，命中来源随折叠隐藏
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.collapseAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(1)
+    expect(screen.queryByText('层级来源5')).not.toBeInTheDocument()
+
+    // 过滤态一键展开：五层文件夹头与命中来源恢复
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.expandAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(5)
+    expect(screen.getByText('层级来源5')).toBeInTheDocument()
+
+    // 收起的覆盖态不因清除搜索而重置；'ungrouped' 键同样被一键收起覆盖
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.collapseAll' }))
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(1)
+    expect(screen.queryByText('层级来源3')).not.toBeInTheDocument()
+    expect(screen.getByText('geminiSources.ungrouped')).toBeInTheDocument()
+    expect(screen.queryByText('未分组资料')).not.toBeInTheDocument()
+
+    // 清除搜索后一键展开：全树与未分组来源一起恢复
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.expandAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(5)
+    expect(screen.getByText('层级来源3')).toBeInTheDocument()
+    expect(screen.getByText('未分组资料')).toBeInTheDocument()
+  })
+
+  it('folder context menu rename opens the GroupDialogs dialog and fires updateGroup + tree refresh', async () => {
+    const { TestWrapper, queryClient } = createWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: TestWrapper })
+
+    expect(screen.queryByTestId('group-name-dialog')).not.toBeInTheDocument()
+    fireEvent.contextMenu(screen.getByTestId('gemini-folder-row'))
+    fireEvent.click(screen.getByText('common.edit'))
+
+    // GroupDialogs 的重命名弹窗出现（复用 GroupNameDialog mock）
+    expect(screen.getByTestId('group-name-dialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('group-name-confirm'))
+
+    await waitFor(() =>
+      expect(mockUpdateGroupMutateAsync).toHaveBeenCalledWith({
+        id: 'group:1',
+        name: '改名后的文件夹',
+      })
+    )
+    // 分组 mutation 默认只失效 sourceViews+sources，树必须额外失效 contextTree 并 refetch
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['contextTree'] })
+    expect(mockRefetchTree).toHaveBeenCalled()
+  })
+
+  it('folder delete fires deleteGroup, resets grouping when the deleted folder is active, and refreshes the tree', async () => {
+    mockUseSourceViews.mockReturnValue({
+      data: [{ id: 'view:1', name: '默认视图', is_default: true, view_type: 'default' }],
+    })
+    const onGroupingChange = vi.fn()
+    const { TestWrapper, queryClient } = createWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    render(
+      <GeminiSourcesColumn
+        {...baseProps}
+        grouping={{ viewId: 'view:1', group: 'group:1' }}
+        onGroupingChange={onGroupingChange}
+      />,
+      { wrapper: TestWrapper }
+    )
+
+    fireEvent.contextMenu(screen.getByTestId('gemini-folder-row'))
+    fireEvent.click(screen.getByText('common.delete'))
+
+    // 未勾选「连带删除来源」→ deleteGroup(id, false)；确认按钮与菜单项同名，菜单已关闭后按钮唯一
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
+
+    await waitFor(() =>
+      expect(mockDeleteGroupMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'group:1', deleteSources: false }),
+        expect.anything()
+      )
+    )
+    // 正在浏览的文件夹被删 → 分组选择回退 all
+    expect(onGroupingChange).toHaveBeenCalledWith({ viewId: 'view:1', group: 'all' })
+    // 删除后树刷新同样要求 contextTree 失效 + refetch 双保险
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['contextTree'] })
+    expect(mockRefetchTree).toHaveBeenCalled()
   })
 
   it('opens the context menu detail with the notebook context', () => {

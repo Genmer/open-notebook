@@ -25,6 +25,7 @@ import {
 import { MaterialSelectionStep, type MaterialTab } from './MaterialSelectionStep'
 import { TimeRangeField } from './TimeRangeField'
 import { VerificationPanel } from './VerificationPanel'
+import { IndustryCombobox } from '@/components/ruankao/IndustryCombobox'
 import { validatePeriod, parseMonthsFromText, type ProjectEnvMode } from '@/lib/utils/project-env-time'
 
 type PolishState =
@@ -39,6 +40,9 @@ interface CreateEnvWizardProps {
   // Reopen an existing env straight at the verification step (list row click
   // on a pending / needs_review environment).
   initialEnvId?: string | null
+  // 一次性种子（wizardSeed 通道）：打开时以 mock 模式落到第 2 步并带行业值，
+  // 优先级 preset > localStorage > 默认；父层在关闭时清空
+  preset?: { industry: string } | null
 }
 
 const KEYWORD_MIN = 2
@@ -116,7 +120,7 @@ function KeywordInput({
   )
 }
 
-export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvWizardProps) {
+export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: CreateEnvWizardProps) {
   const { t } = useTranslation()
   const [step, setStep] = useState(1)
   const [mode, setMode] = useState<ProjectEnvMode | null>(null)
@@ -212,8 +216,13 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
     } else if (initialEnvId) {
       setEnvId(initialEnvId)
       setReopenPending(true)
+    } else if (preset) {
+      // 行业池点条目：直接进入 mock 第 2 步并带行业值（一次性种子）
+      setMode('mock')
+      setStep(2)
+      setIndustry(preset.industry)
     }
-  }, [open, initialEnvId])
+  }, [open, initialEnvId, preset])
 
   useEffect(() => {
     if (!open || !initialEnvId || !reopenPending) return
@@ -641,12 +650,10 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId }: CreateEnvW
                   <Label htmlFor="env-mock-industry">
                     {t('projectEnvs.mockIndustryLabel')}
                   </Label>
-                  <Input
+                  <IndustryCombobox
                     id="env-mock-industry"
                     value={industry}
-                    onChange={(event) => setIndustry(event.target.value)}
-                    maxLength={20}
-                    data-testid="env-mock-industry"
+                    onChange={setIndustry}
                   />
                   <p className="text-xs text-muted-foreground">
                     {t('projectEnvs.mockIndustryHelper')}
