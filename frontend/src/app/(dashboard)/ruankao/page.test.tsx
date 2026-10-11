@@ -6,6 +6,7 @@ import { RUANKAO_TABS } from '@/lib/ruankao/tabs'
 let tabParam: string | null = null
 
 vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/ruankao',
   useSearchParams: () => new URLSearchParams(tabParam ? `tab=${tabParam}` : ''),
 }))
@@ -20,6 +21,35 @@ vi.mock('@/lib/hooks/use-project-envs', () => ({
   useMockGenerateProjectEnv: () => ({ mutate: vi.fn(), isPending: false }),
   usePolishBackground: () => ({ mutate: vi.fn(), isPending: false }),
   useProjectEnv: () => ({ data: undefined, isError: false }),
+}))
+
+// modelLibrary 已填槽：面板走真实 react-query hooks，页测试无 QueryClient
+// 包装，照 EnvironmentsPanel.test 的子组件 stub 先例替换为纯 div
+vi.mock('@/components/ruankao/ModelLibraryPanel', () => ({
+  ModelLibraryPanel: () => <div data-testid="model-library-stub" />,
+}))
+
+// questionBank 已填槽：面板为 localStorage 纯前端组件，同样 stub 成纯 div，
+// 让页测试只关心 tab 壳行为
+vi.mock('@/components/ruankao/QuestionBankPanel', () => ({
+  QuestionBankPanel: () => <div data-testid="question-bank-stub" />,
+}))
+
+// essay 已填槽（批次4 第一步）：EssayPanel 真渲染（home 视图 + read 深链），
+// 其数据 hooks 用罐头（空库 + 无标记状态），照 use-project-envs mock 块同位追加
+vi.mock('@/lib/hooks/use-essay-marks', () => ({
+  useEssayMarksLibrary: () => ({
+    data: {
+      stats: { marked_sources: 0, marked_groups: 0, effective_total: 0 },
+      groups: [],
+      sources: [],
+      dangling_marks: [],
+    },
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useEssayMarkStatus: () => ({ data: { source: null }, isError: false, refetch: vi.fn() }),
 }))
 
 function activeTab() {
@@ -74,15 +104,28 @@ describe('RuankaoPage tab container', () => {
     expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-environments')
   })
 
-  it('hides null-slot tabs (undelivered segments) and falls back for their keys', () => {
+  it('honours a ?tab=questionBank deep link to the filled slot', () => {
     tabParam = 'questionBank'
     render(<RuankaoPage />)
 
-    expect(screen.queryByTestId('ruankao-tab-questionBank')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('ruankao-tab-modelLibrary')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('ruankao-tab-essay')).not.toBeInTheDocument()
-    // null 槽 key 的深链同样回落第一项，避免落在空内容区
-    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-environments')
+    // questionBank 填槽后深链直达（内容为 stub）
+    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-questionBank')
+    expect(screen.getByTestId('question-bank-stub')).toBeInTheDocument()
+  })
+
+  it('shows all five tabs now that the essay slot is filled, and deep-links into it', () => {
+    tabParam = 'essay'
+    render(<RuankaoPage />)
+
+    // essay 填槽后注册表五 tab 全部在场（此前唯一 null 槽已交付）
+    expect(screen.getByTestId('ruankao-tab-environments')).toBeInTheDocument()
+    expect(screen.getByTestId('ruankao-tab-questionBank')).toBeInTheDocument()
+    expect(screen.getByTestId('ruankao-tab-modelLibrary')).toBeInTheDocument()
+    expect(screen.getByTestId('ruankao-tab-essay')).toBeInTheDocument()
+    expect(screen.getByTestId('ruankao-tab-hotTopics')).toBeInTheDocument()
+    // essay 深链直达：真实 EssayPanel 渲染 home 视图（数据 hooks 已 mock）
+    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-essay')
+    expect(screen.getByTestId('ruankao-essay-home')).toBeInTheDocument()
   })
 
   it('switches tabs in place without unmounting the page shell', () => {
@@ -95,5 +138,32 @@ describe('RuankaoPage tab container', () => {
     expect(screen.getByText('ruankao.title')).toBeInTheDocument()
     expect(screen.getByText('ruankao.hotTopics.plannedTitle')).toBeInTheDocument()
     expect(screen.queryByTestId('env-create-button')).not.toBeInTheDocument()
+  })
+
+  it('follows an in-page ?tab= change (question-bank detail deep links)', () => {
+    tabParam = 'questionBank'
+    const { rerender } = render(<RuankaoPage />)
+    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-questionBank')
+
+    // 题库详情动作 router.push 切 tab（?tab=environments / ?tab=essay&read=…）：
+    // URL 变化经同步 effect 跟随，页面壳不重挂载（模块标题元素仍在文档中）
+    tabParam = 'environments'
+    rerender(<RuankaoPage />)
+    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-environments')
+
+    // 非法 tab 不打扰当前激活 tab
+    tabParam = 'not-a-tab'
+    rerender(<RuankaoPage />)
+    expect(activeTab()?.getAttribute('data-testid')).toBe('ruankao-tab-environments')
+  })
+
+  it('constrains the content column with the L-line container convention (宽屏治理 P1-1)', () => {
+    render(<RuankaoPage />)
+
+    // 内容列宽约定（L 线 §2.1）：容器同含 mx-auto 与 max-w-6xl，
+    // 一处覆盖全部 tab；testid 供布局门禁寻址
+    const container = screen.getByTestId('ruankao-page-content')
+    expect(container).toHaveClass('mx-auto')
+    expect(container).toHaveClass('max-w-6xl')
   })
 })

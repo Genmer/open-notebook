@@ -64,5 +64,8 @@ What this makes easier, what it makes harder, what to watch. (bullets)
 | [ADR-014](ADR-014-model-config-export-import.md) | Model configuration export/import — package format v2, plain-text API keys by user decision, conflict-confirm import | Accepted |
 | [ADR-016](ADR-016-ruankao-module-tab-registry.md) | Ruankao module is one registry-driven page with hidden null-slot tabs | Accepted |
 | [ADR-017](ADR-017-model-essay-mark-red-line-isolation.md) | Model-essay red-line isolation: one mark table, one fail-closed filter, three shared read points, two exception channels | Accepted |
+| [ADR-018](ADR-018-ruankao-user-data-local-first.md) | Ruankao user data (question bank / essay drafts / training runs) starts local-first in localStorage, with defined triggers and a fixed migration package for a future table upgrade | Accepted |
+| [ADR-019](ADR-019-industry-hint-injection.md) | Industry business-trait hints are one dual-mirror corpus (TS↔Python parity-tested), never transmitted or stored — derived from the stored industry at render time and injected only into the five mock main-chain templates | Accepted |
+| [ADR-020](ADR-020-offline-corpus-seed-artifacts.md) | Offline-corpus seed artifacts admit exam metadata only: empty question prompts and free-text domains are the designed caliber, verified by closed-set drift gates instead of expectations the design never had | Accepted |
 | [PDR-003](PDR-003-source-annotation-system.md) | 来源标注系统规划定稿——18 项开放问题全部裁决（页级路由/条件互斥/标称对账等；规划与 MVP 任务清单见 `../plans/`） | Accepted |
 | [PDR-004](PDR-004-agents-and-parallel-chat.md) | 智能体配置与多路并发对话——智能体表+配置页+分组选择器；并发走后端单 SSE 端点（执行与持久化解耦）；工作流缓做，锁定"预设链"演进形态 | Accepted |

@@ -505,4 +505,13 @@ describe('TasksPage', () => {
       expect(screen.queryByText('tasks.inspector.title')).not.toBeInTheDocument()
     })
   })
+
+  it('constrains the content column with the L-line container convention (宽屏治理 P1-4)', () => {
+    setup([{ tasks: [], total: 0, counts: {} }])
+
+    // 内容列宽约定（L 线 §2.1）：列表型页容器同含 mx-auto 与 max-w-6xl
+    const container = screen.getByTestId('tasks-page-content')
+    expect(container).toHaveClass('mx-auto')
+    expect(container).toHaveClass('max-w-6xl')
+  })
 })

@@ -26,6 +26,9 @@ import { MaterialSelectionStep, type MaterialTab } from './MaterialSelectionStep
 import { TimeRangeField } from './TimeRangeField'
 import { VerificationPanel } from './VerificationPanel'
 import { IndustryCombobox } from '@/components/ruankao/IndustryCombobox'
+import { IndustryContextCard } from '@/components/ruankao/IndustryContextCard'
+import { INDUSTRY_POOL_NAMES } from '@/lib/ruankao/industry-pool'
+import type { RuankaoWizardSeed } from '@/lib/ruankao/wizard-seed'
 import { validatePeriod, parseMonthsFromText, type ProjectEnvMode } from '@/lib/utils/project-env-time'
 
 type PolishState =
@@ -40,9 +43,10 @@ interface CreateEnvWizardProps {
   // Reopen an existing env straight at the verification step (list row click
   // on a pending / needs_review environment).
   initialEnvId?: string | null
-  // 一次性种子（wizardSeed 通道）：打开时以 mock 模式落到第 2 步并带行业值，
+  // 一次性种子（wizardSeed 通道）：打开时以 mock 模式落到第 2 步并条件式
+  // 带值（存在才落值——keywords/name-only 种子不触碰 industry 受控输入），
   // 优先级 preset > localStorage > 默认；父层在关闭时清空
-  preset?: { industry: string } | null
+  preset?: RuankaoWizardSeed | null
 }
 
 const KEYWORD_MIN = 2
@@ -217,10 +221,14 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
       setEnvId(initialEnvId)
       setReopenPending(true)
     } else if (preset) {
-      // 行业池点条目：直接进入 mock 第 2 步并带行业值（一次性种子）
+      // 行业池点条目 / 题库「生成整篇练习文」：直接进入 mock 第 2 步并带值
+      // （一次性种子）。条件式落值：字段存在才写对应 state，keywords-only
+      // 种子不得把 industry 受控输入打成 undefined
       setMode('mock')
       setStep(2)
-      setIndustry(preset.industry)
+      if (preset.industry) setIndustry(preset.industry)
+      if (preset.keywords) setKeywords(preset.keywords)
+      if (preset.name) setMockName(preset.name)
     }
   }, [open, initialEnvId, preset])
 
@@ -655,9 +663,13 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
                     value={industry}
                     onChange={setIndustry}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {t('projectEnvs.mockIndustryHelper')}
-                  </p>
+                  {/* 池内行业：hint+画像就地展示（所见即所注入）；池外自定义行业回落静态 helper */}
+                  <IndustryContextCard industry={industry} />
+                  {INDUSTRY_POOL_NAMES.has(industry) === false && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('projectEnvs.mockIndustryHelper')}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="env-mock-name">{t('projectEnvs.mockNameLabel')}</Label>

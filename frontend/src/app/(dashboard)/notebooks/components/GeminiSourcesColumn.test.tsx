@@ -1185,4 +1185,52 @@ describe('GeminiSourcesColumn', () => {
     expect(screen.getByText('系统架构设计.pdf')).toBeVisible()
     expect(screen.getByText('核心架构文档')).toBeInTheDocument()
   })
+
+  it('folder row context menu offers the copy trio and copies the folder name', async () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    fireEvent.contextMenu(screen.getByTestId('gemini-folder-row'))
+    expect(screen.getByText('sources.copyFileName')).toBeInTheDocument()
+    expect(screen.getByText('sources.copyRelativePath')).toBeInTheDocument()
+    expect(screen.getByText('sources.copyAbsolutePath')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('sources.copyFileName'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('核心架构文档'))
+    await waitFor(() => expect(mockToastSuccess).toHaveBeenCalledWith('sources.copiedToClipboard'))
+  })
+
+  it('folder copy relative path joins the ancestor chain root-first; root folder copies its own name', async () => {
+    const rows = renderDeepNestedTree()
+    expect(rows).toHaveLength(5)
+
+    // 三层嵌套：祖先链根在前 + 自身夹名
+    fireEvent.contextMenu(rows[2])
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('一级文件夹/二级文件夹/三级文件夹'))
+
+    // 根级文件夹：祖先链为空 → 只有自身名
+    fireEvent.contextMenu(rows[0])
+    fireEvent.click(screen.getByText('sources.copyRelativePath'))
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalledWith('一级文件夹'))
+  })
+
+  it('folder copy absolute path is permanently greyed out and never fabricates a path', async () => {
+    const rows = renderDeepNestedTree()
+    fireEvent.contextMenu(rows[0])
+
+    const item = screen.getByText('sources.copyAbsolutePath').closest('[role="menuitem"]')
+    expect(item).not.toBeNull()
+    expect(item).toHaveAttribute('data-disabled', '')
+    // 置灰语义：文件夹只是应用内分组记录，没有磁盘绝对路径
+    expect(item).toHaveAttribute('title', 'sources.grouping.folderNoDiskPath')
+    expect(item).toHaveAttribute('aria-label', 'sources.grouping.folderNoDiskPath')
+    // 名称与相对路径两项可用
+    expect(screen.getByText('sources.copyFileName').closest('[role="menuitem"]')).not.toHaveAttribute('data-disabled')
+    expect(screen.getByText('sources.copyRelativePath').closest('[role="menuitem"]')).not.toHaveAttribute('data-disabled')
+
+    // 点击置灰项：不写剪贴板、也不按 id 拉详情（拒绝编造）
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+    expect(sourcesApi.get).not.toHaveBeenCalled()
+    expect(mockClipboardWrite).not.toHaveBeenCalled()
+  })
 })

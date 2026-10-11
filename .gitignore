@@ -166,3 +166,14 @@ history.txt
 # 工作流临时产物与本地清理备份（不入库）
 .zcode-tmp/
 project_env_backup_*.json
+
+# 跨线盘点/语料提取的本地转储与报告（不入库；.zcode/ 含工作流草稿与
+# 题库种子提取脚本，均为本地工具链状态）
+/zhenti_dump.json
+/library_dump.json
+/pdf_dump.json
+/zhenti_full.txt
+/.zcodetmpsrc1.json
+/nul
+/本地待办清理报告.md
+.zcode/

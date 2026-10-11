@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -12,11 +12,15 @@ import {
 import { CreateEnvWizard } from '@/components/project-envs/CreateEnvWizard'
 import { EnvDetailDialog } from '@/components/project-envs/EnvDetailDialog'
 import { IndustryPoolPanel } from '@/components/ruankao/IndustryPoolPanel'
+import {
+  consumeWizardSeed,
+  type RuankaoWizardSeed,
+} from '@/lib/ruankao/wizard-seed'
 
-// wizardSeed 通道：外部带值打开向导的一次性种子（先例供后续段复用）
-export interface EnvironmentsWizardSeed {
-  industry: string
-}
+// wizardSeed 通道：外部带值打开向导的一次性种子（先例供后续段复用）。
+// 字段全部可选——题库「生成整篇练习文」带 keywords/name 跳入时不得触碰
+// industry 受控输入（存在才落值，见 CreateEnvWizard 的 preset effect）。
+export type EnvironmentsWizardSeed = RuankaoWizardSeed
 
 // 原 /project-environments 页面主体原样平移（data-testid 全部不动），
 // 追加行业池小节（R2/C1：行业池是本 tab 内小节，不设独立 tab）
@@ -29,6 +33,17 @@ export function EnvironmentsPanel() {
   // 存 id 而非对象：保存/处置后列表刷新时弹窗数据跟着走，避免 stale snapshot
   const [detailEnvId, setDetailEnvId] = useState<string | null>(null)
   const detailEnv = envs?.find((env) => env.id === detailEnvId) ?? null
+
+  // 题库「生成整篇练习文」带值跳入（wizardSeed 一次性种子，即焚）：本面板
+  // 挂载时取走种子并直接开向导；消费失败/无种子则一切照旧
+  useEffect(() => {
+    const seed = consumeWizardSeed()
+    if (seed) {
+      setWizardEnvId(null)
+      setWizardSeed(seed)
+      setWizardOpen(true)
+    }
+  }, [])
 
   const openVerification = (envId: string) => {
     setWizardEnvId(envId)

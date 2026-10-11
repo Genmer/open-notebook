@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1783,6 +1783,19 @@ class GenericParagraphResponse(BaseModel):
     paragraph: str
 
 
+class FixedPartsResponse(BaseModel):
+    """Stateless fill-in-the-blank drafts of the three exam-essay fixed parts
+    (abstract / background / closing), derived only from the caller's own
+    ProjectEnv material. The user reviews/edits and saves them into the
+    writing-desk draft — this response is never persisted server-side."""
+
+    abstract: str = Field(
+        ..., description="Abstract slot (<=300 chars, punctuation included)"
+    )
+    background: str = Field(..., description="Project background slot (~500 chars)")
+    closing: str = Field(..., description="Closing slot (~400 chars)")
+
+
 # Ruankao essay library mark API models (软考范文库标记)
 class EssayMarkToggleRequest(BaseModel):
     target_type: str = Field(..., description="'source' or 'source_group'")
@@ -1817,6 +1830,7 @@ class EssayLibrarySource(BaseModel):
     updated: str = ""
     marked_direct: bool
     via_group_ids: List[str] = Field(default_factory=list)
+    source_group_ids: List[str] = Field(default_factory=list)
 
 
 class DanglingMark(BaseModel):
@@ -1855,3 +1869,66 @@ class EssayMarksResponse(BaseModel):
 
 class DanglingCleanupResponse(BaseModel):
     removed: int
+
+
+# Ruankao question workbench generation API models (软考题目工作台生成).
+# Red line (ADR-017): the request carries ONLY exam metadata (title / year /
+# domain / the three question prompts) plus the candidate's own note — there
+# is no source_id, so marked model essays are unreachable by construction.
+class QuestionGeneratePrompts(BaseModel):
+    """Verbatim question texts; empty string = omitted (not asked)."""
+
+    q1: str = ""
+    q2: str = ""
+    q3: str = ""
+
+
+class QuestionGenerateRequest(BaseModel):
+    kind: Literal["breakdown", "q2_points", "outline"]
+    # 「必填」在 handler 里按 trim 后非空裁决（缺字段/空白统一 422 no_title，
+    # 不让 pydantic 的 min_length 抢先返回无 reason 的校验错误）
+    title: str = ""
+    year: str = ""
+    domain: str = ""
+    prompts: QuestionGeneratePrompts = Field(default_factory=QuestionGeneratePrompts)
+    note: str = ""
+
+
+class QuestionBreakdownAngle(BaseModel):
+    name: str
+    thesis_hint: str
+    material_match: str
+    difficulty: Literal["easy", "medium", "hard"]
+    similarity_risk: Literal["low", "medium", "high"]
+
+
+class BreakdownResult(BaseModel):
+    kind: Literal["breakdown"] = "breakdown"
+    angles: List[QuestionBreakdownAngle]
+    combo_advice: str
+
+
+class QuestionQ2Point(BaseModel):
+    heading: str
+    detail: str
+
+
+class Q2PointsResult(BaseModel):
+    kind: Literal["q2_points"] = "q2_points"
+    framework: str
+    points: List[QuestionQ2Point]
+    outline_hint: str
+
+
+class QuestionOutlineParagraph(BaseModel):
+    role: Literal["q2", "q3"]
+    outline: str
+    data_anchors: List[str]
+
+
+class OutlineResult(BaseModel):
+    kind: Literal["outline"] = "outline"
+    paragraphs: List[QuestionOutlineParagraph]
+
+
+QuestionGenerateResponse = Union[BreakdownResult, Q2PointsResult, OutlineResult]

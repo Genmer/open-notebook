@@ -21,6 +21,7 @@ vi.mock('@/components/project-envs/VerificationPanel', () => ({
 describe('EnvironmentsPanel wizardSeed channel', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('clicking an industry chip opens the mock wizard at step 2 with the value', () => {
@@ -51,5 +52,38 @@ describe('EnvironmentsPanel wizardSeed channel', () => {
     expect(screen.getByTestId('env-mode-real')).toBeInTheDocument()
     expect(screen.getByTestId('env-mode-mock')).toBeInTheDocument()
     expect(screen.queryByTestId('env-mock-industry')).not.toBeInTheDocument()
+  })
+
+  it('consumes the question-bank wizard seed on mount: wizard opens prefilled, seed burned', () => {
+    // 题库 D② 一次性种子：keywords + name（无 industry）
+    sessionStorage.setItem(
+      'ruankao.wizardSeed.v1',
+      JSON.stringify({
+        keywords: ['微服务架构及其应用', '微服务与分布式'],
+        name: '论微服务架构及其应用',
+      }),
+    )
+    render(<EnvironmentsPanel />)
+
+    // mock 第 2 步直接打开（模式选择不出现）
+    expect(screen.queryByTestId('env-mode-real')).not.toBeInTheDocument()
+    // keywords-only 种子不触碰 industry 受控输入：保持默认「物流行业」
+    expect(screen.getByTestId('env-mock-industry')).toHaveValue('物流行业')
+    // 名称与关键词预填
+    expect(
+      screen.getByLabelText('projectEnvs.mockNameLabel'),
+    ).toHaveValue('论微服务架构及其应用')
+    expect(screen.getByText('微服务架构及其应用')).toBeInTheDocument()
+    expect(screen.getByText('微服务与分布式')).toBeInTheDocument()
+    // 即焚：种子已消费
+    expect(sessionStorage.getItem('ruankao.wizardSeed.v1')).toBeNull()
+  })
+
+  it('opens nothing extra when no wizard seed is pending', () => {
+    render(<EnvironmentsPanel />)
+    expect(screen.queryByTestId('env-mock-industry')).not.toBeInTheDocument()
+    expect(
+      screen.getAllByTestId('env-create-button').length,
+    ).toBeGreaterThan(0)
   })
 })

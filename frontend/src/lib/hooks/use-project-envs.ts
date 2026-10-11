@@ -279,3 +279,12 @@ export function useGenerateGenericParagraph() {
     },
   })
 }
+
+// 写作台固定件生成（批次4）：无自身 toast——422/502/504 分支文案由写作台
+// 按 detail.reason 分流（generateNoMaterial/generateFailed/generateTimeout），
+// 成功后的覆盖确认与落桶也全在调用方。
+export function useGenerateFixedParts() {
+  return useMutation({
+    mutationFn: (envId: string) => projectEnvsApi.generateFixedParts(envId),
+  })
+}

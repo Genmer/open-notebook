@@ -23,7 +23,6 @@ Design points (PDR-004 §4 + review fixes):
 """
 
 import asyncio
-import inspect
 import json
 import traceback
 import uuid
@@ -39,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from api.project_env_service import render_project_env_context
 from api.routers._chat_shared import (
+    astream_usage_kwargs,
     extract_chat_messages,
     get_session_or_404,
     resolve_agent_binding,
@@ -86,30 +86,9 @@ _KEEPALIVE_SECONDS = 15.0
 
 _PING_LINE = f"data: {json.dumps({'type': 'ping'})}\n\n"
 
-
-def _astream_usage_kwargs(model: Any) -> Dict[str, Any]:
-    """`{'stream_usage': True}` only when the model's `_astream` names it.
-
-    ChatOpenAI._astream is a pure (*args, **kwargs) router onto
-    BaseChatOpenAI._astream, so the MRO walk skips router overrides and
-    inspects the first signature with named parameters; passing the kwarg to
-    models without it (Google/Ollama/Groq/Mistral) would leak into their SDK.
-    """
-    for klass in type(model).__mro__:
-        fn = klass.__dict__.get("_astream")
-        if fn is None:
-            continue
-        try:
-            sig = inspect.signature(fn)
-        except (TypeError, ValueError):
-            continue
-        params = list(sig.parameters.values())
-        if all(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params[1:]):
-            continue
-        if "stream_usage" in sig.parameters:
-            return {"stream_usage": True}
-        return {}
-    return {}
+# Shared with quick_chat (and any future streaming router); the local name
+# stays because tests import it from here.
+_astream_usage_kwargs = astream_usage_kwargs
 
 
 class SynthesizeRequest(BaseModel):

@@ -15,6 +15,7 @@ from langchain_core.output_parsers.pydantic import PydanticOutputParser
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from open_notebook.ai.industry_pool import industry_hint_for, industry_profile_for
 from open_notebook.ai.provision import provision_langchain_model_with_info
 from open_notebook.domain.project_env import DEFAULT_INDUSTRY
 from open_notebook.domain.project_env_rules import GA_ANCHORS, check_ga_ordering
@@ -161,6 +162,17 @@ async def _pace_llm_calls() -> None:
             _LLM_PACE_LAST = now
 
 
+def _emit_stage(on_stage: Optional[Any], stage: str) -> None:
+    """Fire the optional stage progress callback. Stage events are pure
+    progress cosmetics — a raising callback must never break the render."""
+    if on_stage is None:
+        return
+    try:
+        on_stage(stage)
+    except Exception as e:
+        logger.warning(f"on_stage callback failed for stage {stage!r}: {e}")
+
+
 async def _invoke_json(
     template: str,
     data: Dict[str, Any],
@@ -169,9 +181,22 @@ async def _invoke_json(
     budget: Optional[CallBudget] = None,
     validator: Optional[Any] = None,
     max_tokens: int = 4096,
+    on_delta: Optional[Any] = None,
+    on_stage: Optional[Any] = None,
 ) -> Optional[BaseModel]:
     """Render + call + parse, one retry with parser feedback. Returns None
-    when both attempts fail (call or parse); never raises for model issues."""
+    when both attempts fail (call or parse); never raises for model issues.
+
+    on_delta (sync callback, text piece per LLM streaming chunk) switches the
+    model call from ainvoke to astream — same timeout, same parse/validator/
+    retry loop; None keeps the byte-identical ainvoke path.
+
+    on_stage (sync callback, stage name string; guarded, never breaks the
+    render) mirrors on_delta for the no-token-yet window: "waiting" fires
+    before EVERY attempt enters the model call (pacing lock / queueing /
+    connect), "thinking" on the first stream chunk before any text delta and
+    "generating" on the first text delta (streaming branch only, each once).
+    None disables stage reporting entirely."""
     parser: PydanticOutputParser = PydanticOutputParser(pydantic_object=result_model)
     payload = dict(data)
     for attempt in range(2):
@@ -180,6 +205,10 @@ async def _invoke_json(
                 return None
             budget.spend()
         try:
+            # Before EVERY attempt's model call — the pace lock below can hold
+            # a burst for tens of seconds, which is exactly when the caller
+            # needs a "still alive" signal.
+            _emit_stage(on_stage, "waiting")
             await _pace_llm_calls()
             prompt = Prompter(prompt_template=template, parser=parser).render(  # type: ignore[arg-type]
                 data=payload
@@ -187,10 +216,46 @@ async def _invoke_json(
             prov = await provision_langchain_model_with_info(
                 prompt, model_id, "chat", max_tokens=max_tokens
             )
-            raw = await asyncio.wait_for(
-                prov.langchain_model.ainvoke(prompt), timeout=LLM_CALL_TIMEOUT_SECONDS
-            )
-            content = _strip_fences(extract_text_content(raw.content))
+            if on_delta is not None:
+                # Provisioned chat models carry streaming=False (Esperanto's
+                # to_langchain passes it through; langchain-core treats that as
+                # a hard opt-out — astream would yield ONE whole-content chunk
+                # via the invoke fallback). Same throwaway-copy flip as the
+                # chat graph's stream_tokens path: re-enable streaming for
+                # THIS call only, prov.langchain_model stays untouched.
+                stream_model = prov.langchain_model.model_copy(
+                    update={"streaming": True}
+                )
+
+                async def _consume_stream() -> str:
+                    parts: List[str] = []
+                    thinking_sent = False
+                    generating_sent = False
+                    async for chunk in stream_model.astream(prompt):
+                        delta = extract_text_content(chunk.content)
+                        if delta:
+                            if not generating_sent:
+                                generating_sent = True
+                                _emit_stage(on_stage, "generating")
+                            parts.append(delta)
+                            on_delta(delta)
+                        elif not thinking_sent and not generating_sent:
+                            # First chunk(s) with no visible text yet: a
+                            # thinking model reasoning before its first token.
+                            thinking_sent = True
+                            _emit_stage(on_stage, "thinking")
+                    return "".join(parts)
+
+                raw_content = await asyncio.wait_for(
+                    _consume_stream(), timeout=LLM_CALL_TIMEOUT_SECONDS
+                )
+                content = _strip_fences(raw_content)
+            else:
+                raw = await asyncio.wait_for(
+                    prov.langchain_model.ainvoke(prompt),
+                    timeout=LLM_CALL_TIMEOUT_SECONDS,
+                )
+                content = _strip_fences(extract_text_content(raw.content))
             parsed = parser.parse(content)
             if validator is not None:
                 payload["previous_error"] = str(validator(parsed))
@@ -527,6 +592,66 @@ async def render_generic_paragraph(
     return paragraph
 
 
+class FixedPartsDraft(BaseModel):
+    """Fill-in-the-blank fixed parts for one exam essay. Derived only from the
+    candidate's own project material — never from model essays."""
+
+    abstract: str = ""
+    background: str = ""
+    closing: str = ""
+
+
+async def render_fixed_parts(
+    name: str,
+    period_start: Optional[str],
+    period_end: Optional[str],
+    source_type: str,
+    candidate: Dict[str, Any],
+    industry: Optional[str] = None,
+) -> Dict[str, str]:
+    """Stateless generation of the three fixed parts (abstract / background /
+    closing) as fill-in-the-blank text; never persisted by this call — the user
+    reviews and saves them into the writing-desk draft.
+
+    Red line (ADR-017): the prompt context is ONLY the ProjectEnv material
+    fields passed in `candidate` — no source retrieval, no notebook context,
+    so marked model essays are unreachable by construction."""
+
+    def _validate(parts: FixedPartsDraft) -> str:
+        for slot in ("abstract", "background", "closing"):
+            if not getattr(parts, slot).strip():
+                return f"{slot} is empty"
+        return ""
+
+    data: Dict[str, Any] = {
+        "name": name,
+        "period_start": period_start or "",
+        "period_end": period_end or "",
+        "source_type": source_type,
+        "industry": (industry or "").strip(),
+        "fields": [
+            {"field": field, "text": str(text or "")}
+            for field, text in candidate.items()
+            if str(text or "").strip()
+        ],
+    }
+    parsed = await _invoke_json(
+        "project_env/fixed_parts",
+        data,
+        FixedPartsDraft,
+        get_light_model(),
+        None,
+        validator=_validate,
+    )
+    if parsed is None or not isinstance(parsed, FixedPartsDraft):
+        raise ValueError("fixed parts returned unusable output")
+    return {
+        "abstract": parsed.abstract.strip(),
+        "background": parsed.background.strip(),
+        "closing": parsed.closing.strip(),
+    }
+
+
 def _legal_window_for_template() -> Dict[str, str]:
     from open_notebook.domain.project_env_rules import legal_window
 
@@ -543,12 +668,15 @@ async def render_mock(
     feedback: Optional[str] = None,
 ) -> Optional[MockDraft]:
     window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
     data: Dict[str, Any] = {
         "keywords": keywords,
         "name": name or "",
         "fixed_period_start": period_start or "",
         "fixed_period_end": period_end or "",
-        "industry": (industry or "").strip() or DEFAULT_INDUSTRY,
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
         "feedback": feedback or "",
         **window,
     }
@@ -600,12 +728,15 @@ async def generate_materials(
     budget: Optional[CallBudget] = None,
 ) -> Optional[MaterialsBundle]:
     window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
     data: Dict[str, Any] = {
         "keywords": keywords,
         "name": name or "",
         "fixed_period_start": period_start or "",
         "fixed_period_end": period_end or "",
-        "industry": (industry or "").strip() or DEFAULT_INDUSTRY,
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
         **window,
     }
     # 18 条素材候选是全管线最大的单次 JSON 输出，4096 上限会截断它
@@ -629,12 +760,15 @@ async def generate_routes(
     budget: Optional[CallBudget] = None,
 ) -> Optional[RoutesBundle]:
     window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
     data: Dict[str, Any] = {
         "keywords": keywords,
         "name": name or "",
         "fixed_period_start": period_start or "",
         "fixed_period_end": period_end or "",
-        "industry": (industry or "").strip() or DEFAULT_INDUSTRY,
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
         **window,
     }
     parsed = await _invoke_json(
@@ -654,6 +788,7 @@ async def render_materials_draft(
     feedback: Optional[str] = None,
 ) -> Optional[MockDraft]:
     window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
     data: Dict[str, Any] = {
         "keywords": keywords,
         "selected_items": [
@@ -667,7 +802,9 @@ async def render_materials_draft(
         "name": name or "",
         "fixed_period_start": period_start or "",
         "fixed_period_end": period_end or "",
-        "industry": (industry or "").strip() or DEFAULT_INDUSTRY,
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
         "feedback": feedback or "",
         **window,
     }
@@ -688,13 +825,16 @@ async def render_route_draft(
     feedback: Optional[str] = None,
 ) -> Optional[MockDraft]:
     window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
     data: Dict[str, Any] = {
         "keywords": keywords,
         "route": route,
         "name": name or "",
         "fixed_period_start": period_start or "",
         "fixed_period_end": period_end or "",
-        "industry": (industry or "").strip() or DEFAULT_INDUSTRY,
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
         "feedback": feedback or "",
         **window,
     }

@@ -74,6 +74,8 @@ import { SourceInsightDialog } from '@/components/sources/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/sources/NotebookAssociations'
 import { SourceEmbeddingProgress } from '@/components/sources/SourceEmbeddingProgress'
 import { SourceProcessingSteps } from '@/components/sources/SourceProcessingSteps'
+import { EssayMarkEditGuardDialog } from '@/components/ruankao/EssayMarkEditGuardDialog'
+import { useEssayMarkStatus } from '@/lib/hooks/use-essay-marks'
 
 // pdf.js is browser-only and heavy: load the viewer lazily, client-side only
 // (same pattern as markdown-editor.tsx).
@@ -146,6 +148,12 @@ function SourceDetailContentInner({
   const [activeCite, setActiveCite] = useState(citeQuote)
   // Insight completion catch-up compares against the count before the job ran.
   const insightsCountRef = useRef(0)
+
+  // 编辑公开范文确认（ruankao 范文库红线集合的 UX 护栏）：effective 范文改
+  // 标题先弹确认；status 查询失败时 fail-closed 阻断保存。
+  const [essayGuardOpen, setEssayGuardOpen] = useState(false)
+  const pendingTitleRef = useRef<string | null>(null)
+  const essayMarkStatus = useEssayMarkStatus(sourceId)
 
   // A 404 means the source was deleted (e.g. a dangling chat/ask reference) —
   // handled by the shared "content no longer exists" state. The global query
@@ -281,9 +289,7 @@ function SourceDetailContentInner({
     }
   }
 
-  const handleUpdateTitle = async (title: string) => {
-    if (!source || title === source.title) return
-
+  const doSaveTitle = async (title: string) => {
     try {
       await updateSource.mutateAsync({ id: sourceId, data: { title } })
       // The mutation invalidates the source queries (list + detail); patch the
@@ -298,6 +304,23 @@ function SourceDetailContentInner({
       console.error('Failed to update source title:', err)
       await refetchSource()
     }
+  }
+
+  const handleUpdateTitle = async (title: string) => {
+    if (!source || title === source.title) return
+
+    pendingTitleRef.current = title
+    // effective 范文（红线集合内）先确认再放行；status === null（不在集合）直接保存
+    if (essayMarkStatus.data?.source?.effective) {
+      setEssayGuardOpen(true)
+      return
+    }
+    if (essayMarkStatus.isError) {
+      // fail-closed：查不到标记状态就阻断本次编辑
+      toast.error(t('ruankao.essayMark.editGuardStatusFailed'))
+      return
+    }
+    await doSaveTitle(title)
   }
 
   const handleEmbedContent = async () => {
@@ -963,6 +986,21 @@ function SourceDetailContentInner({
 
       {/* Source-file PDF viewing now lives inline in the content tab (the
           "show source file" toggle swaps it with the parsed text). */}
+
+      <EssayMarkEditGuardDialog
+        open={essayGuardOpen}
+        sourceTitle={source.title}
+        onConfirm={async () => {
+          setEssayGuardOpen(false)
+          const pending = pendingTitleRef.current
+          pendingTitleRef.current = null
+          if (pending) await doSaveTitle(pending)
+        }}
+        onCancel={() => {
+          setEssayGuardOpen(false)
+          pendingTitleRef.current = null
+        }}
+      />
 
       <AlertDialog open={!!insightToDelete} onOpenChange={() => setInsightToDelete(null)}>
         <AlertDialogContent>

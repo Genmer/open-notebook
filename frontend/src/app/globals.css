@@ -835,6 +835,55 @@
   top: 0;
 }
 
+/* 题库工作台生成态：不定长流光条（token 进度的视觉心跳；reduced-motion 静止为呼吸态） */
+@keyframes qstream-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.qstream-bar {
+  animation: qstream-slide 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qstream-bar {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.45;
+  }
+}
+
+/* 快捷问答侧边卡：滑入动画 + 拾取模式的十字光标/禁选中 */
+@keyframes quickask-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.quickask-panel {
+  animation: quickask-panel-in 0.22s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quickask-panel {
+    animation: none;
+  }
+}
+
+.quickask-picking,
+.quickask-picking * {
+  cursor: crosshair !important;
+  user-select: none !important;
+}
+
 /* 项目卡片身份色条：缓慢漂移的纵向渐变（流动感，prefers-reduced-motion 时静止） */
 @keyframes env-accent-drift {
   from {

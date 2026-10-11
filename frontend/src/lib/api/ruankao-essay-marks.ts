@@ -2,6 +2,7 @@ import apiClient from './client'
 import {
   DanglingCleanupResponse,
   EssayMarksLibraryResponse,
+  EssayMarksResponse,
   EssayMarkToggleRequest,
   EssayMarkToggleResponse,
 } from '@/lib/types/api'
@@ -30,6 +31,14 @@ export const essayMarksApi = {
       '/ruankao/essay-marks',
       { params: { dangling: true } }
     )
+    return response.data
+  },
+
+  // 单来源标记状态（编辑守卫消费）：source_id 缺 ":" 前缀时后端自动补 "source:"
+  status: async (sourceId: string): Promise<EssayMarksResponse> => {
+    const response = await apiClient.get<EssayMarksResponse>('/ruankao/essay-marks', {
+      params: { source_id: sourceId },
+    })
     return response.data
   },
 }

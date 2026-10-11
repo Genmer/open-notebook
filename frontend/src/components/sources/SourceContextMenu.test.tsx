@@ -188,4 +188,58 @@ describe('GroupContextMenuContent', () => {
     expect(screen.queryByText('sources.grouping.newSubgroup')).toBeNull()
     expect(screen.getByText('common.edit')).toBeInTheDocument()
   })
+
+  it('renders the copy trio only when its handlers are provided', () => {
+    renderGroupMenu({ onRename: vi.fn(), onDelete: vi.fn() })
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+
+    expect(screen.queryByText('sources.copyFileName')).toBeNull()
+    expect(screen.queryByText('sources.copyRelativePath')).toBeNull()
+    expect(screen.queryByText('sources.copyAbsolutePath')).toBeNull()
+    // 仅断言传入过 handler 的原有项（rename/delete）；newSubgroup/moveTo 未传即不渲染
+    expect(screen.getByText('common.edit')).toBeInTheDocument()
+    expect(screen.getByText('common.delete')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['sources.copyFileName', 'onCopyName'],
+    ['sources.copyRelativePath', 'onCopyRelativePath'],
+    ['sources.copyAbsolutePath', 'onCopyAbsolutePath'],
+  ] as const)('clicking %s fires its handler', (label, handler) => {
+    const props = {
+      onCopyName: vi.fn(),
+      onCopyRelativePath: vi.fn(),
+      onCopyAbsolutePath: vi.fn(),
+    }
+    renderGroupMenu(props)
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+    fireEvent.click(screen.getByText(label))
+    expect(props[handler]).toHaveBeenCalledTimes(1)
+  })
+
+  it('greys out copy absolute path only when disableCopyAbsolutePath is set', () => {
+    const props = {
+      onCopyName: vi.fn(),
+      onCopyRelativePath: vi.fn(),
+      onCopyAbsolutePath: vi.fn(),
+      disableCopyAbsolutePath: true,
+    }
+    renderGroupMenu(props)
+    fireEvent.contextMenu(screen.getByTestId('ctx-trigger'))
+
+    const item = screen.getByText('sources.copyAbsolutePath').closest('[role="menuitem"]')
+    expect(item).not.toBeNull()
+    expect(item).toHaveAttribute('data-disabled', '')
+    // 置灰语义讲清缘由：文件夹只存在于应用内，没有磁盘绝对路径
+    expect(item).toHaveAttribute('title', 'sources.grouping.folderNoDiskPath')
+    expect(item).toHaveAttribute('aria-label', 'sources.grouping.folderNoDiskPath')
+
+    // 名称与相对路径两项不受置灰影响
+    expect(screen.getByText('sources.copyFileName').closest('[role="menuitem"]')).not.toHaveAttribute('data-disabled')
+    expect(screen.getByText('sources.copyRelativePath').closest('[role="menuitem"]')).not.toHaveAttribute('data-disabled')
+
+    // 点击置灰项不触发 handler（绝不写编造路径）
+    fireEvent.click(screen.getByText('sources.copyAbsolutePath'))
+    expect(props.onCopyAbsolutePath).not.toHaveBeenCalled()
+  })
 })

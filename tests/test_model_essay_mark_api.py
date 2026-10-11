@@ -205,9 +205,13 @@ class TestLibraryEndpoint:
         sources = {s["id"]: s for s in body["sources"]}
         assert sources["source:essay1"]["marked_direct"] is True
         assert sources["source:essay1"]["extension"] == "md"
+        assert sources["source:essay1"]["source_group_ids"] == []
         assert sources["source:essay2"]["marked_direct"] is False
         assert sources["source:essay2"]["via_group_ids"] == ["source_group:folder"]
+        # 直接归属（子文件夹成员）：树挂载用，区别于经文件夹生效的 via_group_ids
+        assert sources["source:essay2"]["source_group_ids"] == ["source_group:sub"]
         assert sources["source:normal"]["marked_direct"] is False
+        assert sources["source:normal"]["source_group_ids"] == []
         # The mark on the deleted source is reported, not hidden.
         assert body["dangling_marks"] == [
             {
@@ -223,6 +227,61 @@ class TestLibraryEndpoint:
             response = client.get("/api/ruankao/essay-marks/library")
         assert response.status_code == 200
         assert response.json()["stats"]["effective_total"] == 0
+
+    def test_library_reports_direct_folder_membership_per_source(self, client):
+        fake = FakeRuankaoDB(
+            groups=[
+                {
+                    "id": "source_group:root",
+                    "name": "Root",
+                    "parent": None,
+                    "source_view": "source_view:ai_content",
+                },
+                {
+                    "id": "source_group:sub",
+                    "name": "Sub",
+                    "parent": "source_group:root",
+                    "source_view": "source_view:ai_content",
+                },
+            ],
+            members=[
+                ("source_group:root", "source:multi"),
+                ("source_group:sub", "source:multi"),
+                ("source_group:sub", "source:leaf"),
+            ],
+            source_rows=[
+                {
+                    "id": "source:multi",
+                    "title": "双夹成员",
+                    "asset": None,
+                    "updated": "2026-03-01",
+                },
+                {
+                    "id": "source:leaf",
+                    "title": "仅子夹成员",
+                    "asset": None,
+                    "updated": "2026-03-02",
+                },
+                {
+                    "id": "source:loose",
+                    "title": "未入夹",
+                    "asset": None,
+                    "updated": "2026-03-03",
+                },
+            ],
+        )
+        with _mark_db(fake), _service_db(fake):
+            response = client.get("/api/ruankao/essay-marks/library")
+
+        assert response.status_code == 200
+        sources = {s["id"]: s for s in response.json()["sources"]}
+        # 直接归属按成员边原样反查（id 排序）：一源可挂多层，未入夹来源为空列表
+        assert sources["source:multi"]["source_group_ids"] == [
+            "source_group:root",
+            "source_group:sub",
+        ]
+        assert sources["source:leaf"]["source_group_ids"] == ["source_group:sub"]
+        assert sources["source:loose"]["source_group_ids"] == []
 
 
 class TestToggleEndpoint:

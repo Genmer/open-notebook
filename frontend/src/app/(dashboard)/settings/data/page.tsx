@@ -13,7 +13,7 @@ export default function DataManagementPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+        <div className="mx-auto max-w-6xl p-6 space-y-6">
           {/* Header */}
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight flex items-center gap-2">

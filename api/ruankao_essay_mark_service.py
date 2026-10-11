@@ -108,6 +108,15 @@ async def get_library(view_id: str) -> Dict[str, Any]:
                 str(pair.get("in"))
             )
 
+    # Direct folder membership per source — the reverse of members_by_group.
+    # That map already covers every folder of the view (by_id holds the view's
+    # full group list), so this reverse index costs no extra query; ids outside
+    # the view's tree never appear here, matching the rendered folder tree.
+    groups_by_source: Dict[str, Set[str]] = {}
+    for gid, sids in members_by_group.items():
+        for sid in sids:
+            groups_by_source.setdefault(sid, set()).add(gid)
+
     groups_out: List[Dict[str, Any]] = []
     for gid, row in by_id.items():
         subtree = _collect_subtree_ids_bounded(children, gid)
@@ -142,6 +151,7 @@ async def get_library(view_id: str) -> Dict[str, Any]:
                 "updated": str(row.get("updated") or ""),
                 "marked_direct": sid in state.direct_source_ids,
                 "via_group_ids": sorted(state.via_group_ids.get(sid, [])),
+                "source_group_ids": sorted(groups_by_source.get(sid, set())),
             }
         )
 

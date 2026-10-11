@@ -61,6 +61,18 @@ export function useEssayMarksLibrary(viewId: string) {
   })
 }
 
+// 单来源标记状态（编辑守卫消费）：effective=true 的来源处于范文库红线集合。
+// staleTime 0 保证守卫每次都拿现值；查询只回 id 与布尔（标记表无正文，很轻）。
+// 落在 ['ruankao-essay-marks'] 前缀下，toggle 的 invalidate 会自动刷新它。
+export function useEssayMarkStatus(sourceId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.essayMarkStatus(sourceId ?? ''),
+    queryFn: () => essayMarksApi.status(sourceId as string),
+    enabled: sourceId != null && sourceId !== '',
+    staleTime: 0,
+  })
+}
+
 // 单按钮幂等 toggle：乐观切换，失败回滚 + toast（mark.md 2.2 操作流）
 export function useToggleEssayMark() {
   const queryClient = useQueryClient()

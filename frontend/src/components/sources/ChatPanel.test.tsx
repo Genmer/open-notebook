@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatPanel } from './ChatPanel'
 import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
@@ -14,8 +15,16 @@ vi.mock('@/lib/hooks/use-modal-manager', () => ({
 
 // SessionManager (rendered inside the session dialog once session props are
 // passed) looks up model names via react-query — stubbed to stay provider-free.
+// useModelDefaults feeds ChatParticipantSelector, which mounts whenever the
+// seed cases pass onAgentChange.
 vi.mock('@/lib/hooks/use-models', () => ({
   useModels: () => ({ data: [{ id: 'model:a', name: 'GPT-4o' }] }),
+  useModelDefaults: () => ({ data: undefined }),
+}))
+
+// Same participant-selector dependency as above (agent list dropdown).
+vi.mock('@/lib/hooks/use-agents', () => ({
+  useAgents: () => ({ data: [], isLoading: false }),
 }))
 
 // Stubbed so the empty-input parallel hint can be asserted without a Toaster.
@@ -23,6 +32,7 @@ vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
     success: vi.fn(),
+    info: vi.fn(),
   },
 }))
 
@@ -1217,5 +1227,119 @@ describe('ChatPanel parallel composer review fixes', () => {
     expect(screen.queryByTestId('parallel-group-par_1')).toBeNull()
     expect(screen.getByTestId('parallel-live-card')).toBeInTheDocument()
     expect(screen.getByTestId('parallel-synthesis-bar')).toBeInTheDocument()
+  })
+})
+
+// ── ruankao coach handoff seed (writing-desk → coach chat bridge) ──────────
+// The seed lives in sessionStorage (written by writeCoachHandoff); ChatPanel
+// consumes it once on mount: prefill the composer, preselect the project env
+// and the coach agent. No seed → zero behaviour change.
+
+
+const agentsListMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/api/agents', () => ({
+  agentsApi: { list: (...args: unknown[]) => agentsListMock(...args) },
+}))
+
+const mockToastInfo = vi.mocked(toast.info)
+
+function seedHandoff(notebookId: string, text: string, projectEnvId?: string) {
+  window.sessionStorage.setItem(
+    'ruankao.coachHandoff.v1',
+    JSON.stringify({ text, projectEnvId: projectEnvId ?? null, notebookId })
+  )
+}
+
+// The seeded cases pass onProjectEnvChange, which mounts ChatProjectEnv and
+// its react-query hooks — wrap with a provider (composer-only cases above
+// stay provider-free).
+function renderSeeded(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
+
+describe('ChatPanel ruankao coach handoff seed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    window.sessionStorage.clear()
+    agentsListMock.mockReset()
+  })
+
+  it('prefills the composer and preselects env + coach agent from a matching seed', async () => {
+    seedHandoff('notebook:n1', '论点区草稿……', 'project_env:e1')
+    agentsListMock.mockResolvedValue([
+      { id: 'agent:coach', name: '软考论文写作教练' },
+      { id: 'agent:other', name: '别的智能体' },
+    ])
+    const onProjectEnvChange = vi.fn()
+    const onAgentChange = vi.fn()
+
+    renderSeeded(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="notebook:n1"
+        onProjectEnvChange={onProjectEnvChange}
+        onAgentChange={onAgentChange}
+      />
+    )
+
+    // 输入框预填种子文本（预填不代发：发送仍由考生手动点击）
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('论点区草稿……')
+
+    expect(onProjectEnvChange).toHaveBeenCalledWith('project_env:e1')
+    await waitFor(() => {
+      expect(onAgentChange).toHaveBeenCalledWith('agent:coach')
+    })
+    expect(mockToastInfo).not.toHaveBeenCalled()
+    // 一次性：种子已被消费
+    expect(window.sessionStorage.getItem('ruankao.coachHandoff.v1')).toBeNull()
+  })
+
+  it('does nothing without a seed', () => {
+    agentsListMock.mockResolvedValue([])
+    const onProjectEnvChange = vi.fn()
+    const onAgentChange = vi.fn()
+
+    renderSeeded(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="notebook:n1"
+        onProjectEnvChange={onProjectEnvChange}
+        onAgentChange={onAgentChange}
+      />
+    )
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect(onProjectEnvChange).not.toHaveBeenCalled()
+    expect(onAgentChange).not.toHaveBeenCalled()
+  })
+
+  it('toasts guidance when the coach agent cannot be found', async () => {
+    seedHandoff('notebook:n1', '草稿')
+    agentsListMock.mockResolvedValue([{ id: 'agent:other', name: '别的智能体' }])
+
+    renderSeeded(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        notebookId="notebook:n1"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockToastInfo).toHaveBeenCalledWith('ruankao.essay.write.handoffNoAgent')
+    })
   })
 })

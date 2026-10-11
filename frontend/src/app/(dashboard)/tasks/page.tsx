@@ -165,7 +165,8 @@ export default function TasksPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+        {/* 内容列宽约定（L 线 §2.1）：列表型容器 mx-auto max-w-6xl */}
+        <div className="mx-auto max-w-6xl p-6 space-y-6" data-testid="tasks-page-content">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight">

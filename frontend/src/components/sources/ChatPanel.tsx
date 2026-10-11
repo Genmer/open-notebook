@@ -49,6 +49,7 @@ import { useChatPreferencesStore } from '@/lib/stores/chat-preferences-store'
 import type { NotebookSourceFilters } from '@/lib/hooks/use-sources'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { consumeCoachHandoff, findCoachAgentId } from '@/lib/ruankao/coach-handoff'
 
 interface NotebookContextStats {
   sourcesInsights: number
@@ -254,6 +255,26 @@ export function ChatPanel({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isFullscreen, panelLeftOpen, panelRightOpen])
+
+  // ruankao 教练种子（一次性，写作台「发教练批改」桥）：挂载时消费
+  // sessionStorage 种子——文本预填进输入框（由考生自己点发送，不代发）、
+  // 预选项目环境与教练智能体。无种子时零行为变化（纯增量 effect）。
+  const [coachSeedText, setCoachSeedText] = useState<string | null>(null)
+  useEffect(() => {
+    if (!notebookId) return
+    const seed = consumeCoachHandoff(notebookId)
+    if (!seed) return
+    setCoachSeedText(seed.text)
+    if (seed.projectEnvId) onProjectEnvChange?.(seed.projectEnvId)
+    findCoachAgentId()
+      .then((agentId) => {
+        if (agentId) onAgentChange?.(agentId)
+        else toast.info(t('ruankao.essay.write.handoffNoAgent'))
+      })
+      .catch(() => toast.info(t('ruankao.essay.write.handoffNoAgent')))
+    // mount-once：种子在挂载瞬间消费，后续 props 变化不重复触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Stable reference-click handler so memoized messages don't re-render on
   // composer keystrokes (which no longer re-render this component at all, since
@@ -556,6 +577,7 @@ export function ChatPanel({
           onStopStreaming={onStopStreaming}
           modelOverride={modelOverride}
           onModelChange={onModelChange}
+          coachSeedText={coachSeedText}
         />
       </CardContent>
 
@@ -775,6 +797,9 @@ interface ChatComposerProps {
     send: (message: string, runs: string[]) => void
     cancel: () => void
   }
+  /** One-shot ruankao coach seed (writing-desk handoff): pre-fills the input
+   * once when it arrives. Absent/empty on every chat without a seed. */
+  coachSeedText?: string | null
 }
 
 function ChatComposer({
@@ -785,12 +810,19 @@ function ChatComposer({
   onModelChange,
   agent,
   onAgentChange,
-  parallelChat
+  parallelChat,
+  coachSeedText
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const chatInputId = useId()
   const enterToSendId = useId()
   const [input, setInput] = useState('')
+
+  // ruankao 教练种子一次性预填：种子在父组件挂载 effect 里消费并传入（首次
+  // 渲染时为 null，到位后此 effect 预填一次）；清空/编辑不受影响
+  useEffect(() => {
+    if (coachSeedText) setInput(coachSeedText)
+  }, [coachSeedText])
   const enterToSendRaw = useChatPreferencesStore((state) => state.enterToSend)
   const setEnterToSend = useChatPreferencesStore((state) => state.setEnterToSend)
   const hasHydrated = useChatPreferencesStore((state) => state.hasHydrated)

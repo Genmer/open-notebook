@@ -514,6 +514,15 @@ export interface GenericParagraphResponse {
   paragraph: string
 }
 
+// Fill-in-the-blank fixed-parts draft (abstract/background/closing), derived
+// only from the caller's ProjectEnv material; saved by the user into the
+// writing-desk draft, never persisted server-side.
+export interface FixedPartsResponse {
+  abstract: string
+  background: string
+  closing: string
+}
+
 export interface ProjectEnvDeleteResponse {
   success: boolean
   affected_sessions: number
@@ -856,6 +865,7 @@ export interface EssayLibrarySource {
   updated: string
   marked_direct: boolean
   via_group_ids: string[]
+  source_group_ids: string[]
 }
 
 export interface DanglingMark {
@@ -882,6 +892,89 @@ export interface EssayMarkToggleResponse {
   target_id: string
 }
 
+export interface EssayMarkRecord {
+  id: string
+  target_type: string
+  target_id: string
+  created: string
+}
+
+export interface EssayMarkSourceStatus {
+  id: string
+  marked_direct: boolean
+  via_group_ids: string[]
+  effective: boolean
+}
+
+export interface EssayMarksResponse {
+  marks: EssayMarkRecord[]
+  stats: EssayMarkStats
+  effective_source_ids: string[]
+  source: EssayMarkSourceStatus | null
+}
+
 export interface DanglingCleanupResponse {
   removed: number
 }
+
+// Ruankao question workbench generation (软考题目工作台, POST /api/ruankao/questions/generate)
+// Red line (ADR-017): the request carries ONLY exam metadata + the user's
+// note — no source id, no retrieval, model essays unreachable by construction.
+export type QuestionGenerationKind = 'breakdown' | 'q2_points' | 'outline'
+
+export interface QuestionGeneratePrompts {
+  q1?: string
+  q2?: string
+  q3?: string
+}
+
+export interface QuestionGenerateRequest {
+  kind: QuestionGenerationKind
+  title: string
+  year?: string
+  domain?: string
+  prompts?: QuestionGeneratePrompts
+  note?: string
+}
+
+export interface BreakdownAngle {
+  name: string
+  thesis_hint: string
+  material_match: string
+  difficulty: 'easy' | 'medium' | 'hard'
+  similarity_risk: 'low' | 'medium' | 'high'
+}
+
+export interface BreakdownResult {
+  kind: 'breakdown'
+  angles: BreakdownAngle[]
+  combo_advice: string
+}
+
+export interface Q2Point {
+  heading: string
+  detail: string
+}
+
+export interface Q2PointsResult {
+  kind: 'q2_points'
+  framework: string
+  points: Q2Point[]
+  outline_hint: string
+}
+
+export interface OutlineParagraph {
+  role: 'q2' | 'q3'
+  outline: string
+  data_anchors: string[]
+}
+
+export interface OutlineResult {
+  kind: 'outline'
+  paragraphs: OutlineParagraph[]
+}
+
+export type QuestionGenerateResult =
+  | BreakdownResult
+  | Q2PointsResult
+  | OutlineResult

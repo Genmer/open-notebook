@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { filterIndustryPool } from '@/lib/ruankao/industry-pool'
+import { filterIndustryPool, industryTitleLines } from '@/lib/ruankao/industry-pool'
 
 // 行业池小节（R2/C1：并入项目环境 tab，不设独立 tab）：
 // 名称级静态条目本地过滤，点条目经 onPickIndustry 带值打开 mock 向导
@@ -35,15 +35,17 @@ export function IndustryPoolPanel({ onPickIndustry }: IndustryPoolPanelProps) {
       />
       {filtered.length > 0 ? (
         <div className="flex max-w-4xl flex-wrap gap-2" data-testid="ruankao-industry-list">
-          {filtered.map((name) => (
+          {filtered.map((entry) => (
             <button
-              key={name}
+              key={entry.name}
               type="button"
-              onClick={() => onPickIndustry(name)}
-              data-testid={`ruankao-industry-item-${name}`}
+              onClick={() => onPickIndustry(entry.name)}
+              data-testid={`ruankao-industry-item-${entry.name}`}
+              // hover 解释走池内 hint + 画像（tech-glossary 先例：原生 title，未命中静默退化）
+              title={industryTitleLines(entry, t).join('\n')}
               className="rounded-full border px-3 py-1 text-xs transition-colors hover:border-teal/60 hover:text-teal"
             >
-              {name}
+              {entry.name}
             </button>
           ))}
         </div>

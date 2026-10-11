@@ -61,7 +61,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* Browser extensions (e.g. AdGuard) rewrite this tag before React
+            hydrates — injecting their own src/nonce and swapping the inline
+            text. The script source itself is static, so any mismatch is
+            third-party; same posture as the html tag above. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+          suppressHydrationWarning
+        />
       </head>
       <body
         className={`${instrumentSans.variable} ${bricolageGrotesque.variable} ${splineSansMono.variable} ${geistSans.variable} ${geistMono.variable} font-sans`}

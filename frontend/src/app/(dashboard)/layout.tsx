@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { ModalProvider } from '@/components/providers/ModalProvider'
 import { CreateDialogsProvider } from '@/lib/hooks/use-create-dialogs'
 import { CommandPalette } from '@/components/common/CommandPalette'
+import { QuickAskHost } from '@/components/quick-ask/QuickAskHost'
 
 export default function DashboardLayout({
   children,
@@ -57,6 +58,9 @@ export default function DashboardLayout({
         {children}
         <ModalProvider />
         <CommandPalette />
+        {/* 快捷问答侧边卡：挂在 dashboard 布局 → 所有页面（含 window.open
+            新窗口打开的应用页）都可用，且路由切换不卸载 */}
+        <QuickAskHost />
       </CreateDialogsProvider>
     </ErrorBoundary>
   )

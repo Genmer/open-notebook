@@ -8,6 +8,8 @@ runtime validator becomes the only guard and every mock off_table answer costs
 a wasted retry, while material mode risks GA dates judged from memory.
 """
 
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -639,3 +641,369 @@ class TestPipelineIndustryFallback:
 
         assert captured["project_env/mock_generate"]["industry"] == "医疗行业"
         assert captured["project_env/materials_generate"]["industry"] == "医疗行业"
+
+
+# --- 行业业务特征提示注入（industry_hint，方案 B：后端按行业名查表） ---
+
+HINT_MARKER = "该行业业务特征参考："
+POOL_INDUSTRY = "银行核心系统改造"
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_mock_templates_render_industry_hint_line(template, model, base):
+    """契约 3：池内行业渲染时必须把业务特征提示逐字带进 COMPANY CONTEXT，
+    让 mock 项目背景贴合行业真实业务面。"""
+    from open_notebook.ai.industry_pool import INDUSTRY_HINTS
+
+    hint = INDUSTRY_HINTS[POOL_INDUSTRY]
+    text = _render(
+        template,
+        model,
+        {
+            "industry": POOL_INDUSTRY,
+            "industry_hint": hint,
+            **base,
+            **_WINDOW,
+        },
+    )
+
+    assert HINT_MARKER + hint in text
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_mock_templates_drop_hint_line_without_hint(template, model, base):
+    """契约 3 退化：空串或键缺省（池外自定义行业 / 默认行业 / 老数据）都不得
+    渲染出提示行。"""
+    for extra in ({"industry_hint": ""}, {}):
+        text = _render(
+            template, model, {"industry": "医疗行业", **extra, **base, **_WINDOW}
+        )
+        assert HINT_MARKER not in text
+        assert "该行业业务特征参考" not in text
+
+
+# 5 个模板中注入的条件行（逐字一致；read_text 的 universal newlines 把 CRLF
+# 归一为 LF，与 jinja loader 的读取口径相同）
+INJECTED_HINT_LINES = (
+    "{%- if industry_hint %}\n- 该行业业务特征参考：{{ industry_hint }}\n{%- endif %}\n"
+)
+
+
+def _template_source(template: str) -> str:
+    name = template.rsplit("/", 1)[-1]
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "prompts"
+        / "project_env"
+        / f"{name}.jinja"
+    )
+    return path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_templates_without_hint_byte_identical_to_pre_injection(template, model, base):
+    """契约 3 退化逐字节锁定：剥离注入行后的模板源（= 注入前现状）与现模板在
+    industry_hint 为空串时渲染结果必须逐字节一致——`{%- -%}` 空白控制保证
+    提示机制对无提示场景零足迹。"""
+    source = _template_source(template)
+    assert INJECTED_HINT_LINES in source  # 注入行在位，剥离才有意义
+    data = {"industry": POOL_INDUSTRY, "industry_hint": "", **base, **_WINDOW}
+    now = Prompter(prompt_template=template).render(data=dict(data))
+    pre_injection = Prompter(
+        template_text=source.replace(INJECTED_HINT_LINES, "")
+    ).render(data=dict(data))
+    assert now == pre_injection
+
+
+async def _capture_five(industry):
+    """Run the five main-chain functions, capturing each template's render data
+    (same _invoke_json patch as TestPipelineIndustryFallback)."""
+    import open_notebook.ai.project_env_pipeline as pipeline
+
+    captured: dict = {}
+
+    async def fake_invoke(
+        template,
+        data,
+        result_model,
+        model_id,
+        budget=None,
+        validator=None,
+        max_tokens=4096,
+    ):
+        captured[template] = data
+        return result_model()
+
+    with patch.object(pipeline, "_invoke_json", fake_invoke):
+        await pipeline.render_mock(["k"], None, None, None, industry=industry)
+        await pipeline.generate_materials(["k"], None, None, None, industry=industry)
+        await pipeline.generate_routes(["k"], None, None, None, industry=industry)
+        await pipeline.render_materials_draft(
+            ["k"],
+            [{"category": "background", "title": "t", "text": "x"}],
+            None,
+            None,
+            None,
+            industry=industry,
+        )
+        await pipeline.render_route_draft(
+            ["k"], {"id": "r1"}, None, None, None, industry=industry
+        )
+
+    assert sorted(captured) == sorted(
+        [
+            "project_env/mock_generate",
+            "project_env/materials_generate",
+            "project_env/routes_generate",
+            "project_env/draft_from_materials",
+            "project_env/draft_from_route",
+        ]
+    )
+    return captured
+
+
+class TestPipelineIndustryHint:
+    """五主链函数在渲染时按行业名现场推导 industry_hint（不落库、不随请求
+    走，四条重发路径天然一致）；旁路 generic_paragraph / fixed_parts 不注入
+    （设计稿 ③ 3.4：ADR-017 收窄面不扩写 + 双模式风险）。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blank", [None, "", "   "], ids=["none", "empty", "blank"])
+    async def test_blank_industry_yields_no_hint_in_all_five(self, blank):
+        captured = await _capture_five(blank)
+
+        assert all(
+            data["industry"] == DEFAULT_INDUSTRY for data in captured.values()
+        ), captured
+        assert all(data["industry_hint"] == "" for data in captured.values()), captured
+
+    @pytest.mark.asyncio
+    async def test_off_pool_industry_yields_no_hint(self):
+        captured = await _capture_five("医疗行业")
+
+        assert all(data["industry"] == "医疗行业" for data in captured.values()), (
+            captured
+        )
+        assert all(data["industry_hint"] == "" for data in captured.values()), captured
+
+    @pytest.mark.asyncio
+    async def test_pool_industry_derives_hint_in_all_five(self):
+        from open_notebook.ai.industry_pool import INDUSTRY_HINTS
+
+        captured = await _capture_five(POOL_INDUSTRY)
+
+        expected = INDUSTRY_HINTS[POOL_INDUSTRY]
+        assert expected  # 池内行业必有非空提示
+        assert all(data["industry"] == POOL_INDUSTRY for data in captured.values()), (
+            captured
+        )
+        assert all(data["industry_hint"] == expected for data in captured.values()), (
+            captured
+        )
+
+    @pytest.mark.asyncio
+    async def test_bypass_paths_do_not_inject_industry_hint(self):
+        import open_notebook.ai.project_env_pipeline as pipeline
+
+        captured: dict = {}
+
+        async def fake_invoke(
+            template,
+            data,
+            result_model,
+            model_id,
+            budget=None,
+            validator=None,
+            max_tokens=4096,
+        ):
+            captured[template] = data
+            return result_model()
+
+        class StubPrompter:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def render(self, data=None):
+                captured["project_env/generic_paragraph"] = dict(data or {})
+                return "PROMPT"
+
+        async def fake_provision(_prompt, *_args, **_kwargs):
+            async def ainvoke(_p):
+                return SimpleNamespace(content="段落正文")
+
+            return SimpleNamespace(langchain_model=SimpleNamespace(ainvoke=ainvoke))
+
+        with (
+            patch.object(pipeline, "_invoke_json", fake_invoke),
+            patch.object(pipeline, "Prompter", StubPrompter),
+            patch.object(
+                pipeline, "provision_langchain_model_with_info", fake_provision
+            ),
+        ):
+            await pipeline.render_generic_paragraph(
+                "电商平台重构",
+                "2025.01",
+                "2025.08",
+                "mock",
+                {"background": "微服务化改造"},
+                industry=POOL_INDUSTRY,
+            )
+            await pipeline.render_fixed_parts(
+                "电商平台重构",
+                "2025.01",
+                "2025.08",
+                "mock",
+                {"background": "微服务化改造"},
+                industry=POOL_INDUSTRY,
+            )
+
+        assert "industry_hint" not in captured["project_env/generic_paragraph"]
+        assert "industry_hint" not in captured["project_env/fixed_parts"]
+        # industry 键保持原语义：池内行业名直传，不追加提示
+        assert captured["project_env/generic_paragraph"]["industry"] == POOL_INDUSTRY
+        assert "industry_profile" not in captured["project_env/generic_paragraph"]
+        assert "industry_profile" not in captured["project_env/fixed_parts"]
+
+
+# --- 行业画像注入（industry_profile，与 industry_hint 同型的方案 B 注入） ---
+
+PROFILE_LINE_MARKERS = (
+    "常见项目形态参考：",
+    "典型技术栈参考：",
+    "核心业务流程参考：",
+)
+POOL_PROFILE_INDUSTRY = "高校在线教考（程序评测）"  # 池内且有画像覆盖
+
+# 5 个模板中注入的条件块（逐字一致；read_text 的 universal newlines 把
+# CRLF 归一为 LF，与 jinja loader 的读取口径相同）
+INJECTED_PROFILE_LINES = (
+    "{%- if industry_profile %}\n"
+    "- 常见项目形态参考：{{ industry_profile.project_forms | join('；') }}\n"
+    "- 典型技术栈参考：{{ industry_profile.tech_stack | join('；') }}\n"
+    "- 核心业务流程参考：{{ industry_profile.business_flows | join('；') }}\n"
+    "{%- endif %}\n"
+)
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_mock_templates_render_industry_profile_lines(template, model, base):
+    """契约 4：有画像的池内行业在 hint 行后渲染独立画像块，三条目逐字在位。"""
+    from open_notebook.ai.industry_pool import INDUSTRY_HINTS, INDUSTRY_PROFILES
+
+    profile = INDUSTRY_PROFILES[POOL_PROFILE_INDUSTRY]
+    text = _render(
+        template,
+        model,
+        {
+            "industry": POOL_PROFILE_INDUSTRY,
+            "industry_hint": INDUSTRY_HINTS[POOL_PROFILE_INDUSTRY],
+            "industry_profile": profile,
+            **base,
+            **_WINDOW,
+        },
+    )
+
+    assert "常见项目形态参考：" + "；".join(profile["project_forms"]) in text
+    assert "典型技术栈参考：" + "；".join(profile["tech_stack"]) in text
+    assert "核心业务流程参考：" + "；".join(profile["business_flows"]) in text
+    # 画像块紧跟 hint 行之后（现状 1 行 + 新 3 行）
+    assert text.index(HINT_MARKER) < text.index(PROFILE_LINE_MARKERS[0])
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_mock_templates_drop_profile_lines_without_profile(template, model, base):
+    """契约 4 退化：industry_profile 为 None 或键缺省（池内无画像 / 池外
+    自定义行业 / 默认行业 / 老数据）都不得渲染出画像行。"""
+    for extra in ({"industry_profile": None}, {}):
+        text = _render(
+            template,
+            model,
+            {
+                "industry": POOL_INDUSTRY,
+                "industry_hint": "",
+                **extra,
+                **base,
+                **_WINDOW,
+            },
+        )
+        for marker in PROFILE_LINE_MARKERS:
+            assert marker not in text
+
+
+@pytest.mark.parametrize(
+    "template,model,base", _industry_cases(), ids=_INDUSTRY_TEMPLATE_IDS
+)
+def test_templates_without_profile_byte_identical_to_pre_injection(
+    template, model, base
+):
+    """契约 4 退化逐字节锁定：剥离画像块后的模板源（= 注入前现状）与现模板
+    在 industry_profile=None 时渲染结果必须逐字节一致（hint 行照常渲染）——
+    `{%- -%}` 空白控制保证画像机制对无画像场景零足迹。"""
+    from open_notebook.ai.industry_pool import INDUSTRY_HINTS
+
+    source = _template_source(template)
+    assert INJECTED_PROFILE_LINES in source  # 画像块在位，剥离才有意义
+    data = {
+        "industry": POOL_INDUSTRY,
+        "industry_hint": INDUSTRY_HINTS[POOL_INDUSTRY],
+        "industry_profile": None,
+        **base,
+        **_WINDOW,
+    }
+    now = Prompter(prompt_template=template).render(data=dict(data))
+    pre_injection = Prompter(
+        template_text=source.replace(INJECTED_PROFILE_LINES, "")
+    ).render(data=dict(data))
+    assert now == pre_injection
+
+
+class TestPipelineIndustryProfile:
+    """五主链函数在渲染时按行业名现场推导 industry_profile（不落库、不随
+    请求走）；池内无画像 / 池外 / 空白行业一律 None。"""
+
+    @pytest.mark.asyncio
+    async def test_pool_industry_with_profile_derives_profile_in_all_five(self):
+        from open_notebook.ai.industry_pool import INDUSTRY_PROFILES
+
+        captured = await _capture_five(POOL_PROFILE_INDUSTRY)
+
+        expected = INDUSTRY_PROFILES[POOL_PROFILE_INDUSTRY]
+        assert expected  # 该池内行业必有画像
+        assert all(
+            data["industry_profile"] == expected for data in captured.values()
+        ), captured
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("blank", [None, "", "   "], ids=["none", "empty", "blank"])
+    async def test_blank_industry_yields_no_profile_in_all_five(self, blank):
+        captured = await _capture_five(blank)
+
+        assert all(data["industry_profile"] is None for data in captured.values()), (
+            captured
+        )
+
+    @pytest.mark.asyncio
+    async def test_pool_industry_without_profile_yields_none(self):
+        captured = await _capture_five("智慧城管")  # 池内 hint-only 行业
+
+        assert all(data["industry_profile"] is None for data in captured.values()), (
+            captured
+        )
+
+    @pytest.mark.asyncio
+    async def test_off_pool_industry_yields_no_profile(self):
+        captured = await _capture_five("医疗行业")
+
+        assert all(data["industry_profile"] is None for data in captured.values()), (
+            captured
+        )

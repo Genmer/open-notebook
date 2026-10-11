@@ -35,6 +35,8 @@ import { SourceRowActionsMenu } from '@/components/sources/SourceRowActionsMenu'
 import { RenameSourceDialog } from '@/components/sources/RenameSourceDialog'
 import { BatchRenameDialog } from '@/components/sources/BatchRenameDialog'
 import { SourceBreadcrumb } from '@/components/sources/SourceBreadcrumb'
+import { EssayMarkEditGuardDialog } from '@/components/ruankao/EssayMarkEditGuardDialog'
+import { useEssayMarkStatus } from '@/lib/hooks/use-essay-marks'
 import { getAncestorChain, getGroupDepth, MAX_GROUP_DEPTH } from '@/lib/utils/group-tree'
 import { resolveDragIds, DND_SOURCES_TYPE } from '@/lib/utils/dnd-helpers'
 import { displayViewName } from '@/lib/utils/view-display'
@@ -105,6 +107,19 @@ export default function SourcesPage() {
   const PAGE_SIZE = 30
   const queryClient = useQueryClient()
   const updateSource = useUpdateSource()
+
+  // 编辑公开范文确认（ruankao 范文库红线集合的 UX 护栏）：重命名目标在对话
+  // 框打开期间预热 status 查询（staleTime 0，进对话框即现值）；effective
+  // 范文确认后才放行 PUT，status 查询失败 fail-closed 阻断。
+  const [essayGuard, setEssayGuard] = useState<{
+    open: boolean
+    id: string | null
+    currentTitle: string | null
+    nextTitle: string | null
+  }>({ open: false, id: null, currentTitle: null, nextTitle: null })
+  const essayMarkStatus = useEssayMarkStatus(
+    renameDialog.open ? renameDialog.source?.id ?? null : null
+  )
 
   // Grouping navigation state (persisted)
   const { activeViewId, selectedGroupByView, hasHydrated, setActiveView, setSelectedGroup } =
@@ -530,13 +545,27 @@ export default function SourcesPage() {
     setTimeout(() => tableRef.current?.focus(), 0)
   }
 
+  const applyRename = async (sourceId: string, title: string) => {
+    await updateSource.mutateAsync({ id: sourceId, data: { title } })
+    // Inline patch keeps the scroll position; the hook invalidates query caches
+    setSources(prev => prev.map(s => (s.id === sourceId ? { ...s, title } : s)))
+    restoreTableFocus()
+  }
+
   const handleRenameConfirm = async (title: string) => {
     const source = renameDialog.source
     if (!source) return
-    await updateSource.mutateAsync({ id: source.id, data: { title } })
-    // Inline patch keeps the scroll position; the hook invalidates query caches
-    setSources(prev => prev.map(s => (s.id === source.id ? { ...s, title } : s)))
-    restoreTableFocus()
+    // effective 范文（红线集合内）先确认再放行；status === null（不在集合）直接保存
+    if (essayMarkStatus.data?.source?.effective) {
+      setEssayGuard({ open: true, id: source.id, currentTitle: source.title, nextTitle: title })
+      return
+    }
+    if (essayMarkStatus.isError) {
+      // fail-closed：查不到标记状态就阻断本次重命名
+      toast.error(t('ruankao.essayMark.editGuardStatusFailed'))
+      return
+    }
+    await applyRename(source.id, title)
   }
 
   const handleRowMove = async (targetGroupId: string | null) => {
@@ -823,7 +852,9 @@ export default function SourcesPage() {
     }
 
     return (<>
-      <div className="flex flex-col h-full w-full max-w-none px-6 py-6">
+      {/* 内容列宽约定（L 线 §2.1）：去 max-w-none 全宽，收 1152px 居中列，
+          保留 flex-col/h-full 纵向工作台结构（P1-5） */}
+      <div className="flex flex-col h-full mx-auto w-full max-w-6xl px-6 py-6" data-testid="sources-page-content">
         <div className="mb-6 flex-shrink-0 flex items-start justify-between gap-4">
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight">{t('sources.allSources')}</h1>
@@ -1170,6 +1201,18 @@ export default function SourcesPage() {
         source={renameDialog.source}
         onConfirm={handleRenameConfirm}
         onOpenChange={(open) => setRenameDialog({ open, source: open ? renameDialog.source : null })}
+      />
+
+      <EssayMarkEditGuardDialog
+        open={essayGuard.open}
+        sourceTitle={essayGuard.currentTitle}
+        onConfirm={async () => {
+          setEssayGuard((guard) => ({ ...guard, open: false }))
+          if (essayGuard.id && essayGuard.nextTitle) {
+            await applyRename(essayGuard.id, essayGuard.nextTitle)
+          }
+        }}
+        onCancel={() => setEssayGuard((guard) => ({ ...guard, open: false }))}
       />
 
       <BatchRenameDialog

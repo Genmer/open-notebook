@@ -341,4 +341,50 @@ describe('CreateEnvWizard preset seed', () => {
 
     expect(screen.getByTestId('env-mock-industry')).toHaveValue('能源行业')
   })
+
+  it('prefills keywords/name from a keywords-only preset without touching the industry control', () => {
+    localStorage.setItem('project-env-industry', '医疗行业')
+    render(
+      <CreateEnvWizard
+        open
+        onOpenChange={vi.fn()}
+        preset={{
+          keywords: ['微服务架构及其应用', '微服务与分布式'],
+          name: '论微服务架构及其应用',
+        }}
+      />
+    )
+
+    // 题库 D② 种子：直接落 mock 第 2 步（模式选择不出现）
+    expect(screen.queryByTestId('env-mode-real')).not.toBeInTheDocument()
+    // industry 受控输入不被 keywords-only 种子触碰：localStorage 值保留
+    // （条件式落值——preset.industry 不存在绝不 setIndustry）
+    expect(screen.getByTestId('env-mock-industry')).toHaveValue('医疗行业')
+    // 名称与关键词预填生效
+    expect(
+      screen.getByLabelText('projectEnvs.mockNameLabel'),
+    ).toHaveValue('论微服务架构及其应用')
+    expect(screen.getByText('微服务架构及其应用')).toBeInTheDocument()
+    expect(screen.getByText('微服务与分布式')).toBeInTheDocument()
+  })
+
+  it('industry preset still wins while keywords and name ride along', () => {
+    render(
+      <CreateEnvWizard
+        open
+        onOpenChange={vi.fn()}
+        preset={{
+          industry: '能源行业',
+          keywords: ['负载均衡'],
+          name: '论负载均衡技术的应用',
+        }}
+      />
+    )
+
+    expect(screen.getByTestId('env-mock-industry')).toHaveValue('能源行业')
+    expect(
+      screen.getByLabelText('projectEnvs.mockNameLabel'),
+    ).toHaveValue('论负载均衡技术的应用')
+    expect(screen.getByText('负载均衡')).toBeInTheDocument()
+  })
 })

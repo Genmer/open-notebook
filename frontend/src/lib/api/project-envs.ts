@@ -1,6 +1,7 @@
 import apiClient from './client'
 import {
   CreateProjectEnvRequest,
+  FixedPartsResponse,
   GenericParagraphResponse,
   MaterialsSubmitRequest,
   MockGenerateRequest,
@@ -151,6 +152,13 @@ export const projectEnvsApi = {
   ): Promise<GenericParagraphResponse> => {
     const response = await apiClient.post<GenericParagraphResponse>(
       `/project-envs/${envId}/generic-paragraph/generate`
+    )
+    return response.data
+  },
+
+  generateFixedParts: async (envId: string): Promise<FixedPartsResponse> => {
+    const response = await apiClient.post<FixedPartsResponse>(
+      `/project-envs/${envId}/fixed-parts/generate`
     )
     return response.data
   },

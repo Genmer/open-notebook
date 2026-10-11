@@ -146,18 +146,30 @@ interface GroupContextMenuContentProps {
   onNewSubgroup?: () => void
   onRename?: () => void
   onMove?: () => void
+  onCopyName?: () => void
+  onCopyRelativePath?: () => void
+  onCopyAbsolutePath?: () => void
+  /** 文件夹只是应用内分组记录，磁盘无对应目录——绝对路径无值可复制，置灰。 */
+  disableCopyAbsolutePath?: boolean
   onDelete?: () => void
 }
 
 // 文件夹节点右键项集，与 GroupTree ⋯ 菜单同一组能力，仅换触发时机。
+// 复制三项（名称/相对路径/绝对路径）与来源行同款图标与分段，未传即不渲染。
 export function GroupContextMenuContent({
   canHaveChildren = false,
   onNewSubgroup,
   onRename,
   onMove,
+  onCopyName,
+  onCopyRelativePath,
+  onCopyAbsolutePath,
+  disableCopyAbsolutePath = false,
   onDelete,
 }: GroupContextMenuContentProps) {
   const { t } = useTranslation()
+  const hasCopyItems = !!onCopyName || !!onCopyRelativePath || !!onCopyAbsolutePath
+  const hasMenuAbove = (!!canHaveChildren && !!onNewSubgroup) || !!onRename || !!onMove
 
   return (
     <ContextMenuContent>
@@ -179,6 +191,35 @@ export function GroupContextMenuContent({
           {t('sources.grouping.moveTo')}
         </ContextMenuItem>
       )}
+      {hasMenuAbove && hasCopyItems && <ContextMenuSeparator />}
+      {onCopyName && (
+        <ContextMenuItem onClick={onCopyName}>
+          <FileText className="h-4 w-4" />
+          {t('sources.copyFileName')}
+        </ContextMenuItem>
+      )}
+      {onCopyRelativePath && (
+        <ContextMenuItem onClick={onCopyRelativePath}>
+          <FolderTree className="h-4 w-4" />
+          {t('sources.copyRelativePath')}
+        </ContextMenuItem>
+      )}
+      {onCopyAbsolutePath && (
+        <ContextMenuItem
+          disabled={disableCopyAbsolutePath}
+          title={
+            disableCopyAbsolutePath ? t('sources.grouping.folderNoDiskPath') : undefined
+          }
+          aria-label={
+            disableCopyAbsolutePath ? t('sources.grouping.folderNoDiskPath') : undefined
+          }
+          onClick={disableCopyAbsolutePath ? undefined : onCopyAbsolutePath}
+        >
+          <HardDrive className="h-4 w-4" />
+          {t('sources.copyAbsolutePath')}
+        </ContextMenuItem>
+      )}
+      {hasCopyItems && onDelete && <ContextMenuSeparator />}
       {onDelete && (
         <ContextMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />

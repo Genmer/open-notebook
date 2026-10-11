@@ -882,3 +882,30 @@ describe('SourcesPage delete confirm annotation count (F9)', () => {
     await waitFor(() => expect(opts!.signal.aborted).toBe(true))
   })
 })
+
+describe('SourcesPage content column width (宽屏治理 P1-5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listMock.mockResolvedValue([source('a'), source('b'), source('c')])
+    useSourceViewStore.setState({
+      activeViewId: FILE_TYPE_VIEW_ID,
+      selectedGroupByView: {},
+      hasHydrated: true,
+    })
+  })
+
+  it('constrains the content column to mx-auto max-w-6xl and drops max-w-none', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('a')).toBeInTheDocument())
+
+    // 内容列宽约定（L 线 §2.1）：全宽 max-w-none 列收 1152px 居中列，
+    // 纵向 flex 工作台结构（flex/flex-col/h-full）保留
+    const container = screen.getByTestId('sources-page-content')
+    expect(container).toHaveClass('mx-auto')
+    expect(container).toHaveClass('max-w-6xl')
+    expect(container).toHaveClass('flex')
+    expect(container).toHaveClass('flex-col')
+    expect(container).toHaveClass('h-full')
+    expect(container.className).not.toContain('max-w-none')
+  })
+})

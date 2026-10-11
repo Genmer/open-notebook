@@ -17,6 +17,7 @@ from loguru import logger
 
 from api.command_service import CommandService
 from api.models import (
+    FixedPartsResponse,
     GenericParagraphResponse,
     MaterialsStatusResponse,
     MaterialsSubmitRequest,
@@ -36,6 +37,7 @@ from api.models import (
 from open_notebook.ai.project_env_pipeline import (
     _find_verbatim,
     prescreen_quote,
+    render_fixed_parts,
     render_generic_paragraph,
     render_polish,
     suggest_rewrite,
@@ -1173,4 +1175,59 @@ async def generate_generic_paragraph(env_id: str):
         logger.error(f"Error generating generic paragraph for {env_id}: {e}")
         raise HTTPException(
             status_code=500, detail=f"Error generating generic paragraph: {e}"
+        )
+
+
+@router.post(
+    "/project-envs/{env_id}/fixed-parts/generate",
+    response_model=FixedPartsResponse,
+)
+async def generate_fixed_parts(env_id: str):
+    """Stateless AI draft of the three exam-essay fixed parts (abstract /
+    background / closing) as fill-in-the-blank text; never persisted — the
+    user reviews/edits and saves into the writing-desk draft. Red line
+    (ADR-017): the prompt context is ONLY the ProjectEnv material fields —
+    no source retrieval, no notebook context, so marked model essays are
+    unreachable by construction."""
+    try:
+        env = await _get_env_or_404(env_id)
+        candidate = env.candidate_fields()
+        if not any(str(text or "").strip() for text in candidate.values()):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "项目素材为空，无法生成固定件",
+                    "reason": "no_material",
+                },
+            )
+        try:
+            parts = await asyncio.wait_for(
+                render_fixed_parts(
+                    name=env.name,
+                    period_start=env.period_start,
+                    period_end=env.period_end,
+                    source_type=env.source_type,
+                    candidate=candidate,
+                    industry=env.industry,
+                ),
+                timeout=SUGGEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail={"reason": "model_timeout"})
+        except ValueError as e:
+            logger.warning(f"Fixed parts generation failed for {env_id}: {e}")
+            raise HTTPException(status_code=502, detail={"reason": "model_error"})
+        return FixedPartsResponse(
+            abstract=parts["abstract"],
+            background=parts["background"],
+            closing=parts["closing"],
+        )
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating fixed parts for {env_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error generating fixed parts: {e}"
         )

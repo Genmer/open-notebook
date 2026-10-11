@@ -424,6 +424,23 @@ export function GeminiSourcesColumn({
     writeClipboard(absolute)
   }
 
+  // ===== 文件夹右键复制三项：夹名 / 应用内相对路径；绝对路径恒置灰 =====
+
+  // 相对路径 = 祖先链（根在前）+ 自身名；根级文件夹=自身名。
+  // 文件夹只是应用内分组记录，磁盘无对应目录——无绝对路径可编造，菜单恒置灰。
+  const getFolderRelativePath = (groupId: string) => {
+    const groups = (treeData?.groups ?? []).map(asSourceGroupResponse)
+    const names = getAncestorChain(groups, groupId).map((g) => g.name)
+    const self = groups.find((g) => g.id === groupId)?.name
+    if (self) names.push(self)
+    return names.join('/')
+  }
+
+  const handleCopyFolderAbsolutePath = () => {
+    // 置灰项永不触发；若辅助路径绕过 disabled，也只报错、绝不写编造路径入剪贴板
+    toast.error(t('common.error'))
+  }
+
   const handleDeleteConfirm = async () => {
     if (!sourceToDelete) return
     try {
@@ -722,6 +739,10 @@ export function GeminiSourcesColumn({
             onNewSubgroup={() => dialogs.openCreate(group.id)}
             onRename={() => dialogs.openRename(group)}
             onMove={() => dialogs.openMove(group)}
+            onCopyName={() => writeClipboard(group.name)}
+            onCopyRelativePath={() => writeClipboard(getFolderRelativePath(group.id))}
+            onCopyAbsolutePath={handleCopyFolderAbsolutePath}
+            disableCopyAbsolutePath
             onDelete={() => dialogs.openDelete(group)}
           />
         </ContextMenu>

@@ -1,10 +1,13 @@
 import { createElement, type ReactNode } from 'react'
 import { EnvironmentsPanel } from '@/components/ruankao/EnvironmentsPanel'
+import { EssayPanel } from '@/components/ruankao/EssayPanel'
 import { HotTopicsPanel } from '@/components/ruankao/HotTopicsPanel'
+import { ModelLibraryPanel } from '@/components/ruankao/ModelLibraryPanel'
+import { QuestionBankPanel } from '@/components/ruankao/QuestionBankPanel'
 
 // 软考模块 tab 注册表：全模块 tab 唯一事实源（key/labelKey/testid/renderContent 槽）。
 // 内容槽 null 的 tab 不渲染，各段填槽后自动出现：
-// 第二段填 questionBank、第三段填 modelLibrary、第四段(+第五段)填 essay。
+// questionBank（批次3）、modelLibrary（批次2）、essay（批次4）均已填槽。
 export type RuankaoTabKey =
   | 'environments'
   | 'questionBank'
@@ -30,19 +33,19 @@ export const RUANKAO_TABS: readonly RuankaoTabDef[] = [
     key: 'questionBank',
     labelKey: 'ruankao.tabs.questionBank',
     testid: 'ruankao-tab-questionBank',
-    renderContent: null,
+    renderContent: () => createElement(QuestionBankPanel),
   },
   {
     key: 'modelLibrary',
     labelKey: 'ruankao.tabs.modelLibrary',
     testid: 'ruankao-tab-modelLibrary',
-    renderContent: null,
+    renderContent: () => createElement(ModelLibraryPanel),
   },
   {
     key: 'essay',
     labelKey: 'ruankao.tabs.essay',
     testid: 'ruankao-tab-essay',
-    renderContent: null,
+    renderContent: () => createElement(EssayPanel),
   },
   {
     key: 'hotTopics',

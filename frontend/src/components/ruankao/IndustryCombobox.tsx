@@ -11,7 +11,11 @@ import {
 } from '@/components/ui/command'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { filterIndustryPool, INDUSTRY_MAX_CHARS } from '@/lib/ruankao/industry-pool'
+import {
+  filterIndustryPool,
+  INDUSTRY_MAX_CHARS,
+  industryTitleLines,
+} from '@/lib/ruankao/industry-pool'
 
 // mock 向导行业输入（F3-c + R2）：可搜索选择 INDUSTRY_POOL + 任意自由文本。
 // 触发器保留真实 input（data-testid=env-mock-industry），change 事件语义与旧 Input 一致
@@ -41,7 +45,7 @@ export function IndustryCombobox({ id, value, onChange }: IndustryComboboxProps)
             if (event.key !== 'Enter') return
             event.preventDefault()
             // 回车=选中第一条池内命中；无命中时保留自由文本（自定义兜底）
-            if (filtered.length > 0) onChange(filtered[0])
+            if (filtered.length > 0) onChange(filtered[0]?.name)
           }}
         />
       </PopoverTrigger>
@@ -50,13 +54,15 @@ export function IndustryCombobox({ id, value, onChange }: IndustryComboboxProps)
           <CommandList>
             <CommandEmpty>{t('ruankao.industry.noMatch')}</CommandEmpty>
             <CommandGroup>
-              {filtered.map((name) => (
+              {filtered.map((entry) => (
                 <CommandItem
-                  key={name}
-                  value={name}
-                  onSelect={() => onChange(name)}
+                  key={entry.name}
+                  value={entry.name}
+                  onSelect={() => onChange(entry.name)}
+                  // hover 解释走池内 hint + 画像（tech-glossary 先例：原生 title，未命中静默退化）
+                  title={industryTitleLines(entry, t).join('\n')}
                 >
-                  {name}
+                  {entry.name}
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -12,6 +12,7 @@ Behavior notes:
   them to the same status codes and messages as before.
 """
 
+import inspect
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from fastapi import HTTPException
@@ -22,6 +23,31 @@ from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
 from open_notebook.exceptions import InvalidInputError, NotFoundError
 from open_notebook.utils import token_count
+
+
+def astream_usage_kwargs(model: Any) -> Dict[str, Any]:
+    """`{'stream_usage': True}` only when the model's `_astream` names it.
+
+    ChatOpenAI._astream is a pure (*args, **kwargs) router onto
+    BaseChatOpenAI._astream, so the MRO walk skips router overrides and
+    inspects the first signature with named parameters; passing the kwarg to
+    models without it (Google/Ollama/Groq/Mistral) would leak into their SDK.
+    """
+    for klass in type(model).__mro__:
+        fn = klass.__dict__.get("_astream")
+        if fn is None:
+            continue
+        try:
+            sig = inspect.signature(fn)
+        except (TypeError, ValueError):
+            continue
+        params = list(sig.parameters.values())
+        if all(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params[1:]):
+            continue
+        if "stream_usage" in sig.parameters:
+            return {"stream_usage": True}
+        return {}
+    return {}
 
 
 # Shared response models
