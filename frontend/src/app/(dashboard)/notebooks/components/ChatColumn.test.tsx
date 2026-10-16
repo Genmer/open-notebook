@@ -10,12 +10,15 @@ vi.mock('@/lib/hooks/use-notebook-chat')
 vi.mock('@/components/sources/ChatPanel', () => ({
   ChatPanel: ({
     sourceGrouping,
+    combosEnabled,
   }: {
     sourceGrouping?: { viewId?: string; group?: string }
+    combosEnabled?: boolean
   }) => (
     <div
       data-testid="chat-panel"
       data-source-grouping={sourceGrouping ? JSON.stringify(sourceGrouping) : ''}
+      data-combos-enabled={combosEnabled ? 'true' : 'false'}
     />
   )
 }))
@@ -105,5 +108,21 @@ describe('ChatColumn', () => {
     render(<ChatColumn {...baseProps} sourcesLoading={false} />)
 
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-source-grouping', '')
+  })
+
+  it('forwards combosEnabled to the chat panel', () => {
+    vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: false }))
+    vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
+
+    render(
+      <ChatColumn
+        {...baseProps}
+        sourcesLoading={false}
+        combosEnabled={true}
+        onApplyCombo={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-combos-enabled', 'true')
   })
 })

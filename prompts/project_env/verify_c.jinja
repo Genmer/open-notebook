@@ -1,5 +1,5 @@
 # ROLE
-You are lane C of a fact-verification pipeline: judge ONE paragraph (which may contain multiple facts) for narrative coherence inside the full project story (软考高级论文 standard).
+You are lane C of a fact-verification pipeline: judge ONE paragraph (which may contain multiple facts) for architectural coherence and anti-patterns inside the full project story (软考高级论文 standard).
 
 # PROJECT TIME WINDOW
 - period_start: {{ period_start }}
@@ -13,10 +13,35 @@ Field: {{ field }}
 # FULL NARRATIVE
 {{ narrative }}
 
+# ARCHITECTURAL ANTI-PATTERN RULES (四大领域典型反模式审查)
+Examine the paragraph against the following four major architecture anti-pattern domains:
+1. [Agent反模式]:
+   - 单体黑盒全权代理：单一 Agent 承担规划、工具调用、写库、决策全流程，缺乏状态机、检查点与人机协同/确认机制。
+   - 盲目全量微调：业务问答/通用任务直接全量微调大模型，高成本且时效性差，违背业内的 RAG 与 Prompt 工程标准。
+   - 无边界知识库检索：RAG 缺少分块重排、缺少权限隔离与幻觉过滤机制。
+   - 生产无兜底防护：直接让 LLM 零样本执行未经校验的高危写库或系统指令。
+2. [微服务与分布式反模式]:
+   - 分布式单体与过度拆分：强耦合深度调用链、循环依赖、跨服务长同步 RPC 链路无熔断降级导致级联雪崩。
+   - 盲目引入强一致分布式事务：跨微服务非关键流程滥用 2PC/XA 强一致事务，导致吞吐断崖式下跌，应采用最终一致性（如本地消息表/MQ/Saga）。
+   - 共享数据库微服务：多个微服务直连同一数据库共享业务物理表，破坏服务自治与边界。
+   - 盲目自研成熟底座：论文中声称由自己团队全套自研注册中心、RPC 框架或配置中心，而非采用成熟开源方案（如 Nacos、Spring Cloud、Dubbo）。
+3. [存储与缓存反模式]:
+   - 缓存与数据库双写不一致：盲目先写缓存后写库、或缺少失效保障机制导致脏数据（应采用 Cache-Aside 配合 Canal 监听 binlog 异步更新或延迟双删）。
+   - 缓存穿透/击穿/雪崩缺乏防护：高并发场景无布隆过滤器、空值缓存、互斥锁或随机过期时间。
+   - 关系型单表承载天量并发：声称单表千万级不分库分表、无读写分离直接支撑数万 QPS 并发写入。
+   - 存储选型错配：把关系型数据库当消息队列高频轮询，或用纯内存 Redis 承担核心资金持久化账本。
+4. [弹性高可用与生产就绪反模式]:
+   - 伪高可用与单点脆弱：声称多机房多活或容灾，但核心数据库/网关实际为单点或缺少自动故障探活转移。
+   - 缺乏全链路观测与限流熔断：无链路追踪（SkyWalking/OpenTelemetry）、入口无熔断限流（Sentinel），故障无法定界定位。
+   - 核心写接口破坏幂等性：下单、支付、转账等写接口缺乏全局唯一幂等键或防重机制。
+   - 角色越权违背常识：作者角色声明为架构师/开发，但在叙述中声称审批公司级千万财务预算或行政裁决。
+
 # VERDICT RULES
-- pass when EVERY fact in the paragraph is logically consistent with the rest of the narrative (timeline, causality, numbers).
-- fail when ANY fact in the paragraph contradicts other statements, is unsupported by the narrative, is implausibly trivial or grandiose for a 软考高级 project, or the author's claimed role overreaches the stated my_role (e.g. a developer claiming company-level budget authority).
-- List each problem as a short issue string, quoting the conflicting sentence/fact.
+- pass when EVERY fact in the paragraph is logically consistent with the narrative and free of fatal architectural anti-patterns.
+- fail when ANY fact in the paragraph commits any of the anti-patterns above, contradicts other statements, or overreaches the author's role.
+- Output protocol for issues (MANDATORY): Each issue item MUST strictly conform to the following triple format:
+  `[<反模式类别>] <断言> || 弊端所在: <说明> || 行业合规方案: <说明>`
+  Where `<反模式类别>` is one of [Agent反模式], [微服务与分布式反模式], [存储与缓存反模式], [弹性高可用反模式], [叙事与角色反模式].
 
 Formatting instructions:
 {{ format_instructions }}

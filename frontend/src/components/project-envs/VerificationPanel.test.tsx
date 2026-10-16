@@ -14,12 +14,15 @@ import type {
   ProjectEnvVerificationStatus,
 } from '@/lib/types/api'
 
+const mockReverify = vi.fn()
+
 vi.mock('@/lib/hooks/use-project-envs', () => ({
   useProjectEnvVerification: vi.fn(),
   useDismissClaim: vi.fn(),
   useRewriteClaim: vi.fn(),
   useProjectEnv: vi.fn(),
   useSuggestClaimRewrite: vi.fn(),
+  useReverifyProjectEnv: () => ({ mutate: mockReverify, isPending: false }),
 }))
 
 vi.mock('@/lib/api/tasks', () => ({
@@ -379,5 +382,162 @@ describe('VerificationPanel', () => {
     rerender(<VerificationPanel envId="env:3" />)
     expect(screen.getByTestId('suggest-loading')).toBeDefined()
     unmount()
+  })
+
+  // --- T5: explicit failure reasons on the point card ---
+
+  it('renders the failed lane names and issue text explicitly for manual-review points', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [point({ manual_reason: 'lanes_failed' })],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    const box = screen.getByTestId('point-issues-p1')
+    expect(box.textContent).toContain('projectEnvs.failedIssuesTitle')
+    expect(box.textContent).toContain('projectEnvs.laneB')
+    expect(box.textContent).toContain('GA after project start')
+  })
+
+  it('renders the exhausted-issues title when the correction rounds ran out', () => {
+    render(<VerificationPanel envId="env:1" />)
+    const box = screen.getByTestId('point-issues-p1')
+    expect(box.textContent).toContain('projectEnvs.exhaustedIssuesTitle')
+  })
+
+  it('renders failure reasons for error-state points too', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [point({ state: 'error', manual_reason: 'llm_error' })],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    const box = screen.getByTestId('point-issues-p1')
+    expect(box.textContent).toContain('projectEnvs.failedIssuesTitle')
+    expect(box.textContent).toContain('projectEnvs.laneB')
+    expect(box.textContent).toContain('GA after project start')
+  })
+
+  it('lists only failing lanes in the failure box — pass-lane issues never tint it', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [
+          point({
+            manual_reason: 'lanes_failed',
+            lanes: {
+              A: { verdict: 'pass', issues: ['A 路备注'] },
+              B: { verdict: 'fail', issues: ['GA after project start'] },
+              C: { verdict: 'pass', issues: ['C 路备注'] },
+            },
+          }),
+        ],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    const box = screen.getByTestId('point-issues-p1')
+    expect(box.textContent).toContain('projectEnvs.laneB')
+    expect(box.textContent).toContain('GA after project start')
+    // pass 通道的备注 issue 不进警示框
+    expect(box.textContent).not.toContain('A 路备注')
+    expect(box.textContent).not.toContain('C 路备注')
+    expect(box.textContent).not.toContain('projectEnvs.laneA')
+  })
+
+  it('shows no failure box when every lane passed despite advisory issues', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [
+          point({
+            manual_reason: 'lanes_failed',
+            lanes: {
+              A: { verdict: 'pass', issues: ['A 路备注'] },
+              B: { verdict: 'pass', issues: ['B 路备注'] },
+              C: { verdict: 'pass', issues: [] },
+            },
+          }),
+        ],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    expect(screen.queryByTestId('point-issues-p1')).toBeNull()
+  })
+
+  // --- T6: correction history per-round lane verdicts and issues ---
+
+  it('shows per-round lane verdicts and issue details when the round history is expanded', () => {
+    mockVerification.mockReturnValue({
+      data: status({
+        points: [
+          point({
+            // passed 点不渲染 T5 警示框，这里只考察历史明细
+            state: 'passed',
+            manual_reason: undefined,
+            lanes: {
+              A: { verdict: 'pass', issues: [] },
+              B: { verdict: 'pass', issues: [] },
+              C: { verdict: 'pass', issues: [] },
+            },
+            rounds: [
+              {
+                round: 1,
+                action: 'verify',
+                verdict: 'fail',
+                lane_results: {
+                  A: { verdict: 'pass', issues: [] },
+                  B: { verdict: 'fail', issues: ['证据不足'] },
+                },
+              },
+              {
+                round: 2,
+                action: 'correct',
+                verdict: 'pass',
+                lane_results: { B: { verdict: 'pass', issues: [] } },
+                corrected_text: '改写后的段落',
+              },
+            ],
+          }),
+        ],
+      }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+    render(<VerificationPanel envId="env:1" />)
+
+    fireEvent.click(screen.getByText('projectEnvs.roundsHistory'))
+
+    // 第 1 轮：B 路未通过 + issue 明细
+    expect(screen.getByText('#1')).toBeDefined()
+    expect(screen.getByText('projectEnvs.historyVerify')).toBeDefined()
+    expect(screen.getByText('[projectEnvs.laneB]')).toBeDefined()
+    expect(screen.getByText('证据不足')).toBeDefined()
+    // 通过的通道不出现在历史明细里
+    expect(screen.queryByText('[projectEnvs.laneA]')).toBeNull()
+    // 第 2 轮：改写文本随轮次展示
+    expect(screen.getByText('#2')).toBeDefined()
+    expect(screen.getByText('改写后的段落')).toBeDefined()
+  })
+
+  it('renders reverify button in banners and triggers reverifyMutation on click', () => {
+    mockReverify.mockClear()
+    mockVerification.mockReturnValue({
+      data: status({ status: 'needs_review' }),
+      isLoading: false,
+    } as unknown as ReturnType<typeof useProjectEnvVerification>)
+
+    render(<VerificationPanel envId="env:1" />)
+
+    const button = screen.getByTestId('panel-reverify-button')
+    expect(button).toBeDefined()
+    expect(button.textContent).toContain('projectEnvs.reverifyEnv')
+
+    fireEvent.click(button)
+    expect(mockReverify).toHaveBeenCalledWith('env:1')
   })
 })

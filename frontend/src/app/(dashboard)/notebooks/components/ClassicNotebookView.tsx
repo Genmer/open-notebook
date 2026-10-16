@@ -36,6 +36,8 @@ export interface ClassicNotebookViewProps {
   handleBulkNoteContext: (action: NoteContextDefault) => void
   setArtifactDialogOpen: (open: boolean) => void
   setContextPickerOpen: (open: boolean) => void
+  combosEnabled?: boolean
+  onApplyCombo?: (replacement: ContextSelections, comboId?: string | null) => void
 }
 
 export function ClassicNotebookView({
@@ -58,6 +60,8 @@ export function ClassicNotebookView({
   handleBulkNoteContext,
   setArtifactDialogOpen,
   setContextPickerOpen,
+  combosEnabled,
+  onApplyCombo,
 }: ClassicNotebookViewProps) {
   const { t } = useTranslation()
   const { foldersCollapsed, sourcesCollapsed, notesCollapsed } = useNotebookColumnsStore()
@@ -129,6 +133,8 @@ export function ClassicNotebookView({
                 sourcesLoading={sourcesLoading}
                 sourceGrouping={sourceGrouping}
                 onNoteContextModeChange={handleNoteContextModeChange}
+                combosEnabled={combosEnabled}
+                onApplyCombo={onApplyCombo}
               />
             )}
           </div>
@@ -204,6 +210,8 @@ export function ClassicNotebookView({
                 sourcesLoading={sourcesLoading}
                 sourceGrouping={sourceGrouping}
                 onNoteContextModeChange={handleNoteContextModeChange}
+                combosEnabled={combosEnabled}
+                onApplyCombo={onApplyCombo}
               />
             </div>
       </div>

@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -31,6 +31,62 @@ _EMBEDDING_PROGRESS_FIELDS = (
     "total_chunks",
     "embedded_chunks",
 )
+
+# A 'running' command with no updates for this long was abandoned by a dead
+# worker; readers fail it on sight so it can't block source retry forever.
+COMMAND_STALE_TIMEOUT_SECONDS = 900
+STALE_COMMAND_ERROR_MESSAGE = (
+    "Processing timed out or worker was interrupted. "
+    "You can retry processing this source."
+)
+
+
+def _parse_command_datetime(raw: Any) -> Optional[datetime]:
+    """Normalize a DB timestamp to an aware UTC datetime (None when unusable)."""
+    parsed: Optional[datetime]
+    if isinstance(raw, datetime):
+        parsed = raw
+    elif isinstance(raw, str):
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+    else:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _is_stale_running(status_result: Any) -> bool:
+    """True when a 'running' command outlived COMMAND_STALE_TIMEOUT_SECONDS."""
+    if status_result is None or status_result.status != "running":
+        return False
+    # updated is the worker's last write; created covers rows a dead worker
+    # never touched after the job started.
+    last_update = _parse_command_datetime(getattr(status_result, "updated", None))
+    if last_update is None:
+        last_update = _parse_command_datetime(getattr(status_result, "created", None))
+    if last_update is None:
+        return False
+    return datetime.now(timezone.utc) - last_update > timedelta(
+        seconds=COMMAND_STALE_TIMEOUT_SECONDS
+    )
+
+
+async def _fail_stale_command(command_id: str) -> None:
+    """Best-effort, status-guarded write: a command that finished between the
+    stale check and this UPDATE is never rewritten as failed."""
+    try:
+        await repo_query(
+            "UPDATE command SET status = 'failed', error_message = $msg, "
+            "updated = time::now() WHERE id = $id AND status = 'running'",
+            {"id": ensure_record_id(command_id), "msg": STALE_COMMAND_ERROR_MESSAGE},
+        )
+        logger.warning(
+            f"Marked stale command {command_id} as failed "
+            f"(no updates for over {COMMAND_STALE_TIMEOUT_SECONDS}s)"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to mark stale command {command_id} as failed: {e}")
 
 
 class Notebook(ObjectModel):
@@ -513,7 +569,12 @@ class Source(ObjectModel):
             from surreal_commands import get_command_status
 
             status = await get_command_status(str(self.command))
-            return status.status if status else "unknown"
+            if not status:
+                return "unknown"
+            if _is_stale_running(status):
+                await _fail_stale_command(str(self.command))
+                return "failed"
+            return status.status
         except Exception as e:
             logger.warning(f"Failed to get command status for {self.command}: {e}")
             return "unknown"
@@ -536,6 +597,16 @@ class Source(ObjectModel):
                 result.get("execution_metadata", {}) if isinstance(result, dict) else {}
             )
 
+            if _is_stale_running(status_result):
+                await _fail_stale_command(str(self.command))
+                return {
+                    "status": "failed",
+                    "started_at": execution_metadata.get("started_at"),
+                    "completed_at": execution_metadata.get("completed_at"),
+                    "error": STALE_COMMAND_ERROR_MESSAGE,
+                    "result": result,
+                }
+
             return {
                 "status": status_result.status,
                 "started_at": execution_metadata.get("started_at"),
@@ -546,6 +617,27 @@ class Source(ObjectModel):
         except Exception as e:
             logger.warning(f"Failed to get command progress for {self.command}: {e}")
             return None
+
+    async def release_stale_processing(self) -> bool:
+        """True when the linked command is not actively running and retry may proceed.
+
+        Safety net for the retry endpoint: get_status() already fails stale
+        commands, so a remaining 'running' verdict gets one more row-level
+        staleness check before the retry is blocked.
+        """
+        if not self.command:
+            return True
+        try:
+            from surreal_commands import get_command_status
+
+            status_result = await get_command_status(str(self.command))
+        except Exception as e:
+            logger.warning(f"Failed to get command status for {self.command}: {e}")
+            return True
+        if _is_stale_running(status_result):
+            await _fail_stale_command(str(self.command))
+            return True
+        return status_result is None or status_result.status != "running"
 
     async def get_context(
         self,

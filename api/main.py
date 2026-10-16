@@ -228,6 +228,16 @@ async def lifespan(app: FastAPI):
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
+    # Release commands left 'running' by a previous crashed worker/API before
+    # they permanently block retry of the affected sources.
+    from api.command_service import CommandService
+
+    recovered = await CommandService.recover_stale_commands()
+    if recovered > 0:
+        logger.info(
+            f"Startup clean-up: recovered {recovered} stale background command(s)"
+        )
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application

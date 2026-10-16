@@ -1,0 +1,4 @@
+REMOVE INDEX IF NOT EXISTS idx_rcc_name ON TABLE ruankao_concept_cache;
+REMOVE TABLE IF EXISTS ruankao_concept_cache;
+REMOVE INDEX IF NOT EXISTS idx_gac_tech_version ON TABLE ga_anchor_cache;
+REMOVE TABLE IF EXISTS ga_anchor_cache;

@@ -1,0 +1,26 @@
+# ROLE
+You extract the official General Availability (GA) or public initial release month (YYYY.MM) for a specific software technology and version from web search snippets.
+
+# TARGET TECHNOLOGY & VERSION
+- Technology: {{ tech }}
+- Version: {{ version }}
+
+# SEARCH SNIPPETS
+{{ snippets }}
+
+# EXTRACTION RULES
+1. Identify when this exact software version was officially released or reached General Availability (GA).
+2. Date Format: Output the date strictly in "YYYY.MM" format (e.g. "2023.11", "2024.04").
+3. Distinguish the actual software release date from blog publication dates, discussion forum timestamps, or other version numbers mentioned in passing.
+4. If multiple versions or dates appear, focus solely on the official release announcement of "{{ tech }} {{ version }}".
+5. Confirmed facts only: return a date ONLY when it comes from an official release source (vendor release notes or official announcement) OR at least two independent search results agree on the same release month. A single blog/forum/review date is NOT sufficient — return null.
+6. Preview/beta/RC dates, roadmap mentions and copyright years are never GA dates.
+7. If the search snippets do not provide sufficient information to determine the release month, return null for ga.
+
+Formatting instructions:
+{{ format_instructions }}
+
+IMPORTANT OUTPUT FORMAT:
+- If you use extended thinking with <think> tags, put ALL your reasoning inside <think></think> tags
+- Put the final JSON output OUTSIDE and AFTER any <think> tags
+- Do NOT wrap the JSON in ```json code blocks - return the raw JSON object only

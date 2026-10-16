@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { WizardContainer, type WizardStep } from '@/components/ui/wizard-container'
 import { cn } from '@/lib/utils'
-import { Building2, Bot, Loader2, Plus, Sparkles, X } from 'lucide-react'
+import { Building2, Bot, FileText, Loader2, Plus, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useCreateProjectEnv,
@@ -22,12 +22,22 @@ import {
   usePolishBackground,
   useProjectEnv,
 } from '@/lib/hooks/use-project-envs'
+import { KeywordInput, KEYWORD_MAX, KEYWORD_MIN } from './KeywordInput'
 import { MaterialSelectionStep, type MaterialTab } from './MaterialSelectionStep'
+import { PrdImportPanel, DEFAULT_MY_ROLE } from './PrdImportPanel'
+import type {
+  PrdImportMockPayload,
+  PrdImportRealPayload,
+} from './PrdImportPanel'
 import { TimeRangeField } from './TimeRangeField'
 import { VerificationPanel } from './VerificationPanel'
 import { IndustryCombobox } from '@/components/ruankao/IndustryCombobox'
 import { IndustryContextCard } from '@/components/ruankao/IndustryContextCard'
-import { INDUSTRY_POOL_NAMES } from '@/lib/ruankao/industry-pool'
+import {
+  DEFAULT_INDUSTRY,
+  INDUSTRY_POOL_NAMES,
+  INDUSTRY_STORAGE_KEY,
+} from '@/lib/ruankao/industry-pool'
 import type { RuankaoWizardSeed } from '@/lib/ruankao/wizard-seed'
 import { validatePeriod, parseMonthsFromText, type ProjectEnvMode } from '@/lib/utils/project-env-time'
 
@@ -49,85 +59,12 @@ interface CreateEnvWizardProps {
   preset?: RuankaoWizardSeed | null
 }
 
-const KEYWORD_MIN = 2
-const KEYWORD_MAX = 8
-
-function KeywordInput({
-  keywords,
-  onChange,
-  disabled,
-}: {
-  keywords: string[]
-  onChange: (keywords: string[]) => void
-  disabled?: boolean
-}) {
-  const { t } = useTranslation()
-  const [draft, setDraft] = useState('')
-
-  const addDraft = () => {
-    const parts = draft
-      .split(/[,，、;；\s]+/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-    const next = [...keywords]
-    for (const part of parts) {
-      if (next.length >= KEYWORD_MAX) break
-      if (!next.includes(part)) next.push(part)
-    }
-    if (next.length > keywords.length) onChange(next)
-    setDraft('')
-  }
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-md border bg-transparent px-2 py-1.5 text-sm">
-        {keywords.map((keyword) => (
-          <Badge key={keyword} variant="secondary" className="gap-1 font-normal">
-            {keyword}
-            <button
-              type="button"
-              aria-label={`${t('common.remove')} ${keyword}`}
-              disabled={disabled}
-              onClick={() => onChange(keywords.filter((item) => item !== keyword))}
-              className="rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-        <input
-          className="min-w-[120px] flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-          value={draft}
-          disabled={disabled}
-          placeholder={
-            keywords.length ? '' : t('projectEnvs.mockKeywordsPlaceholder')
-          }
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ',') {
-              event.preventDefault()
-              addDraft()
-            } else if (
-              event.key === 'Backspace' &&
-              !draft &&
-              keywords.length &&
-              !disabled
-            ) {
-              onChange(keywords.slice(0, -1))
-            }
-          }}
-          onBlur={addDraft}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground">{t('projectEnvs.mockKeywordsHint')}</p>
-    </div>
-  )
-}
-
 export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: CreateEnvWizardProps) {
   const { t } = useTranslation()
   const [step, setStep] = useState(1)
   const [mode, setMode] = useState<ProjectEnvMode | null>(null)
+  // PRD 导入：点击第三卡后 step 仍为 1，用本地开关替换卡片区为导入面板
+  const [importActive, setImportActive] = useState(false)
 
   // Real-project form
   const [name, setName] = useState('')
@@ -136,7 +73,8 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
   const [techBackground, setTechBackground] = useState('')
   const [tuning, setTuning] = useState('')
   const [problems, setProblems] = useState('')
-  const [myRole, setMyRole] = useState('')
+  // 软考论文作者默认身份：预填不用手敲，可改（PRD real 通道同款默认见 PrdImportPanel）
+  const [myRole, setMyRole] = useState(DEFAULT_MY_ROLE)
   // scale 输入已移除（人员/规模/资金三层禁令）：关闭用户手填规模的入口
   const [polish, setPolish] = useState<PolishState>({ phase: 'idle' })
   const [polishAdopted, setPolishAdopted] = useState(false)
@@ -148,8 +86,9 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
   const [mockName, setMockName] = useState('')
   const [industry, setIndustry] = useState(
     () =>
-      (typeof window !== 'undefined' && localStorage.getItem('project-env-industry')) ||
-      '物流行业'
+      (typeof window !== 'undefined' &&
+        localStorage.getItem(INDUSTRY_STORAGE_KEY)) ||
+      DEFAULT_INDUSTRY
   )
   const [keywords, setKeywords] = useState<string[]>([])
   const [mockPeriod, setMockPeriod] = useState({ start: '', end: '' })
@@ -199,13 +138,14 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
       // Dialog state is parent-cleared by design; reset everything on close.
       setStep(1)
       setMode(null)
+      setImportActive(false)
       setName('')
       setPeriod({ start: '', end: '' })
       setBackground('')
       setTechBackground('')
       setTuning('')
       setProblems('')
-      setMyRole('')
+      setMyRole(DEFAULT_MY_ROLE)
       setPolish({ phase: 'idle' })
       setPolishAdopted(false)
       setMockName('')
@@ -390,6 +330,59 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
     )
   }
 
+  // PRD 导入 real 通道：解析结果经预览确认后走既有 create 端点（+prd_imported）；
+  // keywords 必须随行（库 schema 非空 array<string>，缺省会被后端折叠成 []）
+  const submitImportReal = (payload: PrdImportRealPayload) => {
+    createMutation.mutate(
+      {
+        name: payload.name,
+        background: payload.background,
+        period_start: payload.period_start,
+        period_end: payload.period_end,
+        source_type: 'real',
+        keywords: payload.keywords,
+        tech_background: payload.tech_background,
+        tuning_process: payload.tuning_process,
+        problems_solutions: payload.problems_solutions,
+        my_role: payload.my_role,
+        prd_imported: true,
+        background_ai_polished: false,
+      },
+      {
+        onSuccess: (env) => {
+          setMode('real')
+          setEnvId(env.id)
+          setStep(3)
+        },
+      }
+    )
+  }
+
+  // PRD 导入 mock 通道：PRD 即信息源，flow=direct 跳过素材步直接进验证
+  const submitImportMock = (payload: PrdImportMockPayload) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('project-env-industry', payload.industry.trim())
+    }
+    mockMutation.mutate(
+      {
+        name: payload.name || undefined,
+        keywords: payload.keywords,
+        industry: payload.industry.trim() || undefined,
+        period_start: payload.period_start || undefined,
+        period_end: payload.period_end || undefined,
+        flow: 'direct',
+        prd_seed: payload.prd_seed,
+      },
+      {
+        onSuccess: (result) => {
+          setMode('mock')
+          setEnvId(result.id)
+          setStep(4)
+        },
+      }
+    )
+  }
+
   // Keyword text may carry explicit YYYY.MM hints; prefill the pickers until
   // the user touches them (after that the pickers win, per decision ③).
   const handleKeywordsChange = (next: string[]) => {
@@ -420,12 +413,22 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
               </div>
             ) : (
               <>
-            {step === 1 && (
+            {step === 1 && importActive && (
+              <PrdImportPanel
+                createPending={createMutation.isPending}
+                mockPending={mockMutation.isPending}
+                onConfirmReal={submitImportReal}
+                onConfirmMock={submitImportMock}
+                onBack={() => setImportActive(false)}
+              />
+            )}
+
+            {step === 1 && !importActive && (
               <div className="space-y-4 py-2">
                 <p className="text-sm text-muted-foreground">
                   {t('projectEnvs.sharedNote')}
                 </p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => {
@@ -464,6 +467,20 @@ export function CreateEnvWizard({ open, onOpenChange, initialEnvId, preset }: Cr
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {t('projectEnvs.mockModeDesc')}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportActive(true)}
+                    className="rounded-lg border p-4 text-left transition-colors hover:border-warn/60"
+                    data-testid="env-mode-import"
+                  >
+                    <div className="mb-1 flex items-center gap-2 font-medium">
+                      <FileText className="h-4 w-4 text-warn" />
+                      {t('projectEnvs.prdImport.cardTitle')}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t('projectEnvs.prdImport.cardDesc')}
                     </p>
                   </button>
                 </div>

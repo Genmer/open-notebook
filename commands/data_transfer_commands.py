@@ -3,7 +3,8 @@ their files/vectors into one zip and restore them into another environment.
 Format v2 adds model configuration (credential/model/default_models); when the
 export scope includes it, credential api_keys are written decrypted (ADR-014
 risk accepted by product) and re-encrypted on import with the local
-OPEN_NOTEBOOK_ENCRYPTION_KEY.
+OPEN_NOTEBOOK_ENCRYPTION_KEY. Format v3 adds project environments; format v4
+adds the agent table (chat personas).
 
 Key invariants (ADR-011, extended by ADR-014):
 - Progress lives in data_transfer_state:{export,import}; surreal-commands has
@@ -74,10 +75,10 @@ TRANSFER_RETRY_CONFIG = {
     "retry_log_level": "warning",
 }
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 # v1 packages (data/files only) stay importable; model members in a v1 package
 # are a packaging bug and reject the whole import.
-SUPPORTED_FORMAT_VERSIONS = (1, 2, 3)
+SUPPORTED_FORMAT_VERSIONS = (1, 2, 3, 4)
 EXPORT_BATCH = 500
 WRITE_BATCH = 100
 # Per-file skip details kept for the summary; beyond this only the counter
@@ -94,6 +95,7 @@ DEFAULT_MAX_IMPORT_UNCOMPRESSED_MB = 4096
 DATA_TABLES = (
     "notebook",
     "transformation",
+    "agent",
     "source_view",
     "source_group",
     "source",
@@ -120,8 +122,8 @@ SINGLETON_TABLES = CONFIG_TABLES + ("default_models",)
 # both sides so imported needs_review envs stay directly actionable.
 PROJECT_ENV_TABLES = ("project_env", "project_env_verification")
 # Fork rule: every new project-data table (user-owned domain data) MUST be
-# added to this export/import scope — see the README fork log. Known gap:
-# agent is not exported yet.
+# added to this export/import scope — see the README fork log. All known
+# tables are covered; agent closed the last gap in format v4.
 ALL_TABLES = (
     DATA_TABLES
     + EDGE_TABLES
@@ -219,6 +221,20 @@ TABLE_FIELDS: Dict[str, Tuple[str, ...]] = {
         "prompt",
         "apply_default",
         "model_id",
+        "created",
+        "updated",
+    ),
+    # agent.model is a record link that may dangle (execute time falls back
+    # to the default model), so imports never validate it against model.
+    "agent": (
+        "name",
+        "system_prompt",
+        "description",
+        "model",
+        "temperature",
+        "max_tokens",
+        "enabled",
+        "sort_order",
         "created",
         "updated",
     ),
@@ -333,6 +349,7 @@ ASSET_FIELDS = ("file_path", "url")
 RECORD_FIELDS: Dict[str, Set[str]] = {
     "source_insight": {"source"},
     "transformation": {"model_id"},
+    "agent": {"model"},
     "source_group": {"source_view", "parent"},
     EMBEDDING_TABLE: {"source"},
     "model": {"credential"},
@@ -1271,6 +1288,8 @@ def _validate_package(zf: zipfile.ZipFile) -> PackageManifest:
         raise ValueError("Model configuration members require package format_version 2")
     if manifest.format_version < 3 and data_tables & set(PROJECT_ENV_TABLES):
         raise ValueError("project_env members require package format_version 3")
+    if manifest.format_version < 4 and data_tables & {"agent"}:
+        raise ValueError("agent members require package format_version 4")
     if manifest.package_type == "models" and data_tables - set(MODEL_CONFIG_TABLES):
         unexpected = sorted(data_tables - set(MODEL_CONFIG_TABLES))
         raise ValueError(

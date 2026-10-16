@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -180,3 +181,53 @@ class CommandService:
         except Exception as e:
             logger.error(f"Failed to retry command job {job_id}: {e}")
             raise
+
+    @staticmethod
+    async def recover_stale_commands(timeout_seconds: int = 900) -> int:
+        """Scan and mark orphaned running commands as failed.
+
+        Commands that stayed in 'running' without updates for longer than
+        timeout_seconds (default 15 minutes) are considered abandoned by
+        dead workers; without this they block retry of the affected source
+        forever.
+        """
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+            # updated can be missing (NONE) on rows a worker claimed but never
+            # wrote to; fall back to created so those still age out.
+            rows = await repo_query(
+                "SELECT id, name, updated, created FROM command "
+                "WHERE status = 'running' AND ("
+                "(updated != NONE AND updated < $cutoff) OR "
+                "(updated == NONE AND created != NONE AND created < $cutoff));",
+                {"cutoff": cutoff},
+            )
+            if not rows:
+                return 0
+
+            recovered = 0
+            for row in rows:
+                cid = row.get("id")
+                if not cid:
+                    continue
+                # Status guard: a job finishing between SELECT and UPDATE must
+                # not be rewritten as failed.
+                updated = await repo_query(
+                    "UPDATE command SET status = 'failed', error_message = $msg, "
+                    "updated = time::now() WHERE id = $id AND status = 'running'",
+                    {
+                        "id": ensure_record_id(cid),
+                        "msg": "Command execution timed out or worker process was terminated",
+                    },
+                )
+                if not updated:
+                    continue
+                recovered += 1
+                logger.warning(
+                    f"Auto-recovered stale command {cid} "
+                    f"(last updated {row.get('updated')})"
+                )
+            return recovered
+        except Exception as e:
+            logger.warning(f"Failed to recover stale commands: {e}")
+            return 0

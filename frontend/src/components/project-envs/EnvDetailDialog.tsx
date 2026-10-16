@@ -20,12 +20,14 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   User,
   X,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useReverifyProjectEnv } from '@/lib/hooks/use-project-envs'
 import type { ProjectEnv } from '@/lib/types/api'
 import { spanMonths } from '@/lib/utils/project-env-time'
 import {
@@ -117,7 +119,10 @@ interface EnvDetailDialogProps {
 
 export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProps) {
   const { t } = useTranslation()
+  const reverifyMutation = useReverifyProjectEnv()
   if (!env) return null
+
+  const pending = env.status === 'pending' || env.status === 'material_pending'
 
   const material = materialOf(env)
   const empty = Object.values(material).every((text) => text.length === 0)
@@ -314,7 +319,26 @@ export function EnvDetailDialog({ env, open, onOpenChange }: EnvDetailDialogProp
           <GenericParagraphSection env={env} />
         </div>
 
-        <div className="flex shrink-0 justify-end border-t px-6 py-3">
+        <div className="flex shrink-0 items-center justify-between border-t px-6 py-3">
+          <div>
+            {!pending && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={reverifyMutation.isPending}
+                onClick={() => reverifyMutation.mutate(env.id)}
+                data-testid="env-detail-reverify-button"
+              >
+                <RefreshCw
+                  className={cn(
+                    'mr-1.5 h-3.5 w-3.5',
+                    reverifyMutation.isPending && 'animate-spin'
+                  )}
+                />
+                {t('projectEnvs.reverifyEnv')}
+              </Button>
+            )}
+          </div>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             <X className="mr-1 h-3.5 w-3.5" />
             {t('common.close')}

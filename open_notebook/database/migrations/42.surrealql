@@ -1,0 +1,29 @@
+-- Migration 42: dynamic GA anchor cache + ruankao concept knowledge cache.
+-- Both tables hold PUBLIC reference knowledge only (release calendars, exam
+-- concept definitions gathered from the web); per ADR-017 they must never
+-- relate to or copy model essay content, so no record/ edge to sources exists.
+DEFINE TABLE IF NOT EXISTS ga_anchor_cache SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS tech ON TABLE ga_anchor_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS version ON TABLE ga_anchor_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS ga ON TABLE ga_anchor_cache TYPE string;
+-- where the anchor came from ("web:<url>" | "manual"), kept for transparency
+DEFINE FIELD IF NOT EXISTS source ON TABLE ga_anchor_cache TYPE string;
+-- "web" | "manual" — web rows can be refreshed, manual ones win
+DEFINE FIELD IF NOT EXISTS confidence ON TABLE ga_anchor_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS detail ON TABLE ga_anchor_cache TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE ga_anchor_cache DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE ga_anchor_cache DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_gac_tech_version ON TABLE ga_anchor_cache COLUMNS tech, version UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS ruankao_concept_cache SCHEMAFULL;
+-- canonical concept name, the cache's natural key
+DEFINE FIELD IF NOT EXISTS name ON TABLE ruankao_concept_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS category ON TABLE ruankao_concept_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS domain ON TABLE ruankao_concept_cache TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS definition ON TABLE ruankao_concept_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS key_points ON TABLE ruankao_concept_cache TYPE option<array>;
+DEFINE FIELD IF NOT EXISTS exam_focus ON TABLE ruankao_concept_cache TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS source ON TABLE ruankao_concept_cache TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE ruankao_concept_cache DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE ruankao_concept_cache DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_rcc_name ON TABLE ruankao_concept_cache COLUMNS name UNIQUE;

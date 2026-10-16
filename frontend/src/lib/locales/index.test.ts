@@ -161,3 +161,25 @@ describe('Unused Key Detection', () => {
     30_000,
   )
 })
+
+describe('Failure Issues Titles (all locales)', () => {
+  // T8 验收：14 个语言包全部提供失败原因标题的两个键
+  const REQUIRED_KEYS = ['failedIssuesTitle', 'exhaustedIssuesTitle'] as const
+
+  it.each(Object.entries(resources))(
+    '%s should carry failedIssuesTitle and exhaustedIssuesTitle',
+    (code, resource) => {
+      const projectEnvs = (
+        resource.translation as {
+          projectEnvs?: Record<string, unknown>
+        }
+      ).projectEnvs
+
+      for (const key of REQUIRED_KEYS) {
+        const value = projectEnvs?.[key]
+        expect(typeof value, `${code} missing projectEnvs.${key}`).toBe('string')
+        expect((value as string).length, `${code} empty projectEnvs.${key}`).toBeGreaterThan(0)
+      }
+    },
+  )
+})

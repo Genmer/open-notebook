@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
     // Increase proxy body size limit for file uploads (default is 10MB)
     // This allows larger files to be uploaded through the /api/* rewrite proxy to FastAPI
     proxyClientMaxBodySize: '100mb',
+    // 内置 rewrites 代理默认 30s 超时，会掐断 PRD 解析等 600s 级同步 LLM 端点，
+    // 返回非 JSON 500 导致前端只能显示兜底错误；放到 660s 让后端/axios 的协议化超时先触发
+    proxyTimeout: 660_000,
   } as NextConfig['experimental'],
 
   // API Rewrites: Proxy /api/* requests to FastAPI backend

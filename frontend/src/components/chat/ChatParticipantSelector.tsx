@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   Select,
   SelectContent,
@@ -8,19 +8,8 @@ import {
   SelectItem,
   SelectLabel,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Bot, Settings2 } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { useModelDefaults, useModels } from '@/lib/hooks/use-models'
 import { useAgents } from '@/lib/hooks/use-agents'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -64,15 +53,10 @@ export function ChatParticipantSelector({
   testid = 'chat-participant-trigger',
 }: ChatParticipantSelectorProps) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const [selected, setSelected] = useState(() => encodeParticipant(value))
+  const selected = encodeParticipant(value)
   const { data: models, isLoading: modelsLoading } = useModels()
   const { data: defaults } = useModelDefaults()
   const { data: agents, isLoading: agentsLoading } = useAgents()
-
-  useEffect(() => {
-    setSelected(encodeParticipant(value))
-  }, [value])
 
   const languageModels = useMemo(() => {
     if (!models) return []
@@ -110,120 +94,77 @@ export function ChatParticipantSelector({
     return t('common.default')
   }, [value, enabledAgents, languageModels, defaultModel, t])
 
-  const handleSave = () => {
-    onChange(decodeParticipant(selected))
-    setOpen(false)
-  }
-
-  const handleReset = () => {
-    setSelected('default')
-    onChange({ agent: null, modelOverride: null })
-    setOpen(false)
+  const handleValueChange = (val: string) => {
+    onChange(decodeParticipant(val))
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          className="gap-2"
-          data-testid={testid}
-        >
-          <Settings2 className="h-4 w-4" />
-          <span className="text-xs max-w-[160px] truncate">{currentName}</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            {t('chat.participantConfig')}
-          </DialogTitle>
-          <DialogDescription>{t('chat.participantDesc')}</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <Select value={selected} onValueChange={setSelected}>
-            <SelectTrigger data-testid="chat-participant-select">
-              <SelectValue placeholder={t('chat.participantPlaceholder')} />
-            </SelectTrigger>
-            <SelectContent>
-              {modelsLoading || agentsLoading ? (
-                <div className="flex items-center justify-center py-2">
-                  <LoadingSpinner size="sm" />
-                </div>
-              ) : (
-                <>
-                  <SelectGroup>
-                    <SelectLabel>{t('chat.groupDefault')}</SelectLabel>
-                    <SelectItem value="default">
-                      <div className="flex items-center justify-between w-full">
-                        <span>
-                          {defaultModel
-                            ? `${t('common.default')} (${defaultModel.name})`
-                            : t('transformations.systemDefault')}
-                        </span>
-                        {defaultModel?.provider && (
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {defaultModel.provider}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  </SelectGroup>
-                  {enabledAgents.length > 0 && (
-                    <SelectGroup>
-                      <SelectLabel>{t('chat.groupAgents')}</SelectLabel>
-                      {enabledAgents.map((agent) => (
-                        <SelectItem key={agent.id} value={`agent:${agent.id}`}>
-                          <div className="flex items-center justify-between w-full">
-                            <span className="truncate">{agent.name}</span>
-                            {agent.model_id && (
-                              <span className="text-xs text-muted-foreground ml-2 truncate max-w-[120px]">
-                                {languageModels.find((m) => m.id === agent.model_id)?.name ||
-                                  agent.model_id}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
+    <Select value={selected} onValueChange={handleValueChange} disabled={disabled}>
+      <SelectTrigger
+        data-testid={testid}
+        className="h-8 gap-2 w-auto max-w-[220px] text-xs font-normal bg-background/80 hover:bg-background border-border/80 shadow-none shrink-0"
+      >
+        <Settings2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="truncate">{currentName}</span>
+      </SelectTrigger>
+      <SelectContent align="start" className="max-w-[340px]">
+        {modelsLoading || agentsLoading ? (
+          <div className="flex items-center justify-center py-2">
+            <LoadingSpinner size="sm" />
+          </div>
+        ) : (
+          <>
+            <SelectGroup>
+              <SelectLabel>{t('chat.groupDefault')}</SelectLabel>
+              <SelectItem value="default">
+                <div className="flex items-center justify-between w-full gap-2">
+                  <span>
+                    {defaultModel
+                      ? `${t('common.default')} (${defaultModel.name})`
+                      : t('transformations.systemDefault')}
+                  </span>
+                  {defaultModel?.provider && (
+                    <span className="text-xs text-muted-foreground ml-2 shrink-0">
+                      {defaultModel.provider}
+                    </span>
                   )}
-                  <SelectGroup>
-                    <SelectLabel>{t('chat.groupModels')}</SelectLabel>
-                    {languageModels.map((model) => (
-                      <SelectItem key={model.id} value={`model:${model.id}`}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{model.name}</span>
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {model.provider}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </>
-              )}
-            </SelectContent>
-          </Select>
-          {selected !== 'default' && (
-            <div className="rounded-lg bg-muted p-3">
-              <p className="text-sm text-muted-foreground">
-                {selected.startsWith('agent:')
-                  ? t('chat.participantAgentHint')
-                  : t('chat.participantModelHint')}
-              </p>
-            </div>
-          )}
-        </div>
-        <DialogFooter className="flex justify-between">
-          <Button variant="outline" onClick={handleReset}>
-            {t('common.resetToDefault')}
-          </Button>
-          <Button onClick={handleSave}>{t('common.saveChanges')}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+                </div>
+              </SelectItem>
+            </SelectGroup>
+            {enabledAgents.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>{t('chat.groupAgents')}</SelectLabel>
+                {enabledAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={`agent:${agent.id}`}>
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="truncate">{agent.name}</span>
+                      {agent.model_id && (
+                        <span className="text-xs text-muted-foreground ml-2 truncate max-w-[120px] shrink-0">
+                          {languageModels.find((m) => m.id === agent.model_id)?.name ||
+                            agent.model_id}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <SelectGroup>
+              <SelectLabel>{t('chat.groupModels')}</SelectLabel>
+              {languageModels.map((model) => (
+                <SelectItem key={model.id} value={`model:${model.id}`}>
+                  <div className="flex items-center justify-between w-full gap-2">
+                    <span className="truncate">{model.name}</span>
+                    <span className="text-xs text-muted-foreground ml-2 shrink-0">
+                      {model.provider}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </>
+        )}
+      </SelectContent>
+    </Select>
   )
 }

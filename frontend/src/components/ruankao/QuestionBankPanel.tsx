@@ -944,6 +944,147 @@ export function QuestionBankPanel() {
     toast.success(t('ruankao.questionBank.wizardSeedReady'))
   }
 
+  // 两节分组只发生在渲染层（recent=有产物 summary.done>0，unused=其余）：
+  // visible 数据与排序零改动；两节皆空仍走 common.noMatches。
+  const recentRows = visible.filter((row) => row.summary.done > 0)
+  const unusedRows = visible.filter((row) => row.summary.done === 0)
+
+  const renderRow = ({ q, summary }: VisibleRow) => (
+    <div
+      key={q.id}
+      data-testid={`ruankao-qbank-item-${q.id}`}
+      className="group flex items-center gap-2 py-2 pl-3 pr-3"
+    >
+      {/* 内容簇：origin 徽标 → 年份徽标 → 标题（截断封顶兜住宽视口下
+          「标题→技术域列」的距离，宽屏治理 L 线 §2.2），靠左聚簇 */}
+      {/* 真题/模拟互斥 badge：每行恰好一个（title=判定口径提示） */}
+      {q.origin === 'real' ? (
+        <Badge
+          variant="default"
+          className="shrink-0"
+          data-testid="ruankao-qbank-origin-real"
+          title={t('ruankao.questionBank.originRealDesc')}
+        >
+          {t('ruankao.questionBank.originReal')}
+        </Badge>
+      ) : (
+        <Badge
+          variant="secondary"
+          className="shrink-0"
+          data-testid="ruankao-qbank-origin-mock"
+          title={t('ruankao.questionBank.originMockDesc')}
+        >
+          {t('ruankao.questionBank.originMock')}
+        </Badge>
+      )}
+      {q.year.trim() && (
+        <Badge variant="outline" className="shrink-0">
+          {q.year}
+        </Badge>
+      )}
+      <span className="min-w-0 max-w-md truncate text-sm font-medium lg:max-w-lg">
+        {q.title}
+      </span>
+      {/* 技术域列：固定宽度保证所有行该列对齐；域名截断 + title 悬停
+          看全名；旁挂生成进度角标（等宽数字，done=3 高亮） */}
+      <div
+        className="flex w-40 shrink-0 items-center gap-1.5"
+        data-testid={`ruankao-qbank-domain-cell-${q.id}`}
+      >
+        {q.domain.trim() && (
+          <span
+            className="min-w-0 truncate text-xs text-muted-foreground"
+            title={q.domain}
+          >
+            {q.domain}
+          </span>
+        )}
+        <span
+          className={`ml-auto shrink-0 text-xs tabular-nums ${
+            summary.done === GENERATIONS_KINDS.length
+              ? 'text-primary'
+              : 'text-muted-foreground'
+          }`}
+          aria-label={t('ruankao.questionBank.list.generatedAria', {
+            done: summary.done,
+            total: GENERATIONS_KINDS.length,
+          })}
+          data-testid={`ruankao-qbank-generated-badge-${q.id}`}
+        >
+          {t('ruankao.questionBank.list.generatedBadge', {
+            done: summary.done,
+            total: GENERATIONS_KINDS.length,
+          })}
+        </span>
+      </div>
+
+      {/* 练习状态列：shrink-0 不受技术域固定宽度挤压 */}
+      <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+        <Checkbox
+          checked={q.practiced}
+          data-testid={`ruankao-qbank-practiced-toggle-${q.id}`}
+          onCheckedChange={() => togglePracticed(q.id)}
+        />
+        {q.practiced
+          ? t('ruankao.questionBank.filterPracticed')
+          : t('ruankao.questionBank.filterUnpracticed')}
+      </label>
+
+      {/* 操作区靠右（ml-auto 推到行尾，与技术域/练习状态列脱开）。
+          高频动作常驻不藏：详情/复制教练每行都可能点，hover 收起与
+          「复制给教练」的高频定位矛盾 */}
+      <div
+        className="ml-auto flex shrink-0 items-center gap-2"
+        data-testid={`ruankao-qbank-actions-${q.id}`}
+      >
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label={t('ruankao.questionBank.detailAction')}
+          data-testid={`ruankao-qbank-detail-${q.id}`}
+          onClick={() => setDetailId(q.id)}
+        >
+          {t('ruankao.questionBank.detailAction')}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid={`ruankao-qbank-copy-coach-${q.id}`}
+          onClick={() => handleCopyForCoach(q)}
+        >
+          <Copy className="h-4 w-4" />
+          {t('ruankao.questionBank.copyForCoach')}
+        </Button>
+
+        {/* 低频破坏性操作降噪：hover/键盘聚焦（focus-within）/触屏
+            （pointer-coarse，无 hover 设备常驻）三通道显隐 */}
+        {q.source === 'user' && (
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={t('common.edit')}
+              data-testid={`ruankao-qbank-edit-${q.id}`}
+              onClick={() => openEdit(q)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive"
+              aria-label={t('ruankao.questionBank.deleteAction')}
+              data-testid={`ruankao-qbank-delete-${q.id}`}
+              onClick={() => setDeleteTarget(q)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   if (!ready) {
     return (
       <div
@@ -1080,141 +1221,34 @@ export function QuestionBankPanel() {
           className="divide-y divide-border rounded-md border"
           data-testid="ruankao-qbank-list"
         >
-          {visible.map(({ q, summary }) => (
-            <div
-              key={q.id}
-              data-testid={`ruankao-qbank-item-${q.id}`}
-              className="group flex items-center gap-2 py-2 pl-3 pr-3"
-            >
-              {/* 内容簇：origin 徽标 → 年份徽标 → 标题（截断封顶兜住宽视口下
-                  「标题→技术域列」的距离，宽屏治理 L 线 §2.2），靠左聚簇 */}
-              {/* 真题/模拟互斥 badge：每行恰好一个（title=判定口径提示） */}
-              {q.origin === 'real' ? (
-                <Badge
-                  variant="default"
-                  className="shrink-0"
-                  data-testid="ruankao-qbank-origin-real"
-                  title={t('ruankao.questionBank.originRealDesc')}
-                >
-                  {t('ruankao.questionBank.originReal')}
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="shrink-0"
-                  data-testid="ruankao-qbank-origin-mock"
-                  title={t('ruankao.questionBank.originMockDesc')}
-                >
-                  {t('ruankao.questionBank.originMock')}
-                </Badge>
-              )}
-              {q.year.trim() && (
-                <Badge variant="outline" className="shrink-0">
-                  {q.year}
-                </Badge>
-              )}
-              <span className="min-w-0 max-w-md truncate text-sm font-medium lg:max-w-lg">
-                {q.title}
-              </span>
-              {/* 技术域列：固定宽度保证所有行该列对齐；域名截断 + title 悬停
-                  看全名；旁挂生成进度角标（等宽数字，done=3 高亮） */}
+          {recentRows.length > 0 && (
+            <>
               <div
-                className="flex w-40 shrink-0 items-center gap-1.5"
-                data-testid={`ruankao-qbank-domain-cell-${q.id}`}
+                className="flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                data-testid="ruankao-qbank-section-recent"
               >
-                {q.domain.trim() && (
-                  <span
-                    className="min-w-0 truncate text-xs text-muted-foreground"
-                    title={q.domain}
-                  >
-                    {q.domain}
-                  </span>
-                )}
-                <span
-                  className={`ml-auto shrink-0 text-xs tabular-nums ${
-                    summary.done === GENERATIONS_KINDS.length
-                      ? 'text-primary'
-                      : 'text-muted-foreground'
-                  }`}
-                  aria-label={t('ruankao.questionBank.list.generatedAria', {
-                    done: summary.done,
-                    total: GENERATIONS_KINDS.length,
-                  })}
-                  data-testid={`ruankao-qbank-generated-badge-${q.id}`}
-                >
-                  {t('ruankao.questionBank.list.generatedBadge', {
-                    done: summary.done,
-                    total: GENERATIONS_KINDS.length,
-                  })}
-                </span>
+                {t('ruankao.questionBank.list.sectionRecent')}
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  {recentRows.length}
+                </Badge>
               </div>
-
-              {/* 练习状态列：shrink-0 不受技术域固定宽度挤压 */}
-              <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={q.practiced}
-                  data-testid={`ruankao-qbank-practiced-toggle-${q.id}`}
-                  onCheckedChange={() => togglePracticed(q.id)}
-                />
-                {q.practiced
-                  ? t('ruankao.questionBank.filterPracticed')
-                  : t('ruankao.questionBank.filterUnpracticed')}
-              </label>
-
-              {/* 操作区靠右（ml-auto 推到行尾，与技术域/练习状态列脱开）。
-                  高频动作常驻不藏：详情/复制教练每行都可能点，hover 收起与
-                  「复制给教练」的高频定位矛盾 */}
+              {recentRows.map(renderRow)}
+            </>
+          )}
+          {unusedRows.length > 0 && (
+            <>
               <div
-                className="ml-auto flex shrink-0 items-center gap-2"
-                data-testid={`ruankao-qbank-actions-${q.id}`}
+                className="flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                data-testid="ruankao-qbank-section-unused"
               >
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label={t('ruankao.questionBank.detailAction')}
-                  data-testid={`ruankao-qbank-detail-${q.id}`}
-                  onClick={() => setDetailId(q.id)}
-                >
-                  {t('ruankao.questionBank.detailAction')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid={`ruankao-qbank-copy-coach-${q.id}`}
-                  onClick={() => handleCopyForCoach(q)}
-                >
-                  <Copy className="h-4 w-4" />
-                  {t('ruankao.questionBank.copyForCoach')}
-                </Button>
-
-                {/* 低频破坏性操作降噪：hover/键盘聚焦（focus-within）/触屏
-                    （pointer-coarse，无 hover 设备常驻）三通道显隐 */}
-                {q.source === 'user' && (
-                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={t('common.edit')}
-                      data-testid={`ruankao-qbank-edit-${q.id}`}
-                      onClick={() => openEdit(q)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      aria-label={t('ruankao.questionBank.deleteAction')}
-                      data-testid={`ruankao-qbank-delete-${q.id}`}
-                      onClick={() => setDeleteTarget(q)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
+                {t('ruankao.questionBank.list.sectionUnused')}
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  {unusedRows.length}
+                </Badge>
               </div>
-            </div>
-          ))}
+              {unusedRows.map(renderRow)}
+            </>
+          )}
         </div>
       )}
 

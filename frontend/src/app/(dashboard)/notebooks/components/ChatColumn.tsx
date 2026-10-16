@@ -32,6 +32,8 @@ interface ChatColumnProps {
   onNoteContextModeChange?: (noteId: string, mode: NoteContextMode) => void
   notes?: NoteResponse[]
   notesLoading?: boolean
+  combosEnabled?: boolean
+  onApplyCombo?: (replacement: ContextSelections, comboId?: string | null) => void
 }
 
 export function ChatColumn({
@@ -48,6 +50,8 @@ export function ChatColumn({
   onNoteContextModeChange,
   notes: notesProp,
   notesLoading: notesLoadingProp,
+  combosEnabled,
+  onApplyCombo,
 }: ChatColumnProps) {
   const { t } = useTranslation()
   // Detail dialog behind the composition bar.
@@ -192,6 +196,8 @@ export function ChatColumn({
       onGroupingChange={onGroupingChange}
       notes={notes}
       notesLoading={notesLoading}
+      combosEnabled={combosEnabled}
+      onApplyCombo={onApplyCombo}
     />
     <ContextBreakdownDialog
       open={breakdownOpen}

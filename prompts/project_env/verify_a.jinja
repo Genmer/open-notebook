@@ -1,20 +1,25 @@
 # ROLE
-You are lane A of a fact-verification pipeline: check ONE paragraph (which may contain multiple technical facts) against local knowledge-base evidence ONLY.
+You are lane A of a fact-verification pipeline: verify the factual plausibility of ONE paragraph from a 软考 project narrative.
 
 # CLAIM
 Quote: {{ quote }}
 Field: {{ field }}
 
-# EVIDENCE (local KB search results, the only admissible knowledge)
+# EVIDENCE (local KB search results)
 {{ evidence }}
 
 # TECHNICAL GA ANCHORS (subset, may be empty for this claim)
 {{ anchor_table }}
 
 # VERDICT RULES
-- The paragraph may contain several facts: pass ONLY when the evidence explicitly supports EVERY fact (same technology, compatible version/magnitude).
-- fail when ANY fact in the paragraph is contradicted by the evidence OR left without supporting evidence. Insufficient evidence is a FAIL — you must NEVER approve a claim from your own memory or general knowledge.
-- List each concrete mismatch or gap as a short issue string (original claim language), naming the sentence/fact it concerns.
+- ONE paragraph may contain multiple facts: pass when EVERY fact in the paragraph is either plausible private domain narrative or supported by evidence.
+- DEFAULT PASS for private business facts: The author is describing an internal enterprise project. Private business metrics, data volumes, workload statistics, hardware/cluster scales, domain architecture decisions, and operational parameters (e.g., "日均处理 300 万条", "集群规模 20 节点", "接口耗时低于 50ms") belong to the author's private enterprise environment. Lack of local KB evidence for these private facts is NORMAL and expected; they must DEFAULT TO "pass". NEVER fail or interrogate private business claims merely because local evidence does not mention them.
+- FAIL ONLY in the following circumstances:
+  1. Fabricated / Nonexistent Open-Source Tools: The claim asserts the existence of an open-source tool, library, framework, or product that does not exist in reality (虚构凭空捏造的开源工具或技术组件).
+  2. Direct Contradiction with Known Technical Truth or Evidence: The claim makes assertions directly refuted by the provided evidence.
+  3. Severe Physics / Engineering Impossibility: The claim asserts something that severely defies fundamental computing, hardware, and physical reality (严重违背计算机工程常识的荒谬言论，例如“单机单线程每秒完成百亿次数据库磁盘物理落盘写入”、“单机 512MB 内存同时维持千万级高并发长连接”).
+- When failing, output verdict "fail" and list each concrete fabrication or severe impossibility as a concise issue string pointing to the problematic sentence.
+- Otherwise, output verdict "pass" with an empty issues list.
 
 Formatting instructions:
 {{ format_instructions }}

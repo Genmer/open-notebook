@@ -1,3 +1,5 @@
+import asyncio
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -55,9 +57,13 @@ class SourceProcessingOutput(CommandOutput):
             ContextLengthExceededError,
             IncompleteGenerationError,
             NotFoundError,
-        ],  # Don't retry validation/config errors, incomplete generations, or a
+            TimeoutError,
+        ],  # Don't retry validation/config errors, incomplete generations, a
         # record deleted mid-processing (NotFoundError means "missing", never a
-        # DB failure: ObjectModel.get raises DatabaseOperationError for those)
+        # DB failure: ObjectModel.get raises DatabaseOperationError for those),
+        # or a graph timeout (asyncio.wait_for -> TimeoutError): retrying a
+        # timed-out job burns 15 attempts over hours for a result that will
+        # almost certainly time out again
         "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
     },
 )
@@ -122,15 +128,28 @@ async def process_source_command(
         # Execute source_graph with all notebooks.
         # LangGraph accepts a partial state dict at runtime, but its typed
         # overloads require the full state type (langgraph typing limitation).
-        result = await source_graph.ainvoke(  # type: ignore[call-overload]
-            {
-                "content_state": input_data.content_state,
-                "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
-                "apply_transformations": transformations,
-                "embed": input_data.embed,
-                "source_id": input_data.source_id,  # Add the source_id to the state
-            }
+        # wait_for keeps a hung graph call from pinning the job in 'running'
+        # forever (the worker-side complement of stale-command recovery).
+        timeout_seconds = float(
+            os.environ.get("SOURCE_PROCESSING_TIMEOUT_SECONDS", "900")
         )
+        try:
+            result = await asyncio.wait_for(
+                source_graph.ainvoke(  # type: ignore[call-overload]
+                    {
+                        "content_state": input_data.content_state,
+                        "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
+                        "apply_transformations": transformations,
+                        "embed": input_data.embed,
+                        "source_id": input_data.source_id,  # Add the source_id to the state
+                    }
+                ),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutError(
+                f"Source processing timed out after {timeout_seconds:g} seconds"
+            ) from e
 
         processed_source = result["source"]
 

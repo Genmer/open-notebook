@@ -31,6 +31,8 @@ export interface GeminiNotebookViewProps {
   /** 明细弹层的笔记移除入口复用页面既有的笔记模式回调。 */
   handleNoteContextModeChange?: (noteId: string, mode: NoteContextMode) => void
   setContextPickerOpen: (open: boolean) => void
+  combosEnabled?: boolean
+  onApplyCombo?: (replacement: ContextSelections, comboId?: string | null) => void
 }
 
 export function GeminiNotebookView({
@@ -48,6 +50,8 @@ export function GeminiNotebookView({
   handleBulkSourceContext,
   handleNoteContextModeChange,
   setContextPickerOpen,
+  combosEnabled,
+  onApplyCombo,
 }: GeminiNotebookViewProps) {
   const isDesktop = useIsDesktop()
   const [mobileActiveTab, setMobileActiveTab] = useState<'sources' | 'chat' | 'studio'>('chat')
@@ -111,6 +115,8 @@ export function GeminiNotebookView({
                 onNoteContextModeChange={handleNoteContextModeChange}
                 notes={notes}
                 notesLoading={notesLoading}
+                combosEnabled={combosEnabled}
+                onApplyCombo={onApplyCombo}
               />
             )}
             {mobileActiveTab === 'studio' && (
@@ -169,6 +175,8 @@ export function GeminiNotebookView({
             onNoteContextModeChange={handleNoteContextModeChange}
             notes={notes}
             notesLoading={notesLoading}
+            combosEnabled={combosEnabled}
+            onApplyCombo={onApplyCombo}
           />
         </div>
 

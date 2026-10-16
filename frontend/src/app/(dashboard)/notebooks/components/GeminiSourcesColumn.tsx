@@ -67,7 +67,12 @@ import { GroupNameDialog } from '@/components/sources/GroupNameDialog'
 import { GroupDialogs } from '@/components/sources/GroupDialogs'
 import { useGroupDialogs } from '@/components/sources/use-group-dialogs'
 import { useContextTree } from '@/lib/hooks/use-context-tree'
-import { buildGroupTree, GroupNode, MAX_GROUP_DEPTH, getAncestorChain } from '@/lib/utils/group-tree'
+import {
+  readFolderOverrides,
+  setFolderOverride,
+  writeFolderOverrides,
+} from '@/lib/notebooks/folder-collapse'
+import { buildGroupTree, GroupNode, MAX_GROUP_DEPTH, getAncestorChain, getGroupDepth } from '@/lib/utils/group-tree'
 import {
   useCreateGroup,
   useDeleteGroup,
@@ -128,7 +133,11 @@ export function GeminiSourcesColumn({
   const [addSourceOpen, setAddSourceOpen] = useState(false)
   const [addExistingOpen, setAddExistingOpen] = useState(false)
   const [targetFolderId, setTargetFolderId] = useState<string | undefined>()
-  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  // 新建文件夹弹窗落点：null=根层；来源行右键打开时=该行所属文件夹
+  const [newFolder, setNewFolder] = useState<{ open: boolean; parentId: string | null }>({
+    open: false,
+    parentId: null,
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [researchMode, setResearchMode] = useState<'fast' | 'deep'>('fast')
   const [researchPrompt, setResearchPrompt] = useState('')
@@ -251,6 +260,11 @@ export function GeminiSourcesColumn({
   // 折叠状态（记录用户主动切换的操作，key: groupId 或 'ungrouped'）
   const [collapsedOverrides, setCollapsedOverrides] = useState<Record<string, boolean>>({})
 
+  // 挂载后从折叠记忆恢复（SSR 首帧与无记忆时保持 {} 默认）；notebookId 变=换笔记本重读
+  useEffect(() => {
+    setCollapsedOverrides(readFolderOverrides(notebookId))
+  }, [notebookId])
+
   // 计算文件夹折叠状态：有来源的文件夹强制默认展开 (false)；无来源文件夹默认折叠 (true)
   const isGroupCollapsed = (groupId: string, hasSources: boolean) => {
     if (collapsedOverrides[groupId] !== undefined) {
@@ -262,10 +276,12 @@ export function GeminiSourcesColumn({
 
   const toggleGroupCollapse = (groupId: string, hasSources: boolean) => {
     const current = isGroupCollapsed(groupId, hasSources)
+    const next = !current
     setCollapsedOverrides((prev) => ({
       ...prev,
-      [groupId]: !current,
+      [groupId]: next,
     }))
+    setFolderOverride(notebookId, groupId, next)
   }
 
   // 一键展开/收起覆盖树上全部文件夹（含嵌套）+ 未分组段
@@ -283,6 +299,7 @@ export function GeminiSourcesColumn({
       next[id] = collapsed
     }
     setCollapsedOverrides(next)
+    writeFolderOverrides(notebookId, next)
   }
 
   const createGroup = useCreateGroup()
@@ -440,6 +457,34 @@ export function GeminiSourcesColumn({
     // 置灰项永不触发；若辅助路径绕过 disabled，也只报错、绝不写编造路径入剪贴板
     toast.error(t('common.error'))
   }
+
+  // 新建文件夹落点入口：与经典视图同语义（来源行右键=所在文件夹，面板按钮=根层）
+  const openNewFolder = (parentId: string | null) => {
+    const groups = (treeData?.groups ?? []).map(asSourceGroupResponse)
+    if (parentId && getGroupDepth(groups, parentId) >= MAX_GROUP_DEPTH) {
+      toast.error(t('apiErrors.groupDepthExceeded'))
+      return
+    }
+    setNewFolder({ open: true, parentId })
+  }
+
+  // 新建弹窗的落点提示与同级重名预检（与经典视图 SourcesColumn 同款）
+  const newFolderLocationPath = useMemo(() => {
+    const viewLabel = resolvedView ? displayViewName(resolvedView, t) : ''
+    if (!newFolder.parentId) return viewLabel
+    const groups = (treeData?.groups ?? []).map(asSourceGroupResponse)
+    const chain = [
+      ...getAncestorChain(groups, newFolder.parentId).map((g) => g.name),
+      groups.find((g) => g.id === newFolder.parentId)?.name,
+    ].filter(Boolean)
+    return [viewLabel, ...chain].filter(Boolean).join(' / ')
+  }, [newFolder.parentId, treeData?.groups, resolvedView, t])
+  const newFolderSiblingNames = useMemo(() => {
+    const groups = (treeData?.groups ?? []).map(asSourceGroupResponse)
+    return groups
+      .filter((g) => (g.parent_id ?? null) === newFolder.parentId)
+      .map((g) => g.name)
+  }, [treeData?.groups, newFolder.parentId])
 
   const handleDeleteConfirm = async () => {
     if (!sourceToDelete) return
@@ -891,7 +936,7 @@ export function GeminiSourcesColumn({
           disableCopyAbsolutePath={
             !!source.asset && !source.asset.file_path && !source.asset.url
           }
-          onNewFolder={() => setNewFolderOpen(true)}
+          onNewFolder={() => openNewFolder(groupId)}
           onUngroup={
             isGrouped ? () => handleUngroupSource(source) : undefined
           }
@@ -946,7 +991,7 @@ export function GeminiSourcesColumn({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs shadow-none px-2"
-              onClick={() => setNewFolderOpen(true)}
+              onClick={() => openNewFolder(null)}
               title={t('geminiSources.newFolder')}
               aria-label={t('geminiSources.newFolder')}
             >
@@ -1377,11 +1422,13 @@ export function GeminiSourcesColumn({
         }}
       />
 
-      {/* 新建文件夹对话框 */}
+      {/* 新建文件夹对话框：落点跟随来源行所在文件夹（面板按钮=根层），带落点提示 */}
       <GroupNameDialog
-        open={newFolderOpen}
-        onOpenChange={setNewFolderOpen}
+        open={newFolder.open}
+        onOpenChange={(open) => setNewFolder((prev) => ({ ...prev, open }))}
         mode="create"
+        locationPath={newFolderLocationPath || undefined}
+        siblingNames={newFolderSiblingNames}
         onConfirm={async (name: string) => {
           try {
             if (!resolvedViewId) {
@@ -1391,10 +1438,18 @@ export function GeminiSourcesColumn({
             await createGroup.mutateAsync({
               name,
               viewId: resolvedViewId,
+              parentId: newFolder.parentId,
             })
             refetchTree()
-            toast.success(t('geminiSources.folderCreated'))
-            setNewFolderOpen(false)
+            const parent = newFolder.parentId
+              ? (treeData?.groups ?? []).find((g) => g.id === newFolder.parentId)?.name
+              : undefined
+            toast.success(
+              parent
+                ? t('sources.grouping.groupCreatedInFolder', { name, parent })
+                : t('geminiSources.folderCreated')
+            )
+            setNewFolder((prev) => ({ ...prev, open: false }))
           } catch {
             toast.error(t('geminiSources.folderCreateFailed'))
           }

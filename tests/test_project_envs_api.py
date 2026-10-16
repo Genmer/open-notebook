@@ -7,6 +7,7 @@ CommandService jobs and the pipeline functions imported by the router.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -159,6 +160,50 @@ def test_create_real_period_violation_warns_but_persists():
     assert saved[0].status == "pending"
     assert saved[0].verification_token  # fencing token generated
     mock_submit.assert_awaited_once()
+
+
+def test_create_without_keywords_defaults_to_empty_array():
+    """迁移 36 起 keywords 是非空 array<string>：不带/传 null 都必须折叠成 []
+    （PRD real 通道与手动 real 建环境不采集关键词，None 落库会被 SurrealDB 拒绝）。"""
+    client = _client()
+    saved: list[ProjectEnv] = []
+
+    async def capture_save(env):
+        saved.append(env)
+
+    for payload_keywords in (None, ["微服务", "高并发"]):
+        payload: Dict[str, Any] = {
+            "name": "X",
+            "period_start": "2025.01",
+            "period_end": "2025.08",
+            "source_type": "real",
+            "background": "b",
+        }
+        if payload_keywords is not None:
+            payload["keywords"] = payload_keywords
+        saved.clear()
+        with (
+            patch(
+                "api.routers.project_envs.ProjectEnv.save",
+                autospec=True,
+                side_effect=capture_save,
+            ),
+            patch(
+                "api.routers.project_envs.CommandService.submit_command_job"
+            ) as mock_submit,
+            patch(
+                "api.routers.project_envs.repo_query",
+                side_effect=_usage_dispatch(),
+            ),
+        ):
+            mock_submit.side_effect = _submit_job_side_effect()
+            response = client.post("/api/project-envs", json=payload)
+
+        assert response.status_code == 200, response.text
+        assert saved[0].keywords == (payload_keywords or [])
+        # 落库数据里 keywords 永不为 None（nullable_fields 已移除该字段）
+        save_data = saved[0]._prepare_save_data()
+        assert save_data["keywords"] == (payload_keywords or [])
 
 
 def test_create_submits_verification_job_with_token():
@@ -751,6 +796,246 @@ def test_project_env_domain_rejects_industry_over_20_chars():
     assert _env(industry=None).industry is None  # 真实来源/老行允许为空
 
 
+# --- PRD 导入双通道（mock-generate prd_seed / create prd_imported） ---
+
+
+def test_mock_generate_with_prd_seed_submits_seed_in_payload_and_marks_ai_assisted():
+    """mock 通道：seed 只进任务 payload（不落库），env.ai_assisted 记
+    prd_import；flow 强制 direct（验证走 mock 双路管线）。"""
+    client = _client()
+    saved: list[ProjectEnv] = []
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+        saved.append(env)
+
+    seed = {"background": "PRD 背景。", "tech_background": "PRD 技术栈。"}
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate",
+            json={
+                "keywords": ["TMS", "物流"],
+                "industry": "物流行业",
+                "flow": "direct",
+                "prd_seed": seed,
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    env = saved[0]
+    assert env.source_type == "mock"
+    assert env.status == "pending"
+    assert env.ai_assisted is not None
+    assert env.ai_assisted["prd_import"] is True
+    assert "prd_imported_at" in env.ai_assisted
+    # seed 不落在 env 行上，只随任务 payload 下发
+    submit_args = mock_submit.await_args
+    assert submit_args is not None
+    payload = submit_args.args[2]
+    assert payload["mode"] == "mock"
+    assert payload["prd_seed"] == seed
+
+
+def test_mock_generate_without_prd_seed_payload_omits_key():
+    """【回归锚】无 seed 的老调用点 payload 不带 prd_seed 键（其它调用点零改动）。"""
+    client = _client()
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate", json={"keywords": ["微服务", "高并发"]}
+        )
+
+    assert response.status_code == 201, response.text
+    submit_args = mock_submit.await_args
+    assert submit_args is not None
+    payload = submit_args.args[2]
+    assert "prd_seed" not in payload
+
+
+def test_mock_generate_prd_seed_with_materials_flow_rejected_422():
+    """seed 与 flow=materials 同给 → 422 invalid_combination（PRD 即信息源，
+    不走素材候选步）。"""
+    client = _client()
+    with patch(
+        "api.routers.project_envs.CommandService.submit_command_job"
+    ) as mock_submit:
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate",
+            json={
+                "keywords": ["TMS", "物流"],
+                "flow": "materials",
+                "prd_seed": {"background": "PRD 背景。"},
+            },
+        )
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "invalid_combination"
+    mock_submit.assert_not_awaited()
+
+
+def test_mock_generate_hardens_prd_seed():
+    """seed 硬化：键白名单五叙述字段、值 strip+截断、丢空值、空 dict → None
+    （payload 不带键）。"""
+    client = _client()
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate",
+            json={
+                "keywords": ["TMS", "物流"],
+                "prd_seed": {
+                    "background": "  PRD 背景。  ",
+                    "tech_background": "技" * 5000,
+                    "period_start": "2025.02",  # 非白名单键，丢弃
+                    "tuning_process": "   ",  # 空值丢弃
+                },
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    submit_args = mock_submit.await_args
+    assert submit_args is not None
+    payload = submit_args.args[2]
+    seed = payload["prd_seed"]
+    assert set(seed) == {"background", "tech_background"}
+    assert seed["background"] == "PRD 背景。"
+    assert len(seed["tech_background"]) == 4000
+
+
+def test_mock_generate_all_blank_prd_seed_drops_key_and_marks_nothing():
+    """seed 五字段全空白 → 硬化后为 None：payload 不带键，行上也不落
+    prd_import（与不带键的老调用点等价）。"""
+    client = _client()
+    saved: list[ProjectEnv] = []
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+        saved.append(env)
+
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs/mock-generate",
+            json={
+                "keywords": ["TMS", "物流"],
+                "prd_seed": {
+                    "background": "   ",
+                    "tech_background": "",
+                    "tuning_process": " ",
+                    "problems_solutions": "  ",
+                    "my_role": "",
+                },
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    submit_args = mock_submit.await_args
+    assert submit_args is not None
+    payload = submit_args.args[2]
+    assert "prd_seed" not in payload
+    assert saved[0].ai_assisted is None
+
+
+def test_create_with_prd_imported_marks_ai_assisted_merged_with_polish():
+    """real 通道：prd_imported 与 background_ai_polished 可并存（合并式
+    ai_assisted，先例 polish_count/last_polished_at）。"""
+    client = _client()
+    saved: list[ProjectEnv] = []
+
+    async def capture_save(env):
+        env.id = env.id or "project_env:new"
+        saved.append(env)
+
+    with (
+        patch("api.routers.project_envs.repo_query", side_effect=_usage_dispatch()),
+        patch(
+            "api.routers.project_envs.ProjectEnv.save",
+            autospec=True,
+            side_effect=capture_save,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        mock_submit.side_effect = _submit_job_side_effect()
+        response = client.post(
+            "/api/project-envs",
+            json={
+                "name": "物流 TMS 系统",
+                "background": "PRD 导入的背景。",
+                "tech_background": "PRD 导入的技术栈。",
+                "period_start": "2025.02",
+                "period_end": "2025.09",
+                "source_type": "real",
+                "prd_imported": True,
+                "background_ai_polished": True,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    ai = saved[0].ai_assisted
+    assert ai is not None
+    assert ai.get("polish_count") == 1
+    assert "last_polished_at" in ai
+    assert ai.get("prd_import") is True
+    assert "prd_imported_at" in ai
+    # real 通道提交 material 模式验证
+    submit_args = mock_submit.await_args
+    assert submit_args is not None
+    payload = submit_args.args[2]
+    assert payload["mode"] == "material"
+    assert "prd_seed" not in payload
+
+
 def test_mock_generate_on_empty_kb_succeeds_without_kb_reads():
     """The empty-KB 422 guard is gone: mock generation runs no knowledge-base
     query at all, so an empty library still creates the row and submits."""
@@ -1004,6 +1289,63 @@ def test_regenerate_real_env_returns_422():
     assert response.json()["detail"]["reason"] == "not_mock"
 
 
+def test_reverify_prd_imported_mock_without_draft_rejected_422():
+    """PRD-imported mock env whose draft never materialized must NOT fall
+    back to a keywords-only rewrite via reverify — the seed only lives in the
+    original job input, so the PRD basis would be silently lost."""
+    client = _client()
+    env = _env(
+        source_type="mock",
+        background="",
+        tech_background="",
+        draft_content={},
+        ai_assisted={"prd_import": True},
+    )
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+    ):
+        response = client.post("/api/project-envs/project_env:e1/reverify")
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "prd_basis_lost"
+    mock_submit.assert_not_awaited()
+
+
+def test_reverify_prd_imported_mock_with_draft_still_allowed():
+    """Once the draft exists, reverify re-runs verification on it normally —
+    the prd_basis_lost guard must not block envs that already carry a draft."""
+    client = _client()
+    env = _env(
+        source_type="mock",
+        draft_content={"background": "已有草稿"},
+        ai_assisted={"prd_import": True},
+    )
+    with (
+        patch(
+            "api.routers.project_envs.ProjectEnv.get",
+            new_callable=AsyncMock,
+            return_value=env,
+        ),
+        patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        patch(
+            "api.routers.project_envs.CommandService.submit_command_job"
+        ) as mock_submit,
+        patch("api.routers.project_envs.CommandService.cancel_command_job"),
+    ):
+        mock_submit.return_value = "command:job1"
+        response = client.post("/api/project-envs/project_env:e1/reverify")
+
+    assert response.status_code == 200
+    assert mock_submit.await_count == 1
+
+
 def test_reverify_mock_env_without_draft_uses_mock_mode():
     """A mock env whose draft was never generated must re-run the mock
     pipeline (draft generation + verification), not verify empty material."""
@@ -1071,6 +1413,108 @@ def test_reverify_mock_env_with_draft_still_uses_mock_mode():
     assert submitted[0][2]["mode"] == "mock"
     # the existing draft survives: reverify must not wipe it for regeneration
     assert env.draft_content == {"background": "草稿内容采用 Redis 7.0。"}
+
+
+class TestReverifyAll:
+    """POST /project-envs/reverify-all：单环境 reverify 的守卫降级为跳过，
+    单环境异常不得中断整批。"""
+
+    def test_mixed_envs_submit_normal_and_skip_running_and_prd_basis(self):
+        client = _client()
+        normal = _env(id="project_env:normal", status="verified")
+        running = _env(
+            id="project_env:running",
+            status="pending",
+            verification_progress={
+                "stage": "verifying",
+                "percent": 50,
+                "updated": datetime.now().isoformat(),
+            },
+        )
+        prd_lost = _env(
+            id="project_env:prd",
+            source_type="mock",
+            draft_content={},
+            ai_assisted={"prd_import": True},
+        )
+        with (
+            patch(
+                "api.routers.project_envs.ProjectEnv.get_all",
+                new_callable=AsyncMock,
+                return_value=[normal, running, prd_lost],
+            ),
+            patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+            patch(
+                "api.routers.project_envs._submit_verification", new_callable=AsyncMock
+            ) as mock_submit,
+        ):
+            response = client.post("/api/project-envs/reverify-all")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["submitted"] == 1
+        assert {item["reason_code"] for item in body["skipped"]} == {
+            "running",
+            "prd_basis_lost",
+        }
+        mock_submit.assert_awaited_once()
+        assert mock_submit.await_args is not None
+        assert mock_submit.await_args.args[0] is normal
+        assert mock_submit.await_args.args[1] == "material"
+        assert normal.status == "pending"  # re-entered pending before submit
+        # 被跳过的环境原状保留：进度新鲜 / 草稿仍缺失
+        assert running.status == "pending"
+        assert prd_lost.draft_content == {}
+
+    def test_empty_list_returns_zero_and_no_skips(self):
+        client = _client()
+        with (
+            patch(
+                "api.routers.project_envs.ProjectEnv.get_all",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "api.routers.project_envs._submit_verification", new_callable=AsyncMock
+            ) as mock_submit,
+        ):
+            response = client.post("/api/project-envs/reverify-all")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"submitted": 0, "skipped": []}
+        mock_submit.assert_not_awaited()
+
+    def test_submit_failure_skips_env_without_aborting_batch(self):
+        client = _client()
+        bad = _env(id="project_env:bad", status="needs_review")
+        ok = _env(id="project_env:ok", status="verified")
+
+        async def flaky_submit(env, mode, prd_seed=None):
+            if str(env.id) == "project_env:bad":
+                raise RuntimeError("job queue down")
+            return "command:job1"
+
+        with (
+            patch(
+                "api.routers.project_envs.ProjectEnv.get_all",
+                new_callable=AsyncMock,
+                return_value=[bad, ok],
+            ),
+            patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+            patch(
+                "api.routers.project_envs._submit_verification",
+                side_effect=flaky_submit,
+            ),
+        ):
+            response = client.post("/api/project-envs/reverify-all")
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["submitted"] == 1
+        assert len(body["skipped"]) == 1
+        assert body["skipped"][0]["reason_code"] == "error"
+        assert "job queue down" in body["skipped"][0]["name"]
+        assert ok.status == "pending"  # 后续环境照常提交
 
 
 def test_update_mock_env_trigger_field_resubmits_with_mock_mode():
@@ -1792,7 +2236,7 @@ def test_materials_generate_real_env_422_not_mock():
 
 def test_materials_generate_no_keywords_422():
     client = _client()
-    env = _env(source_type="mock", keywords=None, status="failed")
+    env = _env(source_type="mock", keywords=[], status="failed")
     with patch(
         "api.routers.project_envs.ProjectEnv.get",
         new_callable=AsyncMock,
@@ -2955,7 +3399,7 @@ def test_rewrite_prescreen_fail_overrides_passing_lanes():
     assert body["env"]["status"] == "needs_review"
 
 
-def test_rewrite_prescreen_off_table_keeps_manual_review():
+def test_rewrite_prescreen_undated_allows_pass():
     client = _client()
     env = _env(
         status="needs_review",
@@ -2991,6 +3435,12 @@ def test_rewrite_prescreen_off_table_keeps_manual_review():
         ),
         patch("api.routers.project_envs.verify_point_lane", side_effect=lane_result),
         patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        # HyperDB 不在静态锚点表：动态预筛会走到联网层，测试内 mock 掉
+        patch(
+            "open_notebook.ai.project_env_pipeline.web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         response = client.post(
             "/api/project-envs/project_env:e1/claims/p1/rewrite",
@@ -2999,8 +3449,8 @@ def test_rewrite_prescreen_off_table_keeps_manual_review():
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["passed"] is False  # off-table stays manual even with lanes pass
-    assert env.background == "存储层自研。\n缓存层用 Redis 7.0。"  # nothing replaced
+    assert body["passed"] is True  # undated tech no longer bounces as off-table
+    assert "缓存层用 HyperDB 2.0，承载热点数据。" in env.background
 
 
 def test_rewrite_pass_records_prescreen_on_point():
@@ -3348,6 +3798,12 @@ def test_rewrite_prescreen_off_table_ignored_for_mock_env():
         ),
         patch("api.routers.project_envs.verify_point_lane", side_effect=lane_result),
         patch("api.routers.project_envs.ProjectEnv.save", new_callable=AsyncMock),
+        # HyperDB 不在静态锚点表：动态预筛会走到联网层，测试内 mock 掉
+        patch(
+            "open_notebook.ai.project_env_pipeline.web_search",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         response = client.post(
             "/api/project-envs/project_env:e1/claims/p1/rewrite",

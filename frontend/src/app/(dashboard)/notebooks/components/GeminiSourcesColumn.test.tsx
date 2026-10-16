@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { GeminiSourcesColumn } from './GeminiSourcesColumn'
 import { useContextTree } from '@/lib/hooks/use-context-tree'
 import { sourcesApi } from '@/lib/api/sources'
+import { FOLDER_COLLAPSE_STORAGE_KEY } from '@/lib/notebooks/folder-collapse'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { ContextTreeResponse } from '@/lib/types/notebook-context'
 
@@ -49,6 +50,7 @@ const {
   mockUpdateGroupMutate,
   mockDeleteGroupMutate,
   mockClipboardWrite,
+  mockCreateMutateAsync,
 } = vi.hoisted(() => ({
   mockToastSuccess: vi.fn(),
   mockToastError: vi.fn(),
@@ -62,6 +64,7 @@ const {
   mockUpdateGroupMutate: vi.fn(),
   mockDeleteGroupMutate: vi.fn(),
   mockClipboardWrite: vi.fn().mockResolvedValue(undefined),
+  mockCreateMutateAsync: vi.fn().mockResolvedValue({ id: 'group:new' }),
 }))
 
 vi.mock('sonner', () => ({
@@ -75,7 +78,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/lib/hooks/use-context-tree')
 
 vi.mock('@/lib/hooks/use-source-views', () => ({
-  useCreateGroup: () => ({ mutateAsync: vi.fn().mockResolvedValue({ id: 'group:new' }) }),
+  useCreateGroup: () => ({ mutateAsync: (...args: unknown[]) => mockCreateMutateAsync(...args) }),
   useSourceViews: () => mockUseSourceViews(),
   useViewGroups: (viewId?: string | null) => mockUseViewGroups(viewId),
   useMoveToGroup: () => ({ mutateAsync: vi.fn().mockResolvedValue({ moved: 1 }) }),
@@ -258,6 +261,7 @@ const rowOf = (title: string) => {
 describe('GeminiSourcesColumn', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mockClipboardWrite },
       configurable: true,
@@ -491,6 +495,66 @@ describe('GeminiSourcesColumn', () => {
     fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
     fireEvent.click(screen.getByText('sources.grouping.newFolder'))
     expect(screen.getByTestId('group-name-dialog')).toBeInTheDocument()
+  })
+
+  it('context menu: row-level new folder is created inside the row folder, not at the root', async () => {
+    mockUseSourceViews.mockReturnValue({
+      data: [
+        {
+          id: 'view:custom',
+          name: '自定义',
+          view_type: 'custom',
+          is_default: false,
+          created: null,
+          updated: null,
+        },
+      ],
+    })
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 系统架构设计.pdf 属于 group:1（核心架构文档）：行右键新建应带 parentId，而不是落到根层
+    fireEvent.contextMenu(rowOf('系统架构设计.pdf'))
+    fireEvent.click(screen.getByText('sources.grouping.newFolder'))
+    fireEvent.click(screen.getByTestId('group-name-confirm'))
+
+    await waitFor(() =>
+      expect(mockCreateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ name: '改名后的文件夹', parentId: 'group:1' })
+      )
+    )
+    await waitFor(() =>
+      expect(mockToastSuccess).toHaveBeenCalledWith(
+        'sources.grouping.groupCreatedInFolder (name=改名后的文件夹, parent=核心架构文档)'
+      )
+    )
+    expect(mockRefetchTree).toHaveBeenCalled()
+  })
+
+  it('context menu: ungrouped row-level new folder lands at the root', async () => {
+    mockUseSourceViews.mockReturnValue({
+      data: [
+        {
+          id: 'view:custom',
+          name: '自定义',
+          view_type: 'custom',
+          is_default: false,
+          created: null,
+          updated: null,
+        },
+      ],
+    })
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 未归档来源右键新建：无所属文件夹，落根层（与经典视图同语义）
+    fireEvent.contextMenu(rowOf('SurrealDB 官方白皮书'))
+    fireEvent.click(screen.getByText('sources.grouping.newFolder'))
+    fireEvent.click(screen.getByTestId('group-name-confirm'))
+
+    await waitFor(() =>
+      expect(mockCreateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ name: '改名后的文件夹', parentId: null })
+      )
+    )
   })
 
   it('context menu: copy file name writes the source title to the clipboard', async () => {
@@ -959,6 +1023,166 @@ describe('GeminiSourcesColumn', () => {
 
     // 折叠后该来源在 DOM 中隐藏
     expect(screen.queryByText('系统架构设计.pdf')).not.toBeInTheDocument()
+  })
+
+  it('restores a persisted collapse override for the notebook on mount', () => {
+    // 折叠记忆：nb:test 的 group:1 上次被用户收起 → 挂载后该文件夹折叠
+    window.localStorage.setItem(
+      FOLDER_COLLAPSE_STORAGE_KEY,
+      JSON.stringify({ version: 1, byNotebook: { 'nb:test': { 'group:1': true } } }),
+    )
+
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    expect(screen.getByText('核心架构文档')).toBeInTheDocument()
+    expect(screen.queryByText('系统架构设计.pdf')).not.toBeInTheDocument()
+  })
+
+  it('persists a folder-header toggle into the collapse store', () => {
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // 有来源的文件夹默认展开，点击收起 → override true 落盘（只动该键）
+    fireEvent.click(screen.getByText('核心架构文档'))
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(FOLDER_COLLAPSE_STORAGE_KEY) ?? 'null',
+    ) as { version: number; byNotebook: Record<string, Record<string, boolean>> }
+    expect(stored.version).toBe(1)
+    expect(stored.byNotebook['nb:test']).toEqual({ 'group:1': true })
+  })
+
+  it('persists every tree group id plus ungrouped on collapse-all', () => {
+    renderDeepNestedTree()
+
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.collapseAll' }))
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(FOLDER_COLLAPSE_STORAGE_KEY) ?? 'null',
+    ) as { version: number; byNotebook: Record<string, Record<string, boolean>> }
+    const overrides = stored.byNotebook['nb:test']
+    expect(Object.keys(overrides).sort()).toEqual([
+      'group:l1',
+      'group:l2',
+      'group:l3',
+      'group:l4',
+      'group:l5',
+      'ungrouped',
+    ])
+    expect(Object.values(overrides).every((v) => v === true)).toBe(true)
+  })
+
+  it('keeps a toggled folder collapsed across unmount/remount while untouched folders stay default', () => {
+    // 两个各挂一条来源的根文件夹：收起其一 → 卸载重挂载 → 仍收起；未触碰的保持默认展开
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        groups: [
+          { id: 'group:1', name: '文件夹一', parent_id: null },
+          { id: 'group:2', name: '文件夹二', parent_id: null },
+        ],
+        sources: [
+          { id: 'source:1', title: '文件甲', insights_count: 0, embedded: true, embedding_status: null },
+          { id: 'source:2', title: '文件乙', insights_count: 0, embedded: true, embedding_status: null },
+        ],
+        memberships: [
+          { source_id: 'source:1', group_id: 'group:1' },
+          { source_id: 'source:2', group_id: 'group:2' },
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    const first = render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+    expect(screen.getByText('文件甲')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('文件夹一'))
+    expect(screen.queryByText('文件甲')).not.toBeInTheDocument()
+    first.unmount()
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+    expect(screen.getByText('文件夹一')).toBeInTheDocument()
+    expect(screen.queryByText('文件甲')).not.toBeInTheDocument()
+    expect(screen.getByText('文件夹二')).toBeInTheDocument()
+    expect(screen.getByText('文件乙')).toBeInTheDocument()
+  })
+
+  it('keeps the collapse-all state across a remount for every folder and the ungrouped section', () => {
+    // 五层嵌套 + 一条未分组来源：一键收起 → 卸载重挂载 → 仍全部收起
+    vi.mocked(useContextTree).mockReturnValue({
+      data: {
+        groups: [
+          { id: 'group:l1', name: '一级文件夹', parent_id: null },
+          { id: 'group:l2', name: '二级文件夹', parent_id: 'group:l1' },
+          { id: 'group:l3', name: '三级文件夹', parent_id: 'group:l2' },
+          { id: 'group:l4', name: '四级文件夹', parent_id: 'group:l3' },
+          { id: 'group:l5', name: '五级文件夹', parent_id: 'group:l4' },
+        ],
+        sources: [
+          ...Array.from({ length: 5 }, (_, i) => ({
+            id: `source:deep:${i + 1}`,
+            title: `层级来源${i + 1}`,
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          })),
+          {
+            id: 'source:loose',
+            title: '未分组资料',
+            insights_count: 0,
+            embedded: true,
+            embedding_status: null,
+          },
+        ],
+        memberships: Array.from({ length: 5 }, (_, i) => ({
+          source_id: `source:deep:${i + 1}`,
+          group_id: `group:l${i + 1}`,
+        })),
+      },
+      isLoading: false,
+      refetch: mockRefetchTree,
+    } as unknown as ReturnType<typeof useContextTree>)
+
+    const first = render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'geminiSources.collapseAll' }))
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(1)
+    first.unmount()
+
+    render(<GeminiSourcesColumn {...baseProps} sources={[]} />, {
+      wrapper: createWrapper().TestWrapper,
+    })
+    expect(screen.getAllByTestId('gemini-folder-row')).toHaveLength(1)
+    expect(screen.queryByText('层级来源1')).not.toBeInTheDocument()
+    expect(screen.queryByText('五级文件夹')).not.toBeInTheDocument()
+    // 'ungrouped' 键同样随一键收起持久，重挂载后未分组来源仍收起
+    expect(screen.getByText('geminiSources.ungrouped')).toBeInTheDocument()
+    expect(screen.queryByText('未分组资料')).not.toBeInTheDocument()
+  })
+
+  it('renders normally when the store holds overrides for deleted folders', () => {
+    // 残留键（已删文件夹 id）不拖垮渲染；仍在场的键照常生效
+    window.localStorage.setItem(
+      FOLDER_COLLAPSE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        byNotebook: {
+          'nb:test': { 'group:deleted': true, 'group:1': false, ungrouped: true },
+        },
+      }),
+    )
+
+    render(<GeminiSourcesColumn {...baseProps} />, { wrapper: createWrapper().TestWrapper })
+
+    // group:1 的显式 false → 展开；残留的 group:deleted 键被无视；ungrouped:true → 未分组来源隐藏
+    expect(screen.getByText('核心架构文档')).toBeInTheDocument()
+    expect(screen.getByText('系统架构设计.pdf')).toBeInTheDocument()
+    expect(screen.getByText('geminiSources.ungrouped')).toBeInTheDocument()
+    expect(screen.queryByText('SurrealDB 官方白皮书')).not.toBeInTheDocument()
   })
 
   it('handles batch folder selection checkbox click', () => {

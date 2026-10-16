@@ -17,11 +17,22 @@ from pydantic import BaseModel, Field
 
 from open_notebook.ai.industry_pool import industry_hint_for, industry_profile_for
 from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.domain.ga_anchor_cache import GaAnchorCache
 from open_notebook.domain.project_env import DEFAULT_INDUSTRY
-from open_notebook.domain.project_env_rules import GA_ANCHORS, check_ga_ordering
+from open_notebook.domain.project_env_rules import (
+    ERA_SPECIFIC_TECHS,
+    GA_ANCHORS,
+    MONTH_RE,
+    check_ga_ordering,
+    is_month,
+    is_valid_tech_name,
+    lookup_ga_month,
+    month_index,
+)
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.text_utils import extract_text_content
+from open_notebook.utils.web_search import snippets_text, web_search
 
 # Must cover one full _invoke_json attempt: 2 model calls (thinking models on
 # long quotes run 30s+ each) plus the 8s rate-limit backoff between them.
@@ -109,11 +120,27 @@ class MockDraft(BaseModel):
     scale: str = ""
 
 
+class PrdParseDraft(BaseModel):
+    """Candidate project-env fields extracted from a PRD document. No scale
+    field by design: Pydantic hard-drops it, so personnel/money/user-scale
+    numbers cannot survive the parse even if the model tries."""
+
+    name: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    industry: str = ""
+    keywords: List[str] = []
+    background: str = ""
+    tech_background: str = ""
+    tuning_process: str = ""
+    problems_solutions: str = ""
+    my_role: str = ""
+
+
 def _allowed_verdicts(lane: str, mode: str = "material") -> set:
-    """Lane B may answer off_table only for material mode: in mock mode the
-    verdict set must force a plausibility judgement, never a table bounce."""
-    if lane == "B" and mode != "mock":
-        return {"pass", "fail", "off_table"}
+    """Lanes only ever judge pass/fail. Unknown GA anchors resolve through
+    the multi-level pipeline (static -> cache -> web) and, failing that, the
+    prompt's plausibility rule — a table bounce (off_table) is never allowed."""
     return {"pass", "fail"}
 
 
@@ -299,13 +326,200 @@ async def gather_evidence(quote: str) -> str:
     )
 
 
-def anchors_table_for(quote: str) -> str:
-    """Anchor subset relevant to the quote (empty when nothing matches)."""
-    lowered = quote.lower()
+# --- multi-level GA anchor resolution (静态表 → 缓存 → 联网 → 常识) ---
+
+
+_GA_NUMERIC_RE = re.compile(r"(20\d{2})\s*[.\-/\s]\s*(\d{1,2})(?:\s*月|\b)")
+_GA_CN_RE = re.compile(r"(20\d{2})\s*年\s*(\d{1,2})\s*月")
+_GA_MONTH_NAME_RE = re.compile(
+    r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
+    r"Dec(?:ember)?)\.?\s+(20\d{2})",
+    re.IGNORECASE,
+)
+_MONTH_NAMES = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
+
+def _valid_ga(year: int, month: int) -> Optional[str]:
+    if 1 <= month <= 12:
+        return f"{year:04d}.{month:02d}"
+    return None
+
+
+def extract_ga_month(text: str) -> Optional[str]:
+    """Heuristic GA month from search-result text: first month-shaped date in
+    reading order (YYYY.MM / YYYY-MM-DD / 2024年10月 / October 2024). Best
+    effort — the lane still sanity-checks the verdict against the window."""
+    text = str(text or "")
+    for match in _GA_CN_RE.finditer(text):
+        ga = _valid_ga(int(match.group(1)), int(match.group(2)))
+        if ga:
+            return ga
+    for match in _GA_NUMERIC_RE.finditer(text):
+        ga = _valid_ga(int(match.group(1)), int(match.group(2)))
+        if ga:
+            return ga
+    for match in _GA_MONTH_NAME_RE.finditer(text):
+        ga = _valid_ga(int(match.group(2)), _MONTH_NAMES[match.group(1)[:3].lower()])
+        if ga:
+            return ga
+    return None
+
+
+class GaResolution(BaseModel):
+    ga: Optional[str] = None
+    confidence: str = "web"
+    reasoning: str = ""
+
+
+async def resolve_ga_with_llm(
+    tech: str, version: str, snippets: str, budget: Optional[CallBudget] = None
+) -> Optional[GaResolution]:
+    """GaResolution when the light model answered — ga=None means it judged
+    the snippets insufficient. None only when the call itself failed."""
+    if not snippets or not snippets.strip():
+        return None
+
+    def _validate(parsed: BaseModel) -> str:
+        if isinstance(parsed, GaResolution) and parsed.ga and not is_month(parsed.ga):
+            return "ga must be in YYYY.MM format or null"
+        return ""
+
+    data = {
+        "tech": tech,
+        "version": version,
+        "snippets": snippets[:4000],
+    }
+    parsed = await _invoke_json(
+        "project_env/ga_resolver",
+        data,
+        GaResolution,
+        get_light_model(),
+        budget,
+        validator=_validate,
+    )
+    if isinstance(parsed, GaResolution):
+        return parsed
+    return None
+
+
+async def fetch_ga_anchor_online(
+    tech: str, version: str, budget: Optional[CallBudget] = None
+) -> Optional[Dict[str, str]]:
+    """Web-search level: look up the GA month of one tech+version. Never
+    raises; None when the search fails or no month-shaped date is found."""
+    query = f"{tech} {version} release date GA"
+    try:
+        results = await web_search(query, max_results=5)
+    except Exception as e:  # web_search already never raises; belt and braces
+        logger.warning(f"GA web lookup failed for {tech} {version}: {e}")
+        return None
+    if not results:
+        return None
+    snippets = snippets_text(results)
+    ga: Optional[str] = None
+    confidence = "web"
+    try:
+        resolution = await resolve_ga_with_llm(tech, version, snippets, budget)
+    except Exception as e:
+        logger.warning(f"GA LLM resolution failed for {tech} {version}: {e}")
+        resolution = None
+    if resolution is not None:
+        # ga=None (or malformed) is the model judging the snippets insufficient —
+        # respect that verdict; never mine a date out of stray timestamps.
+        if resolution.ga and is_month(resolution.ga):
+            ga = resolution.ga
+    else:
+        # light model unavailable: heuristic last resort, flagged "heuristic" so
+        # callers treat it as reference only, never a hard fail.
+        try:
+            ga = extract_ga_month(snippets)
+            confidence = "heuristic"
+        except Exception as e:  # heuristic parsing must never break the pipeline
+            logger.warning(f"GA month extraction failed for {tech} {version}: {e}")
+            return None
+
+    if not ga:
+        return None
+    source = str(results[0].get("url") or "")
+    return {"ga": ga, "source": f"web:{source}"[:300], "confidence": confidence}
+
+
+async def cache_ga_anchor(tech: str, version: str, anchor: Dict[str, str]) -> None:
+    """Best-effort write of one web-resolved anchor; races on the unique
+    index or a DB outage cost only the cache, never the run."""
+    try:
+        row = GaAnchorCache(
+            tech=tech,
+            version=version,
+            ga=anchor["ga"],
+            source=anchor.get("source", ""),
+            confidence=anchor.get("confidence", "web"),
+        )
+        await row.save()
+    except Exception as e:
+        logger.warning(f"ga_anchor_cache write failed for {tech} {version}: {e}")
+
+
+async def resolve_ga_anchor(
+    tech: str, version: str, budget: Optional[CallBudget] = None
+) -> Optional[Dict[str, str]]:
+    """One tech+version through the resolution levels: static table, then the
+    ga_anchor_cache table, then a web lookup (hit is cached for next time).
+    Returns {ga, source, confidence} or None when every level misses."""
+    key = (tech or "").strip().lower()
+    ver = (version or "").strip().lstrip("vV")
+    if not key or not ver:
+        return None
+    static = lookup_ga_month(GA_ANCHORS.get(key) or {}, ver)
+    if static:
+        return {"ga": static, "source": "static_table", "confidence": "curated"}
+    cached = await GaAnchorCache.lookup(key, ver)
+    if cached and is_month(cached.ga):
+        return {
+            "ga": cached.ga,
+            "source": cached.source or "cache",
+            "confidence": cached.confidence,
+        }
+    online = await fetch_ga_anchor_online(key, ver, budget)
+    if online:
+        await cache_ga_anchor(key, ver, online)
+        return online
+    return None
+
+
+async def anchors_table_for(quote: str) -> str:
+    """Anchor subset relevant to the quote: static-table rows first, then
+    dynamic (cache/web) resolution for every pair the static table cannot
+    date. Dynamic rows carry their source so lane B can weigh them."""
+    lowered = str(quote or "").lower()
     lines: List[str] = []
     for tech, versions in GA_ANCHORS.items():
         if tech in lowered:
             lines.extend(f"{tech} {version}: {ga}" for version, ga in versions.items())
+    for match in VERSION_RE.finditer(str(quote or "")):
+        tech = match.group(1).strip().lower()
+        if not is_valid_tech_name(tech):
+            continue
+        version = match.group(2)
+        if lookup_ga_month(GA_ANCHORS.get(tech) or {}, version):
+            continue  # already covered by the static rows above
+        anchor = await resolve_ga_anchor(tech, version)
+        if anchor:
+            lines.append(f"{tech} {version}: {anchor['ga']} (来源: {anchor['source']})")
     return "\n".join(lines) or "(锚点表中未找到该技术)"
 
 
@@ -352,7 +566,7 @@ async def verify_point_lane(
     if lane == "A":
         data["evidence"] = await gather_evidence(quote)
     if lane == "B":
-        data["anchor_subset"] = anchors_table_for(quote)
+        data["anchor_subset"] = await anchors_table_for(quote)
 
     parsed: Optional[BaseModel] = None
     for _attempt in range(LANE_ATTEMPTS):
@@ -447,27 +661,127 @@ def _find_verbatim(text: str, quote: str) -> Optional[str]:
     return match.group(0) if match else None
 
 
+def _era_violations(
+    quote: str, period_start: str, skip: Optional[set] = None
+) -> List[str]:
+    """Era-specific techs mentioned without a version number: VERSION_RE never
+    turns a bare name into a pair, so scan the quote directly (word boundary)."""
+    if not is_month(period_start):
+        return []
+    lowered = str(quote or "").lower()
+    skip = skip or set()
+    messages: List[str] = []
+    for key, earliest in ERA_SPECIFIC_TECHS.items():
+        if key in skip:
+            continue
+        if not re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", lowered):
+            continue
+        if month_index(earliest) > month_index(period_start):
+            messages.append(
+                f"{key} 是时代专属性新技术（最早出现于 {earliest}），"
+                f"晚于项目开始时间 ({period_start})"
+            )
+    return messages
+
+
 def prescreen_quote(quote: str, period_start: str) -> Dict[str, Any]:
-    """Anchor-table pre-screen over EVERY technology+version pair in a
-    paragraph: any GA violation fails the whole point, any off-table tech
-    (material mode) routes it to manual review."""
+    """Static-anchor pre-screen over EVERY technology+version pair in a
+    paragraph: any GA violation fails the whole point. Pairs without an
+    anchor stay undated here — the async multi-level prescreen below (or the
+    lanes' plausibility rule) handles them, never an off_table block."""
     messages: List[str] = []
     statuses: List[str] = []
+    seen: set = set()
     for match in VERSION_RE.finditer(str(quote or "")):
-        result = check_ga_ordering(match.group(1).strip(), match.group(2), period_start)
+        tech = match.group(1).strip()
+        if not is_valid_tech_name(tech):
+            continue
+        seen.add(tech.lower())
+        result = check_ga_ordering(tech, match.group(2), period_start)
         statuses.append(result.get("status", "unspecified"))
         message = result.get("message")
         if message:
             messages.append(str(message))
+    era_messages = _era_violations(quote, period_start, skip=seen)
+    if era_messages:
+        statuses.append("fail")
+        messages.extend(era_messages)
     if "fail" in statuses:
         status = "fail"
     elif "off_table" in statuses:
-        status = "off_table"
+        status = "unknown"
     elif statuses:
         status = "pass"
     else:
         status = "unspecified"
     return {"status": status, "message": "; ".join(messages)}
+
+
+async def prescreen_point_anchors(quote: str, period_start: str) -> Dict[str, Any]:
+    """Multi-level pre-screen for one point: static table first, then the
+    ga_anchor_cache, then web lookup for pairs the static table cannot date.
+    Status "fail" when any resolved anchor violates the window, "pass" when
+    every found anchor is on/before period_start, "unknown" when some pair
+    stayed undated (lane B judges plausibility), "unspecified" with no pairs.
+    Never returns "off_table" — undated pairs never block a point."""
+    messages: List[str] = []
+    resolved_any = False
+    undated_any = False
+    failed_any = False
+    anchors: Dict[str, Dict[str, str]] = {}
+    seen: set = set()
+    for match in VERSION_RE.finditer(str(quote or "")):
+        tech = match.group(1).strip()
+        if not is_valid_tech_name(tech):
+            continue
+        seen.add(tech.lower())
+        version = match.group(2)
+        result = check_ga_ordering(tech, version, period_start)
+        status = result.get("status")
+        if status == "fail":
+            failed_any = True
+            messages.append(str(result.get("message")))
+            resolved_any = True
+            continue
+        if status == "pass":
+            resolved_any = True
+            continue
+        if status == "unspecified":
+            continue
+        # off_table in the static table: escalate to the dynamic levels
+        anchor = await resolve_ga_anchor(tech, version)
+        if anchor and is_month(str(anchor.get("ga") or "")):
+            anchors[f"{tech.lower()} {version}"] = anchor
+            if str(anchor.get("confidence") or "") == "heuristic":
+                # unverified heuristic date: lane-B reference only
+                undated_any = True
+            else:
+                resolved_any = True
+                if is_month(period_start) and month_index(
+                    str(anchor["ga"])
+                ) > month_index(period_start):
+                    failed_any = True
+                    messages.append(
+                        f"{tech.lower()} {version} GA ({anchor['ga']}) is after "
+                        f"project start ({period_start})"
+                    )
+                elif not is_month(period_start):
+                    undated_any = True
+        else:
+            undated_any = True
+    era_messages = _era_violations(quote, period_start, skip=seen)
+    if era_messages:
+        failed_any = True
+        messages.extend(era_messages)
+    if failed_any:
+        status = "fail"
+    elif undated_any:
+        status = "unknown"
+    elif resolved_any:
+        status = "pass"
+    else:
+        status = "unspecified"
+    return {"status": status, "message": "; ".join(messages), "anchors": anchors}
 
 
 # --- correction / removal / polish / mock ---
@@ -652,6 +966,45 @@ async def render_fixed_parts(
     }
 
 
+# PRD 解析的五个叙述字段：prd_seed 只由这些键组成（period/keywords/industry
+# 不进 seed，走各端点自己的通道）
+PRD_SEED_FIELDS = (
+    "background",
+    "tech_background",
+    "tuning_process",
+    "problems_solutions",
+    "my_role",
+)
+
+
+def prd_seed_has_narrative(prd_seed: Optional[Dict[str, str]]) -> bool:
+    return any(
+        str((prd_seed or {}).get(field) or "").strip() for field in PRD_SEED_FIELDS
+    )
+
+
+async def parse_prd_draft(prd_text: str) -> Optional[PrdParseDraft]:
+    """Stateless PRD -> candidate-fields extraction; no CallBudget (single
+    call, API-side timeout governs). ConfigurationError propagates."""
+
+    def _validate(parsed: PrdParseDraft) -> str:
+        for field in ("period_start", "period_end"):
+            value = getattr(parsed, field).strip()
+            if value and not MONTH_RE.match(value):
+                return f"{field} must use the YYYY.MM format"
+        return ""
+
+    parsed = await _invoke_json(
+        "project_env/prd_parse",
+        {"prd_text": prd_text},
+        PrdParseDraft,
+        get_light_model(),
+        max_tokens=8192,
+        validator=_validate,
+    )
+    return parsed if isinstance(parsed, PrdParseDraft) else None
+
+
 def _legal_window_for_template() -> Dict[str, str]:
     from open_notebook.domain.project_env_rules import legal_window
 
@@ -682,6 +1035,36 @@ async def render_mock(
     }
     parsed = await _invoke_json(
         "project_env/mock_generate", data, MockDraft, None, budget
+    )
+    return parsed if isinstance(parsed, MockDraft) else None
+
+
+async def render_prd_draft(
+    keywords: List[str],
+    prd_seed: Dict[str, str],
+    name: Optional[str],
+    period_start: Optional[str],
+    period_end: Optional[str],
+    industry: Optional[str] = None,
+    budget: Optional[CallBudget] = None,
+    feedback: Optional[str] = None,
+) -> Optional[MockDraft]:
+    window = _legal_window_for_template()
+    resolved_industry = (industry or "").strip() or DEFAULT_INDUSTRY
+    data: Dict[str, Any] = {
+        "keywords": keywords,
+        "prd_seed": prd_seed,
+        "name": name or "",
+        "fixed_period_start": period_start or "",
+        "fixed_period_end": period_end or "",
+        "industry": resolved_industry,
+        "industry_hint": industry_hint_for(resolved_industry),
+        "industry_profile": industry_profile_for(resolved_industry),
+        "feedback": feedback or "",
+        **window,
+    }
+    parsed = await _invoke_json(
+        "project_env/draft_from_prd", data, MockDraft, None, budget, max_tokens=8192
     )
     return parsed if isinstance(parsed, MockDraft) else None
 
@@ -885,7 +1268,11 @@ def extract_claims_regex(fields: Dict[str, Any]) -> List[Dict[str, Any]]:
     claims: List[Dict[str, Any]] = []
     for field, text in fields.items():
         for paragraph in split_paragraphs(str(text or "")):
-            if VERSION_RE.search(paragraph):
+            has_valid_version = any(
+                is_valid_tech_name(match.group(1).strip())
+                for match in VERSION_RE.finditer(paragraph)
+            )
+            if has_valid_version:
                 claim_type = "version"
             elif _METRIC_RE.search(paragraph):
                 claim_type = "metric"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -31,6 +31,14 @@ import {
   type SourceBulkAction,
   type NoteContextDefault,
 } from '@/lib/utils/source-context'
+import {
+  computeComboReplacement,
+  getActiveCombo,
+  listCombos,
+  selectionsMatchCombo,
+  setActiveComboDirty,
+  setActiveComboId,
+} from '@/lib/notebooks/context-combos'
 
 // Re-exported from the shared types module for backward compatibility; several
 // components historically import these from this route file.
@@ -134,7 +142,7 @@ export default function NotebookPage() {
     inFlight: boolean
     pending: Record<string, ContextMode> | null
   }>({ inFlight: false, pending: null })
-  const persistAllScopeContext = (selections: Record<string, ContextMode>) => {
+  const persistAllScopeContext = useCallback((selections: Record<string, ContextMode>) => {
     if (folderScopeActive || !notebookId) return
     if (Object.keys(selections).length === 0) return
     queryClient.setQueryData<Record<string, ContextMode>>(
@@ -162,7 +170,7 @@ export default function NotebookPage() {
       }
     }
     void flush()
-  }
+  }, [folderScopeActive, notebookId, queryClient, t])
 
   // 「全部」视图：沿用原有默认（include→有见解 insights、无见解 full），
   // 保留已有选择、只填充新加载的来源。占位数据（上一范围列表）期间跳过。
@@ -202,6 +210,26 @@ export default function NotebookPage() {
       sources: computeSourceSelections(savedPrefs ?? {}, sources ?? [], sourceContextDefault),
     }))
   }, [folderScopeActive, contextPrefsQuery.isSuccess, contextPrefsQuery.isError, savedPrefs, sources, sourceContextDefault, sourcesPlaceholder, t])
+
+  // 激活组合记忆：挂载后若该笔记本有干净激活组合，按组合整表替换恢复 sources
+  // 与 notes；已修改（dirty）时不整表替换，走偏好/默认路径恢复实际勾选。
+  // 声明在上面的偏好恢复 effect 之后，且等偏好请求落定（成功或失败）与来源/
+  // 笔记列表加载完成后再执行，保证覆盖 savedPrefs 恢复、不被空池时的默认填充
+  // 冲掉；每次挂载只恢复一次。
+  const restoredActiveComboRef = useRef(false)
+  useEffect(() => {
+    if (folderScopeActive || sourcesPlaceholder || sourcesLoading || notesLoading) return
+    if (!contextPrefsQuery.isSuccess && !contextPrefsQuery.isError) return
+    if (!notebookId || restoredActiveComboRef.current) return
+    restoredActiveComboRef.current = true
+    const active = getActiveCombo(notebookId)
+    if (!active || active.dirty) return
+    const combo = listCombos(notebookId).find(c => c.id === active.id)
+    if (!combo) return
+    const sourceIds = new Set((sources ?? []).map(s => s.id))
+    const noteIds = new Set((notes ?? []).map(n => n.id))
+    setContextSelections(prev => computeComboReplacement(combo, sourceIds, noteIds, prev))
+  }, [folderScopeActive, sourcesPlaceholder, sourcesLoading, notesLoading, contextPrefsQuery.isSuccess, contextPrefsQuery.isError, notebookId, sources, notes])
 
   useEffect(() => {
     if (!folderScopeActive || sourcesPlaceholder) return
@@ -262,14 +290,41 @@ export default function NotebookPage() {
     }
   }, [notes, noteContextDefault])
 
+  // 手动调整后的激活组合对账：不再脱离组合，而是记 dirty 位——勾选偏离激活
+  // 组合快照置 true，改回一致清 false。组合语义只在「全部」视图成立（文件夹
+  // 范围下 combosEnabled=false），范围重建不记 dirty。next 必须先算好再
+  // setState，避免把 localStorage 写放进 StrictMode 会双调的函数式 updater。
+  const syncActiveComboDirty = useCallback(
+    (next: ContextSelections) => {
+      if (folderScopeActive) return
+      const active = getActiveCombo(notebookId)
+      if (!active) return
+      const combo = listCombos(notebookId).find(c => c.id === active.id)
+      if (!combo) return
+      // 并集口径（与弹窗的全量树池等价）：分页列表漏掉的弹窗勾选/组合条目
+      // 也参与比对，否则 dirty 漏记、挂载恢复会静默丢弃弹窗里的改动
+      const sourceIds = new Set([
+        ...(sources ?? []).map(s => s.id),
+        ...Object.keys(next.sources),
+        ...Object.keys(combo.sources),
+      ])
+      const noteIds = new Set([
+        ...(notes ?? []).map(n => n.id),
+        ...Object.keys(next.notes),
+        ...Object.keys(combo.notes),
+      ])
+      setActiveComboDirty(notebookId, !selectionsMatchCombo(next, combo, sourceIds, noteIds))
+    },
+    [folderScopeActive, notebookId, sources, notes],
+  )
+
   const handleSourceContextModeChange = (sourceId: string, mode: ContextMode) => {
-    setContextSelections(prev => ({
-      ...prev,
-      sources: {
-        ...prev.sources,
-        [sourceId]: mode
-      }
-    }))
+    const next: ContextSelections = {
+      sources: { ...contextSelections.sources, [sourceId]: mode },
+      notes: contextSelections.notes,
+    }
+    setContextSelections(next)
+    syncActiveComboDirty(next)
     // 文件夹范围内的单来源调整按 (笔记本, 文件夹, 来源) 持久化；
     // 「全部」视图落在哨兵范围，重进笔记本时恢复。
     if (folderScopeActive) {
@@ -280,13 +335,12 @@ export default function NotebookPage() {
   }
 
   const handleNoteContextModeChange = (noteId: string, mode: NoteContextMode) => {
-    setContextSelections(prev => ({
-      ...prev,
-      notes: {
-        ...prev.notes,
-        [noteId]: mode
-      }
-    }))
+    const next: ContextSelections = {
+      sources: contextSelections.sources,
+      notes: { ...contextSelections.notes, [noteId]: mode },
+    }
+    setContextSelections(next)
+    syncActiveComboDirty(next)
   }
 
   // Context picker: bulk-apply one action to a subset (one folder branch).
@@ -298,10 +352,12 @@ export default function NotebookPage() {
     // Items carry their own insights_count: the dialog sees the whole notebook
     // (context-tree), including sources the paginated listing has not loaded.
     const next = applyBulkSourceContext({}, items, action)
-    setContextSelections(prev => ({
-      ...prev,
-      sources: { ...prev.sources, ...next },
-    }))
+    const nextSelections: ContextSelections = {
+      sources: { ...contextSelections.sources, ...next },
+      notes: contextSelections.notes,
+    }
+    setContextSelections(nextSelections)
+    syncActiveComboDirty(nextSelections)
     if (folderScopeActive) {
       persistFolderContext(
         Object.entries(next).map(([source_id, mode]) => ({ source_id, mode })),
@@ -310,6 +366,24 @@ export default function NotebookPage() {
       persistAllScopeContext(next)
     }
   }
+
+  // Context picker: apply a saved combo (whole-map replacement). Notes stay
+  // session-only like handleNoteContextModeChange; the all-scope sources map
+  // persists via a single queued PUT — never per-id calls. `comboId` present
+  // means the apply came from a combo switch (record it as active); callers
+  // that only pass a replacement leave the active record untouched.
+  const handleApplyCombo = useCallback(
+    (replacement: ContextSelections, comboId?: string | null) => {
+      setContextSelections(replacement)
+      if (comboId !== undefined) {
+        setActiveComboId(notebookId, comboId)
+      }
+      if (!folderScopeActive) {
+        persistAllScopeContext(replacement.sources)
+      }
+    },
+    [folderScopeActive, persistAllScopeContext, notebookId],
+  )
 
   // Context picker: exclude everything (loaded scope + picker-only picks).
   const handleClearAllContext = () => {
@@ -321,7 +395,9 @@ export default function NotebookPage() {
     for (const id of known) nextSources[id] = 'off'
     const nextNotes: Record<string, NoteContextMode> = {}
     for (const note of notes ?? []) nextNotes[note.id] = 'off'
-    setContextSelections(prev => ({ ...prev, sources: nextSources, notes: nextNotes }))
+    const next: ContextSelections = { sources: nextSources, notes: nextNotes }
+    setContextSelections(prev => ({ ...prev, ...next }))
+    syncActiveComboDirty(next)
     if (folderScopeActive) {
       persistFolderContext(
         (sources ?? []).map(s => ({ source_id: s.id, mode: 'off' as ContextMode })),
@@ -343,10 +419,12 @@ export default function NotebookPage() {
       const sourceList = sources ?? []
       setFolderBulkAction(action)
       const next = applyBulkSourceContext({}, sourceList, action)
-      setContextSelections(prev => ({
-        ...prev,
+      const nextSelections: ContextSelections = {
         sources: next,
-      }))
+        notes: contextSelections.notes,
+      }
+      setContextSelections(nextSelections)
+      syncActiveComboDirty(nextSelections)
       persistFolderContext(
         sourceList.map(s => ({ source_id: s.id, mode: next[s.id] })),
       )
@@ -355,20 +433,24 @@ export default function NotebookPage() {
     const sourceList = items ?? sources ?? []
     setSourceContextDefault(action)
     const nextSources = applyBulkSourceContext(contextSelections.sources, sourceList, action)
-    setContextSelections(prev => ({
-      ...prev,
+    const nextSelections: ContextSelections = {
       sources: nextSources,
-    }))
+      notes: contextSelections.notes,
+    }
+    setContextSelections(nextSelections)
+    syncActiveComboDirty(nextSelections)
     persistAllScopeContext(nextSources)
   }
 
   // Bulk include/exclude every note from the chat context at once (#223).
   const handleBulkNoteContext = (action: NoteContextDefault) => {
     setNoteContextDefault(action)
-    setContextSelections(prev => ({
-      ...prev,
-      notes: applyBulkNoteContext(prev.notes, notes ?? [], action),
-    }))
+    const next: ContextSelections = {
+      sources: contextSelections.sources,
+      notes: applyBulkNoteContext(contextSelections.notes, notes ?? [], action),
+    }
+    setContextSelections(next)
+    syncActiveComboDirty(next)
   }
 
   if (notebookLoading) {
@@ -413,6 +495,8 @@ export default function NotebookPage() {
             handleBulkSourceContext={handleBulkSourceContext}
             handleNoteContextModeChange={handleNoteContextModeChange}
             setContextPickerOpen={setContextPickerOpen}
+            combosEnabled={!folderScopeActive}
+            onApplyCombo={handleApplyCombo}
           />
         ) : (
           <ClassicNotebookView
@@ -435,6 +519,8 @@ export default function NotebookPage() {
             handleBulkNoteContext={handleBulkNoteContext}
             setArtifactDialogOpen={setArtifactDialogOpen}
             setContextPickerOpen={setContextPickerOpen}
+            combosEnabled={!folderScopeActive}
+            onApplyCombo={handleApplyCombo}
           />
         )}
 
@@ -450,6 +536,8 @@ export default function NotebookPage() {
           onFolderApply={handlePickerFolderApply}
           onNoteModeChange={handleNoteContextModeChange}
           onClearAll={handleClearAllContext}
+          combosEnabled={!folderScopeActive}
+          onApplyCombo={handleApplyCombo}
         />
 
         <GenerateArtifactDialog

@@ -90,6 +90,7 @@ export function TransferStageList({
 // back to the raw table name.
 const TABLE_LABEL_KEYS: Record<string, string> = {
   notebook: 'dataManagement.tables.notebook',
+  agent: 'dataManagement.tables.agent',
   transformation: 'dataManagement.tables.transformation',
   source_view: 'dataManagement.tables.source_view',
   source_group: 'dataManagement.tables.source_group',

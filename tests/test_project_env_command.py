@@ -162,7 +162,11 @@ def _patches(recorder, env, **pipeline_overrides):
         "verify_point_lane": lane_call,
         "correct_point": AsyncMock(return_value=None),
         "render_mock": AsyncMock(return_value=None),
+        "render_prd_draft": AsyncMock(return_value=None),
         "compress_draft": AsyncMock(return_value=None),
+        # dynamic GA resolution: default "nothing found anywhere" so tests
+        # stay hermetic (no cache reads, no web search)
+        "resolve_ga_anchor": AsyncMock(return_value=None),
         # _converge auto-generates a generic paragraph for converged envs
         "render_generic_paragraph": AsyncMock(return_value="自动生成的通用段落。"),
     }
@@ -196,13 +200,17 @@ def _patches(recorder, env, **pipeline_overrides):
     return patches, default_overrides
 
 
-async def _run(env, recorder, mode="material", token=TOKEN, **pipeline_overrides):
+async def _run(
+    env, recorder, mode="material", token=TOKEN, prd_seed=None, **pipeline_overrides
+):
     patches, mocks = _patches(recorder, env, **pipeline_overrides)
     with ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
         result = await verify_project_env_command(
-            VerifyProjectEnvInput(env_id=str(env.id), mode=mode, token=token)
+            VerifyProjectEnvInput(
+                env_id=str(env.id), mode=mode, token=token, prd_seed=prd_seed
+            )
         )
     return result, mocks
 
@@ -546,7 +554,8 @@ class TestConvergence:
 
 class TestMockModeLanes:
     """Mock mode drops lane A (a fictional project has no KB evidence) and
-    off_table prescreens defer to lane B's plausibility judgement."""
+    undated (off-table) prescreens defer to lane B's plausibility judgement —
+    in BOTH modes: the off_table manual-review bounce is retired."""
 
     @pytest.mark.asyncio
     async def test_mock_mode_runs_only_lanes_b_and_c(self):
@@ -568,7 +577,7 @@ class TestMockModeLanes:
         assert result.status == "verified"
 
     @pytest.mark.asyncio
-    async def test_mock_mode_off_table_prescreen_defers_to_lane_b(self):
+    async def test_mock_mode_undated_pair_defers_to_lane_b(self):
         env = _env(
             source_type="mock",
             draft_content={"background": "数据管道采用 Flink 1.18 计算。"},
@@ -583,54 +592,130 @@ class TestMockModeLanes:
 
         assert result.status == "verified"
         run_points = recorder.run_updates[-1]["points"]
-        off_table = [
+        undated = [
             p
             for p in run_points
-            if (p.get("prescreen") or {}).get("status") == "off_table"
+            if (p.get("prescreen") or {}).get("status") == "unknown"
         ]
-        assert off_table, "Flink is not in the anchor table"
-        assert all(p.get("state") == "passed" for p in off_table)
-        assert all("manual_reason" not in p for p in off_table)
+        assert undated, "Flink is not in the anchor table and resolves to nothing"
+        assert all(p.get("state") == "passed" for p in undated)
+        assert all("manual_reason" not in p for p in undated)
 
     @pytest.mark.asyncio
-    async def test_material_mode_off_table_prescreen_still_routes_manual_review(self):
+    async def test_material_mode_undated_pair_no_longer_blocks(self):
         env = _env(tech_background="服务端采用 Flink 1.18 开发。")
         recorder = Recorder()
         result, _ = await _run(env, recorder, mode="material")
 
+        assert result.status == "verified"
+        assert env.pending_claims is None
+
+    @pytest.mark.asyncio
+    async def test_material_mode_dynamic_anchor_violation_fails(self):
+        """A web/cache-resolved anchor after the project start fails the point
+        even when the lanes trust the text (same override as the static table)."""
+        env = _env(tech_background="服务端采用 Flink 1.18 开发。")
+        recorder = Recorder()
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            return {"verdict": "pass", "issues": []}
+
+        result, _ = await _run(
+            env,
+            recorder,
+            mode="material",
+            resolve_ga_anchor=AsyncMock(
+                return_value={
+                    "ga": "2025.06",
+                    "source": "web:https://example.com/flink",
+                    "confidence": "web",
+                }
+            ),
+        )
+
         assert result.status == "needs_review"
         claims = env.pending_claims or []
         assert claims
-        assert any(c["reason_code"] == "off_table" for c in claims)
+        point = next(
+            p for p in recorder.run_updates[-1]["points"] if "Flink" in p["quote"]
+        )
+        assert (point["prescreen"] or {}).get("status") == "fail"
+        assert point["lanes"]["B"]["verdict"] == "fail"
 
 
 class TestPrescreenModes:
-    def _version_point(self):
+    def _version_point(self, quote="采用 Flink 1.18 计算"):
         return [
             {
                 "point_id": "p1",
-                "quote": "采用 Flink 1.18 计算",
+                "quote": quote,
                 "field": "background",
                 "type": "version",
                 "state": "pending",
             }
         ]
 
-    def test_material_mode_off_table_marks_manual_review(self):
+    @pytest.mark.asyncio
+    async def test_undated_pair_records_unknown_without_blocking(self):
         points = self._version_point()
-        _prescreen_version_points(points, "2025.01", mode="material")
-
-        assert points[0]["state"] == "manual_review"
-        assert points[0]["manual_reason"] == "off_table"
-        assert points[0]["prescreen"]["status"] == "off_table"
-
-    def test_mock_mode_off_table_only_marks_prescreen(self):
-        points = self._version_point()
-        _prescreen_version_points(points, "2025.01", mode="mock")
+        with patch(
+            "open_notebook.ai.project_env_pipeline.resolve_ga_anchor",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            await _prescreen_version_points(points, "2025.01")
 
         assert points[0]["state"] == "pending"
         assert "manual_reason" not in points[0]
-        assert points[0]["prescreen"]["status"] == "off_table"
+        assert points[0]["prescreen"]["status"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_static_table_violation_records_fail(self):
+        points = self._version_point(quote="前端用 Python 3.13 编写工具链")
+        with patch(
+            "open_notebook.ai.project_env_pipeline.resolve_ga_anchor",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            await _prescreen_version_points(points, "2024.01")
+
+        # prescreen only records; the lane-B override lives in _process_point
+        assert points[0]["state"] == "pending"
+        assert points[0]["prescreen"]["status"] == "fail"
+        assert "is after project start" in points[0]["prescreen"]["message"]
+
+    @pytest.mark.asyncio
+    async def test_dynamic_anchor_resolved_violation_fails(self):
+        points = self._version_point()
+        with patch(
+            "open_notebook.ai.project_env_pipeline.resolve_ga_anchor",
+            new_callable=AsyncMock,
+            return_value={
+                "ga": "2025.06",
+                "source": "web:https://example.com/flink",
+                "confidence": "web",
+            },
+        ):
+            await _prescreen_version_points(points, "2025.01")
+
+        assert points[0]["prescreen"]["status"] == "fail"
+        assert points[0]["prescreen"]["anchors"]["flink 1.18"]["ga"] == "2025.06"
+
+    @pytest.mark.asyncio
+    async def test_dynamic_anchor_resolved_before_start_passes(self):
+        points = self._version_point()
+        with patch(
+            "open_notebook.ai.project_env_pipeline.resolve_ga_anchor",
+            new_callable=AsyncMock,
+            return_value={
+                "ga": "2023.06",
+                "source": "web:https://example.com/flink",
+                "confidence": "web",
+            },
+        ):
+            await _prescreen_version_points(points, "2025.01")
+
+        assert points[0]["prescreen"]["status"] == "pass"
 
 
 class TestIdempotency:
@@ -924,6 +1009,35 @@ class TestQuoteDrift:
         assert env.background == "用户并发编辑后的全新文本。"
 
 
+class TestPrescreenRefreshAfterCorrection:
+    @pytest.mark.asyncio
+    async def test_corrected_version_quote_gets_fresh_prescreen(self):
+        """回归：初始版本违反 GA 顺序（Redis 7.2 GA 2023.07 > 2023.01）触发
+        纠错；修正为合规版本（Redis 7.0 GA 2022.05）后预筛必须随 quote 刷新，
+        否则陈旧的 fail 判定每轮都把 B 路压死，直至轮数耗尽误判 exhausted。"""
+        env = _env(
+            background="系统采用 Redis 7.2 作为缓存。",
+            tech_background="",
+            period_start="2023.01",
+            period_end="2023.08",
+        )
+        recorder = Recorder()
+
+        def lanes(lane, quote, field, context, budget=None, lane_model=None):
+            return {"verdict": "pass", "issues": []}
+
+        correct = AsyncMock(return_value="系统采用 Redis 7.0 作为缓存。")
+        result, _ = await _run(env, recorder, lanes=lanes, correct_point=correct)
+
+        assert result.status == "verified"
+        correct.assert_awaited_once()
+        assert "Redis 7.0" in env.background  # correction applied
+        final_point = recorder.run_updates[-1]["points"][0]
+        assert final_point["state"] == "passed"
+        assert final_point["prescreen"]["status"] == "pass"  # refreshed, not stale fail
+        assert "manual_reason" not in final_point  # never bounced to exhausted
+
+
 class TestConditionalWriteFencing:
     """_fail_env/_set_progress bypass ObjectModel.save, so their raw UPDATEs
     must carry their own token guard — verified against a live SurrealDB the
@@ -1007,8 +1121,11 @@ class TestLaneFailures:
 
 
 class TestLaneModeSemantics:
+    @pytest.mark.parametrize("mode", ["mock", "material"])
     @pytest.mark.asyncio
-    async def test_lane_b_mock_mode_rejects_off_table_and_reaches_template(self):
+    async def test_lane_b_rejects_off_table_and_reaches_template(self, mode):
+        """Both modes only allow pass/fail: an undated anchor is judged by the
+        prompt's plausibility rule, never bounced as off_table."""
         import open_notebook.ai.project_env_pipeline as pipeline
         from open_notebook.ai.project_env_pipeline import LaneVerdict
 
@@ -1025,37 +1142,14 @@ class TestLaneModeSemantics:
             "open_notebook.ai.project_env_pipeline._invoke_json", new=fake_invoke
         ):
             verdict = await pipeline.verify_point_lane(
-                lane="B", quote="x", field="background", context={}, mode="mock"
+                lane="B", quote="x", field="background", context={}, mode=mode
             )
 
         assert verdict["verdict"] == "pass"
-        assert captured["data"]["mode"] == "mock"
-        # mock mode must force a plausibility judgement, never a table bounce
+        assert captured["data"]["mode"] == mode
         assert captured["validator"](LaneVerdict(verdict="off_table")) != ""
         assert captured["validator"](LaneVerdict(verdict="pass")) == ""
-
-    @pytest.mark.asyncio
-    async def test_lane_b_material_mode_still_allows_off_table(self):
-        import open_notebook.ai.project_env_pipeline as pipeline
-        from open_notebook.ai.project_env_pipeline import LaneVerdict
-
-        captured = {}
-
-        async def fake_invoke(
-            template, data, result_model, model_id, budget, validator=None
-        ):
-            captured["validator"] = validator
-            return LaneVerdict(verdict="pass", issues=[])
-
-        with patch(
-            "open_notebook.ai.project_env_pipeline._invoke_json", new=fake_invoke
-        ):
-            verdict = await pipeline.verify_point_lane(
-                lane="B", quote="x", field="background", context={}
-            )
-
-        assert verdict["verdict"] == "pass"
-        assert captured["validator"](LaneVerdict(verdict="off_table")) == ""
+        assert captured["validator"](LaneVerdict(verdict="fail")) == ""
 
 
 class TestPreconditions:
@@ -1806,6 +1900,158 @@ class TestDraftingFromSelection:
         assert render_none.await_args.kwargs["industry"] is None
 
 
+PRD_SEED = {
+    "background": "PRD 背景原文：为物流行业建设 TMS 系统。",
+    "tech_background": "",
+    "tuning_process": "PRD 调优原文。",
+    "problems_solutions": "",
+    "my_role": "",
+}
+
+
+class TestDraftingFromPrd:
+    @pytest.mark.asyncio
+    async def test_seed_renders_prd_draft_with_seed_in_plan(self):
+        """seed 任一叙述字段非空 → mode=prd，plan 带原样 seed。"""
+        from commands.project_env_commands import _mock_render_plan
+
+        env = _selection_env()
+        plan = _mock_render_plan(env, PRD_SEED)
+        assert plan["mode"] == "prd"
+        assert plan["prd_seed"] == PRD_SEED
+
+        recorder = Recorder()
+        render = AsyncMock(return_value=_mock_draft())
+        result, mocks = await _run(
+            env, recorder, mode="mock", prd_seed=PRD_SEED, render_prd_draft=render
+        )
+
+        assert result.status == "verified"
+        render.assert_awaited_once()
+        assert render.await_args is not None
+        assert render.await_args.kwargs["prd_seed"] == PRD_SEED
+        assert render.await_args.kwargs["keywords"] == ["微服务"]
+        mocks["render_mock"].assert_not_awaited()
+        assert env.draft_content == _mock_draft().model_dump()
+        drafting = next(
+            u for u in recorder.progress_updates if u["stage"] == "drafting"
+        )
+        assert "PRD" in drafting["message"]
+
+    @pytest.mark.asyncio
+    async def test_selection_wins_over_seed(self):
+        """materials_selection 命中时优先于 prd_seed（优先级：
+        selection → prd → keywords）。"""
+        from commands.project_env_commands import _mock_render_plan
+
+        env = _selection_env(
+            materials_selection={
+                "kind": "materials",
+                "material_ids": ["m1"],
+                "route_id": None,
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            }
+        )
+        assert _mock_render_plan(env, PRD_SEED)["mode"] == "materials"
+
+        render_mat = AsyncMock(return_value=_mock_draft())
+        _, mocks = await _run(
+            env,
+            Recorder(),
+            mode="mock",
+            render_materials_draft=render_mat,
+        )
+        render_mat.assert_awaited_once()
+        mocks["render_prd_draft"].assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_routes_selection_wins_over_seed(self):
+        """routes 类 selection 命中同样优先于 prd_seed：seed 被忽略而非报错。"""
+        from commands.project_env_commands import _mock_render_plan
+
+        env = _selection_env(
+            materials_selection={
+                "kind": "routes",
+                "material_ids": [],
+                "route_id": "r1",
+                "submitted_at": "2026-10-07T11:00:00+00:00",
+            }
+        )
+        plan = _mock_render_plan(env, PRD_SEED)
+        assert plan["mode"] == "routes"
+        assert plan["prd_seed"] is None
+
+        render_route = AsyncMock(return_value=_mock_draft())
+        _, mocks = await _run(
+            env,
+            Recorder(),
+            mode="mock",
+            prd_seed=PRD_SEED,
+            render_route_draft=render_route,
+        )
+        render_route.assert_awaited_once()
+        mocks["render_prd_draft"].assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_blank_seed_falls_back_to_keywords_path(self):
+        """seed 全空字符串 → 不进 prd 通道，回落关键词路径（老 payload /
+        旧 worker 语义：无 seed 识别时不报错）。"""
+        from commands.project_env_commands import _mock_render_plan
+
+        blank_seed = {field: "" for field in PRD_SEED}
+        env = _selection_env()
+        assert _mock_render_plan(env, blank_seed)["mode"] == "keywords"
+
+        recorder = Recorder()
+        render_kw = AsyncMock(return_value=_mock_draft())
+        result, mocks = await _run(env, recorder, mode="mock", render_mock=render_kw)
+
+        assert result.status == "verified"
+        render_kw.assert_awaited_once()
+        mocks["render_prd_draft"].assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_seed_input_keeps_keywords_path(self):
+        """【回归锚】不传 prd_seed（旧任务输入）时 keywords 路径分毫不动。"""
+        from commands.project_env_commands import _mock_render_plan
+
+        env = _selection_env()
+        assert _mock_render_plan(env)["mode"] == "keywords"
+        assert _mock_render_plan(env, None)["prd_seed"] is None
+
+        render_kw = AsyncMock(return_value=_mock_draft())
+        result, mocks = await _run(
+            _selection_env(), Recorder(), mode="mock", render_mock=render_kw
+        )
+        assert result.status == "verified"
+        render_kw.assert_awaited_once()
+        mocks["render_prd_draft"].assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_prd_draft_period_violation_feedback_retry_path(self):
+        """prd 通道同样走反馈重试：首轮违规 → 带 feedback 重渲染一次。"""
+        from open_notebook.ai.project_env_pipeline import MockDraft
+
+        bad = MockDraft(
+            name="AI 模拟项目",
+            background="PRD 改写背景采用 MySQL 8.0 存储。",
+            period_start="2026.05",  # 违反 R3（结束不足 13 个月前）
+            period_end="2026.12",
+        )
+        good = _mock_draft()
+        render = AsyncMock(side_effect=[bad, good])
+        env = _selection_env(period_start="", period_end="")
+        result, _ = await _run(
+            env, Recorder(), mode="mock", prd_seed=PRD_SEED, render_prd_draft=render
+        )
+
+        assert result.status == "verified"
+        assert render.await_count == 2
+        assert render.await_args is not None
+        assert render.await_args.kwargs["feedback"]
+        assert env.period_start == good.period_start
+
+
 class TestParagraphGranularity:
     """Paragraph-level claim units: split / extract / dedup / drift / prescreen."""
 
@@ -1925,11 +2171,20 @@ class TestParagraphGranularity:
         result = prescreen_quote("数据层用 MySQL 8.0，缓存层用 Redis 7.2。", "2023.01")
         assert result["status"] == "fail"
 
-    def test_prescreen_quote_off_table_wins_over_pass(self):
+    def test_prescreen_quote_undated_pair_yields_unknown(self):
         from open_notebook.ai.project_env_pipeline import prescreen_quote
 
         result = prescreen_quote("存储用 HyperDB 2.0，缓存用 Redis 7.0。", "2025.01")
-        assert result["status"] == "off_table"
+        # off-table pairs no longer bounce: they are "unknown" and left to the
+        # dynamic levels / lane B's plausibility judgement
+        assert result["status"] == "unknown"
+
+    def test_prescreen_quote_fail_wins_over_undated(self):
+        from open_notebook.ai.project_env_pipeline import prescreen_quote
+
+        # python 3.13 (GA 2024.10) starts after 2024.01; HyperDB stays undated
+        result = prescreen_quote("用 HyperDB 2.0 与 Python 3.13。", "2024.01")
+        assert result["status"] == "fail"
 
     def test_prescreen_quote_all_in_table_passes(self):
         from open_notebook.ai.project_env_pipeline import prescreen_quote
@@ -1941,6 +2196,23 @@ class TestParagraphGranularity:
         from open_notebook.ai.project_env_pipeline import prescreen_quote
 
         assert prescreen_quote("整体高并发。", "2025.01")["status"] == "unspecified"
+
+    # --- extract_ga_month（联网搜索结果的启发式年月提取） ---
+
+    def test_extract_ga_month_english_month_name(self):
+        # 回归：月份名曾是非捕获组，group(2) 必抛 IndexError
+        from open_notebook.ai.project_env_pipeline import extract_ga_month
+
+        assert extract_ga_month("Redis 7.2 released in October 2023 (GA)") == "2023.10"
+        assert extract_ga_month("General availability: May 2022") == "2022.05"
+
+    def test_extract_ga_month_cn_and_numeric_dates(self):
+        from open_notebook.ai.project_env_pipeline import extract_ga_month
+
+        assert extract_ga_month("MySQL 8.4 于2024年7月正式发布") == "2024.07"
+        assert extract_ga_month("Go 1.22 (released 2024-02-06)") == "2024.02"
+        assert extract_ga_month("v3.5.0 shipped 2023.05.15") == "2023.05"
+        assert extract_ga_month("no date here at all") is None
 
     # --- correct_point ---
 

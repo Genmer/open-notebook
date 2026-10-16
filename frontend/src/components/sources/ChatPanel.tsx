@@ -150,6 +150,8 @@ interface ChatPanelProps {
   onGroupingChange?: (filters: NotebookSourceFilters) => void
   notes?: NoteResponse[]
   notesLoading?: boolean
+  combosEnabled?: boolean
+  onApplyCombo?: (replacement: ContextSelections, comboId?: string | null) => void
 }
 
 export function ChatPanel({
@@ -195,7 +197,9 @@ export function ChatPanel({
   onBulkSourceContext,
   onGroupingChange,
   notes,
-  notesLoading
+  notesLoading,
+  combosEnabled,
+  onApplyCombo,
 }: ChatPanelProps) {
   const { t } = useTranslation()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
@@ -544,6 +548,12 @@ export function ChatPanel({
             tokenCount={notebookContextStats.tokenCount}
             charCount={notebookContextStats.charCount}
             onOpenPicker={onOpenContextPicker}
+            notebookId={notebookId}
+            combosEnabled={combosEnabled}
+            onApplyCombo={onApplyCombo}
+            contextSelections={contextSelections}
+            sources={sources}
+            notes={notes}
           />
         )}
 

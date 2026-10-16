@@ -573,8 +573,10 @@ def _package_rows() -> Dict[str, List[Dict[str, Any]]]:
 
 def _all_existing() -> Dict[str, Set[str]]:
     rows = _package_rows()
+    # .get: _package_rows() is the minimal v1 package, so tables added in
+    # later format versions (agent, ...) have no rows here.
     existing = {
-        t: {str(r["id"]) for r in rows[t]}
+        t: {str(r["id"]) for r in rows.get(t, [])}
         for t in dtc.DATA_TABLES + (dtc.EMBEDDING_TABLE,)
     }
     return existing
@@ -608,7 +610,7 @@ class TestExport:
             assert "files/s1/report.pdf" in names
 
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 3
+            assert manifest["format_version"] == 4
             assert manifest["package_type"] == "full"
             assert manifest["counts"]["source"] == 1
             assert manifest["counts"]["source_embedding"] == 2
@@ -1543,7 +1545,7 @@ class TestModelExport:
                 "manifest.json",
             ]
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 3
+            assert manifest["format_version"] == 4
             assert manifest["package_type"] == "models"
             assert manifest["counts"] == {
                 "credential": 1,
@@ -2076,7 +2078,7 @@ class TestProjectEnvExport:
 
         with zipfile.ZipFile(output.package_path) as zf:
             manifest = json.loads(zf.read("manifest.json"))
-            assert manifest["format_version"] == 3
+            assert manifest["format_version"] == 4
             assert manifest["counts"]["project_env"] == 1
             assert manifest["counts"]["project_env_verification"] == 1
 
@@ -2321,3 +2323,285 @@ class TestProjectEnvImport:
         with zipfile.ZipFile(package) as zf:
             with pytest.raises(ValueError, match="format_version 3"):
                 dtc._validate_package(zf)
+
+
+# --- agent transfer (format v4) ---
+
+AGENT_ID = "agent:ag1"
+AGENT_ID_2 = "agent:ag2"
+
+
+def _agent_rows() -> List[Dict[str, Any]]:
+    """Rows as SELECT * returns them (model as RecordID, like a live DB)."""
+    return [
+        {
+            "id": AGENT_ID,
+            "name": "Essay Coach",
+            "system_prompt": "You are an essay coach.",
+            "description": "coaching persona",
+            "model": RecordID("model", "m1"),
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "enabled": True,
+            "sort_order": 0,
+            "created": datetime(2026, 10, 1, tzinfo=timezone.utc),
+            "updated": datetime(2026, 10, 2, tzinfo=timezone.utc),
+            # not in TABLE_FIELDS: must never enter a package
+            "internal_runtime_state": "must not be exported",
+        },
+        {
+            "id": AGENT_ID_2,
+            "name": "Bare",
+            "system_prompt": "You are helpful.",
+            "description": None,
+            "model": None,
+            "temperature": None,
+            "max_tokens": None,
+            "enabled": False,
+            "sort_order": 1,
+        },
+    ]
+
+
+def _packaged_agent(
+    agent_id: str = AGENT_ID, model_ref: Optional[str] = MODEL_ID
+) -> Dict[str, Any]:
+    """Package-side agent row (string fields, json-ready)."""
+    return {
+        "id": agent_id,
+        "name": "Essay Coach",
+        "system_prompt": "You are an essay coach.",
+        "description": None,
+        "model": model_ref,
+        "temperature": 0.7,
+        "max_tokens": 2048,
+        "enabled": True,
+        "sort_order": 0,
+        "created": "2026-10-01T00:00:00+00:00",
+        "updated": "2026-10-02T00:00:00+00:00",
+    }
+
+
+class TestAgentExport:
+    @pytest.mark.asyncio
+    async def test_full_export_includes_agent_members(self, tmp_path):
+        tables = _default_rows()
+        tables["agent"] = _agent_rows()
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(recorder, str(tmp_path / "exports"), str(tmp_path))
+
+        assert output.success is True
+        assert output.counts["agent"] == 2
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            assert manifest["format_version"] == 4
+            assert manifest["counts"]["agent"] == 2
+
+            rows = [
+                json.loads(line)
+                for line in zf.read("data/agent.ndjson").decode().splitlines()
+            ]
+            assert [row["id"] for row in rows] == [AGENT_ID, AGENT_ID_2]
+            first = rows[0]
+            # RecordID serializes as its string form via json default=str
+            assert first["model"] == "model:m1"
+            assert first["system_prompt"] == "You are an essay coach."
+            assert first["enabled"] is True
+            assert "internal_runtime_state" not in first  # whitelist drops it
+            assert rows[1]["model"] is None
+
+    @pytest.mark.asyncio
+    async def test_models_scope_export_carries_no_agent(self, tmp_path, encryption_key):
+        tables = _default_rows()
+        tables["agent"] = _agent_rows()
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(
+            recorder, str(tmp_path / "exports"), str(tmp_path), scope="models"
+        )
+
+        with zipfile.ZipFile(output.package_path) as zf:
+            assert "data/agent.ndjson" not in zf.namelist()
+
+    @pytest.mark.asyncio
+    async def test_notebooks_scope_export_carries_all_agent_members(self, tmp_path):
+        # Personas are notebook-independent, so like transformation they stay
+        # whole in a topic package: no notebook-scope filter applies.
+        tables = _default_rows()
+        tables["agent"] = _agent_rows()
+        recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(
+            recorder,
+            str(tmp_path / "exports"),
+            str(tmp_path),
+            scope="notebooks",
+            notebook_ids=[NOTEBOOK_ID],
+        )
+
+        assert output.success is True
+        with zipfile.ZipFile(output.package_path) as zf:
+            rows = [
+                json.loads(line)
+                for line in zf.read("data/agent.ndjson").decode().splitlines()
+            ]
+            assert [row["id"] for row in rows] == [AGENT_ID, AGENT_ID_2]
+
+
+class TestAgentImport:
+    @pytest.mark.asyncio
+    async def test_import_creates_new_agent_and_skips_existing_id(self, tmp_path):
+        package = tmp_path / "pkg.zip"
+        rows = {"agent": [_packaged_agent(AGENT_ID), _packaged_agent(AGENT_ID_2, None)]}
+        _build_package(package, rows, {}, format_version=4)
+        recorder = TransferRecorder(
+            existing_ids={"agent": {AGENT_ID_2}}, models=["model:m1"]
+        )
+
+        output = await _run_import(recorder, str(tmp_path / "uploads"), package)
+
+        assert output.success is True
+        assert output.imported["agent"] == 1
+        assert output.skipped["agent"] == 1
+        assert output.warnings == []
+
+        agent_params = _params_of(recorder, f"CREATE {AGENT_ID} SET")
+        assert agent_params["p0_name"] == "Essay Coach"
+        assert agent_params["p0_system_prompt"] == "You are an essay coach."
+        # model restored as a record link, not a bare string (RECORD_FIELDS)
+        assert agent_params["p0_model"].id == "m1"
+        assert not [sql for sql, _ in recorder.writes if AGENT_ID_2 in sql]
+
+    @pytest.mark.asyncio
+    async def test_import_tolerates_dangling_model_reference(self, tmp_path):
+        # agent.model may point at a model this environment lacks; execution
+        # falls back to the default model, so the import must not fail.
+        package = tmp_path / "pkg.zip"
+        rows = {"agent": [_packaged_agent(AGENT_ID, model_ref="model:gone")]}
+        _build_package(package, rows, {}, format_version=4)
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path / "uploads"), package)
+
+        assert output.success is True
+        assert output.imported["agent"] == 1
+        agent_params = _params_of(recorder, f"CREATE {AGENT_ID} SET")
+        assert agent_params["p0_model"].id == "gone"
+
+    def test_rejects_v3_package_with_agent_members(self, tmp_path):
+        package = tmp_path / "v3_with_agent.zip"
+        with zipfile.ZipFile(package, "w") as zf:
+            zf.writestr(
+                "data/agent.ndjson",
+                json.dumps(_packaged_agent()) + "\n",
+            )
+            zf.writestr(
+                "manifest.json",
+                json.dumps({"format_version": 3, "counts": {}}),
+            )
+        with zipfile.ZipFile(package) as zf:
+            with pytest.raises(ValueError, match="format_version 4"):
+                dtc._validate_package(zf)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("format_version", [1, 2, 3])
+    async def test_import_legacy_package_without_agent_members_unaffected(
+        self, tmp_path, format_version
+    ):
+        # Raising FORMAT_VERSION to 4 must not change imports of packages
+        # exported before agent members existed.
+        package = tmp_path / "pkg.zip"
+        _build_package(package, _package_rows(), {}, format_version=format_version)
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path / "uploads"), package)
+
+        assert output.success is True
+        assert "agent" not in output.imported
+        assert not [sql for sql, _ in recorder.writes if "CREATE agent" in sql]
+
+    @pytest.mark.asyncio
+    async def test_import_preserves_false_and_zero_values(self, tmp_path):
+        # _prepare_import_row skips only None: enabled=False / sort_order=0
+        # are stored values, not "unset", and must reach the CREATE.
+        package = tmp_path / "pkg.zip"
+        row = _packaged_agent(AGENT_ID)
+        row["enabled"] = False
+        row["sort_order"] = 0
+        _build_package(package, {"agent": [row]}, {}, format_version=4)
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path / "uploads"), package)
+
+        assert output.success is True
+        assert output.imported["agent"] == 1
+        agent_params = _params_of(recorder, f"CREATE {AGENT_ID} SET")
+        assert agent_params["p0_enabled"] is False
+        assert agent_params["p0_sort_order"] == 0
+
+    @pytest.mark.asyncio
+    async def test_import_missing_enabled_and_sort_order_leaves_schema_defaults(
+        self, tmp_path
+    ):
+        # _export_row copies only fields present on the row, so a package row
+        # may lack enabled/sort_order; the CREATE omits them and the schema
+        # defaults (enabled=true, sort_order=0) apply.
+        package = tmp_path / "pkg.zip"
+        row = _packaged_agent(AGENT_ID, model_ref=None)
+        row.pop("enabled")
+        row.pop("sort_order")
+        _build_package(package, {"agent": [row]}, {}, format_version=4)
+        recorder = TransferRecorder(models=["model:m1"])
+
+        output = await _run_import(recorder, str(tmp_path / "uploads"), package)
+
+        assert output.success is True
+        assert output.imported["agent"] == 1
+        agent_params = _params_of(recorder, f"CREATE {AGENT_ID} SET")
+        assert "p0_enabled" not in agent_params
+        assert "p0_sort_order" not in agent_params
+
+    @pytest.mark.asyncio
+    async def test_agent_round_trip_reimports_row_with_none_optional_fields(
+        self, tmp_path
+    ):
+        # The Bare persona (description/model/temperature/max_tokens all None,
+        # enabled=False) must survive a full export→import round trip.
+        tables = _default_rows()
+        tables["agent"] = _agent_rows()
+        export_recorder = TransferRecorder(tables=tables)
+
+        output = await _run_export(
+            export_recorder, str(tmp_path / "exports"), str(tmp_path)
+        )
+        assert output.counts["agent"] == 2
+
+        import_recorder = TransferRecorder(models=["model:m1"])
+        result = await _run_import(
+            import_recorder, str(tmp_path / "uploads"), output.package_path
+        )
+
+        assert result.success is True
+        assert result.imported["agent"] == 2
+        assert result.warnings == []
+        # Both personas land in one CREATE batch (p0_/p1_ prefixes share the
+        # params dict), so read ag2's values off its own statement.
+        sql, batch_params = [
+            (s, p) for s, p in import_recorder.writes if f"CREATE {AGENT_ID_2} SET" in s
+        ][0]
+        assert batch_params is not None
+        ag2_stmt = next(
+            stmt for stmt in sql.split(";") if f"CREATE {AGENT_ID_2} SET" in stmt
+        )
+
+        def ag2(field: str) -> Any:
+            match = re.search(rf"\b{field} = \$(\w+)", ag2_stmt)
+            return batch_params[match.group(1)] if match else None
+
+        assert ag2("enabled") is False
+        assert ag2("sort_order") == 1
+        # None optionals never reach the CREATE (SCHEMAFULL rejects NONE).
+        for field in ("description", "model", "temperature", "max_tokens"):
+            assert ag2(field) is None

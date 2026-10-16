@@ -12,11 +12,15 @@ candidate's own note. No retrieval, no notebook context, no model-essay
 text: model essays are unreachable by construction.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from open_notebook.ai.project_env_pipeline import _invoke_json, get_light_model
+from open_notebook.domain.ruankao_concept_cache import RuankaoConceptCache
+from open_notebook.utils.web_search import snippets_text, web_search
 
 # --- parsed output shapes (validator targets; api/ mirrors the response) ---
 
@@ -187,6 +191,64 @@ async def render_question_breakdown(
     }
 
 
+async def resolve_concept_knowledge(
+    title: str, q2: str, domain: str = ""
+) -> Optional[str]:
+    """Resolve authoritative concept points for Question-2 via local cache or web search.
+    Per ADR-017, this operates strictly on generic public concepts (never touches model essays).
+    """
+    clean_title = re.sub(r"^论\s*", "", title).strip()
+    clean_title = re.sub(
+        r"(?:的设计与实现|的设计与应用|架构设计与实践|的设计|的应用|及其应用)$",
+        "",
+        clean_title,
+    ).strip()
+    concept_key = clean_title or title
+    if not concept_key:
+        return None
+
+    # 1. 优先查本地知识库缓存
+    try:
+        cached = await RuankaoConceptCache.lookup_many([concept_key])
+        if cached and concept_key in cached:
+            item = cached[concept_key]
+            def_text = item.get("definition") or ""
+            points = item.get("key_points") or []
+            pts_str = "；".join(points) if isinstance(points, list) else str(points)
+            logger.info(f"Hit Ruankao concept cache for: {concept_key}")
+            return f"概念定义：{def_text}\n核心考点组成：{pts_str}"
+    except Exception as e:
+        logger.warning(f"Ruankao concept cache lookup error: {e}")
+
+    # 2. 未命中时执行实时联网搜索核验
+    query = f"{concept_key} 软考 概念 组成 理论"
+    try:
+        results = await web_search(query, max_results=3)
+        if results:
+            snippets = snippets_text(results)
+            # 简单提炼第一条权威摘要
+            first_snip = results[0].get("snippet", "")
+            definition = first_snip[:200]
+            # 异步回写本地知识库缓存，下次直接复用
+            try:
+                new_cache = RuankaoConceptCache(
+                    name=concept_key,
+                    category=domain or "软考核心概念",
+                    definition=definition,
+                    key_points=[r.get("title", "") for r in results[:3]],
+                    source=f"web:{results[0].get('url', '')}"[:200],
+                )
+                await new_cache.save()
+                logger.info(f"Saved new Ruankao concept cache for: {concept_key}")
+            except Exception as save_err:
+                logger.warning(f"Failed to cache ruankao concept: {save_err}")
+            return f"权威联网核验参考：\n{snippets[:400]}"
+    except Exception as e:
+        logger.warning(f"Web search for concept {concept_key} failed: {e}")
+
+    return None
+
+
 async def render_question_q2_points(
     title: str,
     year: str = "",
@@ -200,9 +262,21 @@ async def render_question_q2_points(
 ) -> Dict[str, Any]:
     """Method-point skeleton for the question-2 paragraph; never persisted by
     this call — the prose itself must be written by the candidate."""
+    effective_note = note or ""
+    try:
+        verified_concept = await resolve_concept_knowledge(title, q2, domain)
+        if verified_concept:
+            prefix = "【权威概念规范与要点（经联网核验/知识库）】"
+            if effective_note:
+                effective_note = f"{effective_note}\n\n{prefix}\n{verified_concept}"
+            else:
+                effective_note = f"{prefix}\n{verified_concept}"
+    except Exception as e:
+        logger.warning(f"Concept verification error in q2_points: {e}")
+
     parsed = await _invoke_json(
         "ruankao/question_q2_points",
-        _question_data(title, year, domain, q1, q2, q3, note),
+        _question_data(title, year, domain, q1, q2, q3, effective_note),
         QuestionQ2PointsDraft,
         get_light_model(),
         None,

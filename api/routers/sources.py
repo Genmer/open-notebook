@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional
 
 from content_core import check_file_support
@@ -40,7 +41,15 @@ from api.models import (
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Asset, Notebook, Source, SourceEmbedding
+from open_notebook.domain.notebook import (
+    STALE_COMMAND_ERROR_MESSAGE,
+    Asset,
+    Notebook,
+    Source,
+    SourceEmbedding,
+    _fail_stale_command,
+    _is_stale_running,
+)
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import (
     InvalidInputError,
@@ -169,9 +178,13 @@ async def _resolve_embedded_chunks(source: Source) -> int:
 
 
 async def _fetch_command_row(command_id: str) -> Optional[dict]:
-    """Fetch the raw command row backing a source's processing job."""
+    """Fetch the raw command row backing a source's processing job.
+
+    `updated`/`created` power the stale-running check in get_source_status.
+    """
     rows = await repo_query(
-        "SELECT id, status, args, error_message, result FROM $command_id",
+        "SELECT id, status, args, error_message, result, updated, created "
+        "FROM $command_id",
         {"command_id": ensure_record_id(command_id)},
     )
     return rows[0] if rows else None
@@ -1356,6 +1369,24 @@ async def get_source_status(source_id: str):
                 )
 
             status = row.get("status")
+            if _is_stale_running(
+                SimpleNamespace(
+                    status=status,
+                    updated=row.get("updated"),
+                    created=row.get("created"),
+                )
+            ):
+                # Worker died mid-job: fail the orphaned 'running' row on sight
+                # so the frontend's 2s poll immediately shows the failure (and
+                # its retry button) instead of spinning forever.
+                await _fail_stale_command(str(source.command))
+                row = {
+                    **row,
+                    "status": "failed",
+                    "error_message": STALE_COMMAND_ERROR_MESSAGE,
+                }
+                status = row["status"]
+
             processing_info = _processing_info_from_row(row)
             steps = await _derive_processing_steps(source, row, embedding)
 
@@ -1450,16 +1481,22 @@ async def retry_source_processing(source_id: str):
         if source.command:
             try:
                 status = await source.get_status()
-                if status in ["running", "queued"]:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Source is already processing. Cannot retry while processing is active.",
-                    )
             except Exception as e:
                 logger.warning(
                     f"Failed to check current status for source {source_id}: {e}"
                 )
                 # Continue with retry if we can't check status
+                status = None
+            if status in ["running", "queued"]:
+                # get_status already fails commands stale beyond the timeout;
+                # this second check keeps an orphaned 'running' row from ever
+                # blocking retry. (The 400 must be raised outside the try above:
+                # HTTPException is an Exception and used to be swallowed there.)
+                if not await source.release_stale_processing():
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Source is already processing. Cannot retry while processing is active.",
+                    )
 
         # Get notebooks that this source belongs to. `reference` is a graph edge
         # (RELATE source->reference->notebook), so it only has `in`/`out` columns —

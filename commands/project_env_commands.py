@@ -53,6 +53,7 @@ ROUTES_FLOOR = 2
 _DRAFTING_MESSAGES = {
     "materials": "AI 扩充：根据选中素材拼装项目草稿",
     "routes": "AI 扩充：根据选中路线扩写项目草稿",
+    "prd": "AI 改写：根据 PRD 生成项目草稿",
     "keywords": "AI 扩充：根据关键词生成完整项目背景草稿",
 }
 
@@ -77,6 +78,8 @@ class VerifyProjectEnvInput(CommandInput):
     env_id: str
     mode: str = "material"  # material | mock
     token: str
+    # PRD 抽取的五叙述字段种子：只在任务输入里活着（不落库），驱动 prd 通道起草
+    prd_seed: Optional[Dict[str, str]] = None
 
 
 class VerifyProjectEnvOutput(CommandOutput):
@@ -238,13 +241,21 @@ async def _save_run(run: Dict[str, Any], **fields: Any) -> None:
 # --- material preparation ---
 
 
-def _mock_render_plan(env: ProjectEnv) -> Dict[str, Any]:
-    """Resolve materials_selection into the drafting render plan. mode is
-    materials | routes | keywords; a selection matching no stored candidate
-    degrades to the keywords path (never block drafting on stale ids)."""
+def _mock_render_plan(
+    env: ProjectEnv, prd_seed: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Resolve the drafting render plan. mode is materials | routes | prd |
+    keywords; priority is materials_selection -> prd_seed -> keywords. A
+    selection matching no stored candidate degrades to the keywords path
+    (never block drafting on stale ids)."""
     sel = env.materials_selection or {}
     store = env.materials or {}
-    plan: Dict[str, Any] = {"mode": "keywords", "selected_items": [], "route": None}
+    plan: Dict[str, Any] = {
+        "mode": "keywords",
+        "selected_items": [],
+        "route": None,
+        "prd_seed": None,
+    }
     kind = str(sel.get("kind") or "")
     if kind == "materials":
         ids = set(sel.get("material_ids") or [])
@@ -276,13 +287,18 @@ def _mock_render_plan(env: ProjectEnv) -> Dict[str, Any]:
                 f"materials_selection route not found for {env.id}; "
                 "falling back to keywords drafting"
             )
+    if plan["mode"] == "keywords" and pipeline.prd_seed_has_narrative(prd_seed):
+        plan.update(mode="prd", prd_seed=prd_seed)
     return plan
 
 
 async def _prepare_mock_material(
-    env: ProjectEnv, token: str, budget: pipeline.CallBudget
+    env: ProjectEnv,
+    token: str,
+    budget: pipeline.CallBudget,
+    prd_seed: Optional[Dict[str, str]] = None,
 ) -> None:
-    plan = _mock_render_plan(env)
+    plan = _mock_render_plan(env, prd_seed)
 
     async def render(feedback: Optional[str] = None) -> Optional[pipeline.MockDraft]:
         common: Dict[str, Any] = {
@@ -300,6 +316,8 @@ async def _prepare_mock_material(
             )
         if plan["mode"] == "routes":
             return await pipeline.render_route_draft(route=plan["route"], **common)
+        if plan["mode"] == "prd":
+            return await pipeline.render_prd_draft(prd_seed=plan["prd_seed"], **common)
         return await pipeline.render_mock(**common)
 
     draft = await render()
@@ -354,20 +372,19 @@ async def _prepare_mock_material(
 # --- claim extraction funnel ---
 
 
-def _prescreen_version_points(
-    points: List[Dict[str, Any]], period_start: str, mode: str = "material"
+async def _prescreen_version_points(
+    points: List[Dict[str, Any]], period_start: str
 ) -> None:
-    """R5 pre-screen: anchor-table lookup over every version pair a paragraph
-    contains. In mock mode an off_table lookup only marks the point — lane B
-    judges plausibility."""
+    """R5 pre-screen: static anchor table first, then dynamic (cache/web)
+    resolution for undated pairs. A hard GA violation is recorded for the
+    lane-B override; undated pairs no longer block — lane B judges them by
+    plausibility (the old off_table manual-review bounce is retired)."""
     for point in points:
         if point.get("type") != "version":
             continue
-        result = pipeline.prescreen_quote(str(point.get("quote") or ""), period_start)
-        point["prescreen"] = result
-        if result.get("status") == "off_table" and mode != "mock":
-            point["state"] = "manual_review"
-            point["manual_reason"] = "off_table"
+        point["prescreen"] = await pipeline.prescreen_point_anchors(
+            str(point.get("quote") or ""), period_start
+        )
 
 
 def _mark_overflow(points: List[Dict[str, Any]]) -> None:
@@ -437,7 +454,7 @@ async def _extract_points(
             ]
 
     _mark_overflow(points)
-    _prescreen_version_points(points, env.period_start, mode)
+    await _prescreen_version_points(points, str(env.period_start or ""))
     return points
 
 
@@ -537,18 +554,6 @@ async def _process_point(
                 }
             )
             break
-        if verdicts.get("B") == "off_table":
-            point["state"] = "manual_review"
-            point["manual_reason"] = "off_table"
-            rounds.append(
-                {
-                    "round": len(rounds) + 1,
-                    "action": "verify",
-                    "lane_results": lanes,
-                    "verdict": "off_table",
-                }
-            )
-            break
         if all(v == "pass" for v in verdicts.values()):
             point["state"] = "passed"
             point["correction_rounds_used"] = rounds_used
@@ -599,6 +604,12 @@ async def _process_point(
             break
         env.apply_candidate_text(field, text.replace(old_quote, corrected, 1))
         point["quote"] = corrected
+        # the corrected text replaces the claim: the stale prescreen (recorded
+        # against the OLD quote) must not fail the next round's lane B again
+        if point.get("type") == "version":
+            point["prescreen"] = await pipeline.prescreen_point_anchors(
+                corrected, str(env.period_start or "")
+            )
         rounds.append(
             {
                 "round": len(rounds) + 1,
@@ -775,7 +786,9 @@ async def verify_project_env_command(
 
         if not points:
             if input_data.mode == "mock" and not env.draft_content:
-                drafting_message = _DRAFTING_MESSAGES[_mock_render_plan(env)["mode"]]
+                drafting_message = _DRAFTING_MESSAGES[
+                    _mock_render_plan(env, input_data.prd_seed)["mode"]
+                ]
                 await _set_progress(
                     env_id,
                     "drafting",
@@ -783,7 +796,9 @@ async def verify_project_env_command(
                     drafting_message,
                     token=input_data.token,
                 )
-                await _prepare_mock_material(env, input_data.token, budget)
+                await _prepare_mock_material(
+                    env, input_data.token, budget, input_data.prd_seed
+                )
             await _set_progress(
                 env_id, "extracting", 20, "提取技术断言点", token=input_data.token
             )
@@ -844,7 +859,7 @@ async def verify_project_env_command(
                     points.append(point)
                     work.append(point)
             _mark_overflow(points)
-            _prescreen_version_points(work, env.period_start, input_data.mode)
+            await _prescreen_version_points(work, str(env.period_start or ""))
 
         if budget.exhausted:
             for point in points:

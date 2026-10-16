@@ -56,28 +56,16 @@ vi.mock('@/components/ui/select', () => ({
   ),
 }))
 
+const modelsState = vi.hoisted(
+  () => ({ current: { data: [] as Model[], isLoading: false } })
+)
+const defaultsState = vi.hoisted(
+  () => ({ current: { data: {} as { default_chat_model?: string | null }, isLoading: false } })
+)
+
 vi.mock('@/lib/hooks/use-models', () => ({
-  useModels: () => ({
-    data: [
-      {
-        id: 'model:gpt',
-        name: 'GPT Test',
-        provider: 'openai',
-        type: 'language',
-      },
-      {
-        id: 'model:embed',
-        name: 'Embedder',
-        provider: 'openai',
-        type: 'embedding',
-      },
-    ] as Model[],
-    isLoading: false,
-  }),
-  useModelDefaults: () => ({
-    data: { default_chat_model: 'model:gpt' },
-    isLoading: false,
-  }),
+  useModels: () => modelsState.current,
+  useModelDefaults: () => defaultsState.current,
 }))
 
 const makeAgent = (overrides: Partial<Agent> = {}): Agent => ({
@@ -122,8 +110,21 @@ describe('decodeParticipant', () => {
 describe('ChatParticipantSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    modelsState.current = {
+      data: [
+        { id: 'model:gpt', name: 'GPT Test', provider: 'openai', type: 'language', created: '', updated: '' },
+        { id: 'model:claude', name: 'Claude Test', provider: 'anthropic', type: 'language', created: '', updated: '' },
+        { id: 'model:embed', name: 'Embedder', provider: 'openai', type: 'embedding', created: '', updated: '' },
+      ],
+      isLoading: false,
+    }
+    defaultsState.current = {
+      data: { default_chat_model: 'model:gpt' },
+      isLoading: false,
+    }
     agentsHook.current = {
       data: [
+        makeAgent({ id: 'agent:3', name: 'Analyzer', sort_order: -1 }),
         makeAgent(),
         makeAgent({ id: 'agent:2', name: 'Writer', enabled: false }),
       ],
@@ -159,15 +160,13 @@ describe('ChatParticipantSelector', () => {
     render(
       <ChatParticipantSelector value={{ agent: null, modelOverride: null }} onChange={vi.fn()} />
     )
-    // open the dialog (Radix Dialog gates the mocked always-open Select)
-    fireEvent.click(screen.getByTestId('chat-participant-trigger'))
     expect(screen.getByRole('option', { name: /Researcher/ })).toBeInTheDocument()
     // embedding models are filtered out; disabled agents are hidden
     expect(screen.queryByRole('option', { name: /Writer/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Embedder/ })).not.toBeInTheDocument()
   })
 
-  it('emits mutually exclusive participant on save', () => {
+  it('emits mutually exclusive participant on select', () => {
     const onChange = vi.fn()
     render(
       <ChatParticipantSelector
@@ -175,14 +174,47 @@ describe('ChatParticipantSelector', () => {
         onChange={onChange}
       />
     )
-    fireEvent.click(screen.getByTestId('chat-participant-trigger'))
     fireEvent.click(screen.getByRole('option', { name: /Researcher/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'common.saveChanges' }))
 
     expect(onChange).toHaveBeenCalledWith({ agent: 'agent:1', modelOverride: null })
   })
 
-  it('reset clears both bindings', async () => {
+  it('emits a model-only participant when a language model is selected', () => {
+    const onChange = vi.fn()
+    render(
+      <ChatParticipantSelector
+        value={{ agent: null, modelOverride: null }}
+        onChange={onChange}
+      />
+    )
+    fireEvent.click(screen.getByRole('option', { name: /^GPT Test/ }))
+
+    expect(onChange).toHaveBeenCalledWith({ agent: null, modelOverride: 'model:gpt' })
+  })
+
+  it('shows the overridden model name when a model is bound', () => {
+    render(
+      <ChatParticipantSelector
+        value={{ agent: null, modelOverride: 'model:gpt' }}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('chat-participant-trigger')).toHaveTextContent('GPT Test')
+  })
+
+  it('shows the plain default label when no default chat model is configured', () => {
+    defaultsState.current = { data: {}, isLoading: false }
+    render(
+      <ChatParticipantSelector
+        value={{ agent: null, modelOverride: null }}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId('chat-participant-trigger')).toHaveTextContent('common.default')
+    expect(screen.getByTestId('chat-participant-trigger')).not.toHaveTextContent('(GPT Test)')
+  })
+
+  it('selecting the default option clears both bindings', () => {
     const onChange = vi.fn()
     render(
       <ChatParticipantSelector
@@ -190,8 +222,7 @@ describe('ChatParticipantSelector', () => {
         onChange={onChange}
       />
     )
-    fireEvent.click(screen.getByTestId('chat-participant-trigger'))
-    fireEvent.click(screen.getByRole('button', { name: 'common.resetToDefault' }))
+    fireEvent.click(screen.getByRole('option', { name: /common.default/ }))
 
     expect(onChange).toHaveBeenCalledWith({ agent: null, modelOverride: null })
   })

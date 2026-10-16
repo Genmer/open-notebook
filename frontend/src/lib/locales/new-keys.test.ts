@@ -1581,6 +1581,89 @@ const INDUSTRY_PROFILE_KEYS = [
   'ruankao.industry.profileFlowsLine',
 ]
 
+// Pinned inventory of the i18n keys added by the 2026-10-13 project-env PRD
+// import changeset (wizard third card, paste/file parse panel, preview
+// omitted/truncated/name-exists hints, reason-mapped parse failures). Same
+// guarding contract as the blocks above.
+const PRD_IMPORT_KEYS = [
+  'projectEnvs.prdImport.cardTitle',
+  'projectEnvs.prdImport.cardDesc',
+  'projectEnvs.prdImport.modeLabel',
+  'projectEnvs.prdImport.modeReal',
+  'projectEnvs.prdImport.modeMock',
+  'projectEnvs.prdImport.textLabel',
+  'projectEnvs.prdImport.textPlaceholder',
+  'projectEnvs.prdImport.fileLabel',
+  'projectEnvs.prdImport.fileHint',
+  'projectEnvs.prdImport.emptyInputsHint',
+  'projectEnvs.prdImport.bothInputsHint',
+  'projectEnvs.prdImport.parse',
+  'projectEnvs.prdImport.parsing',
+  'projectEnvs.prdImport.parseCancel',
+  'projectEnvs.prdImport.parseFailed',
+  'projectEnvs.prdImport.parseTimeout',
+  'projectEnvs.prdImport.parseModelError',
+  'projectEnvs.prdImport.previewTitle',
+  'projectEnvs.prdImport.omittedHint',
+  'projectEnvs.prdImport.truncatedWarning',
+  'projectEnvs.prdImport.nameExists',
+  'projectEnvs.prdImport.confirmReal',
+  'projectEnvs.prdImport.confirmMock',
+  'projectEnvs.prdImport.back',
+]
+
+// Pinned inventory of the i18n keys added by the 2026-10-13 notebook context
+// changeset: saved context combos in the chat context picker (save/apply/
+// delete rows, local storage failure toast) plus the shared folder-collapse
+// memory wiring (no new keys — collapse aria strings already exist). The
+// 2026-10-14 combo dirty-state pass appends the default-combo entries and the
+// update-current / modified-label copies. The interpolated keys
+// (contextComboDeleteDesc / contextComboSaved / contextComboActiveModifiedLabel
+// / contextComboUpdateCurrent / contextComboUpdated keep {{name}},
+// contextComboCount keeps {{count}}) must keep their placeholders in every
+// locale (Placeholder Parity, asserted below). Same guarding contract as the
+// blocks above.
+const CONTEXT_COMBO_KEYS = [
+  'chat.contextCombosTitle',
+  'chat.contextComboNamePlaceholder',
+  'chat.contextComboSave',
+  'chat.contextComboNothingSelected',
+  'chat.contextComboApplyTitle',
+  'chat.contextComboDeleteTitle',
+  'chat.contextComboDeleteDesc',
+  'chat.contextComboSaved',
+  'chat.contextComboApplied',
+  'chat.contextComboSaveFailed',
+  'chat.contextComboCount',
+  'chat.contextCombosEmpty',
+  'chat.contextComboPrefix',
+  'chat.contextCombosMenuLabel',
+  'chat.contextComboSaveAsNew',
+  'chat.contextComboSaveDialogTitle',
+  'chat.contextComboSaveDialogDesc',
+  'chat.contextComboDefaultName',
+  'chat.contextComboDefaultEntry',
+  'chat.contextComboActiveModifiedLabel',
+  'chat.contextComboUpdateCurrent',
+  'chat.contextComboUpdated',
+]
+
+// Pinned inventory of the i18n keys added by the 2026-10-13 question-bank
+// two-section list pass (recently-read vs. unused grouping headers). Same
+// guarding contract as the blocks above.
+const QBANK_SECTION_KEYS = [
+  'ruankao.questionBank.list.sectionRecent',
+  'ruankao.questionBank.list.sectionUnused',
+]
+
+// Pinned inventory of the i18n keys added by the 2026-10-16 project-env
+// single reverify changeset (card + detail dialog + verification panel
+// "整体重新校验" button and toast).
+const REVERIFY_ENV_KEYS = [
+  'projectEnvs.reverifyEnv',
+  'projectEnvs.reverifyStarted',
+]
+
 describe.each([
   ['2026-10 project-env suggest panel', SUGGEST_KEYS],
   ['2026-10 project-env generic paragraph', GENERIC_PARAGRAPH_KEYS],
@@ -1600,6 +1683,10 @@ describe.each([
   ['2026-10 folder header copy trio', FOLDER_COPY_KEYS],
   ['2026-10 industry pool profile lines', INDUSTRY_PROFILE_KEYS],
   ['2026-10 ruankao question bank v2 seeds', QUESTION_BANK_V2_KEYS],
+  ['2026-10 project-env PRD import', PRD_IMPORT_KEYS],
+  ['2026-10-13 saved context combos', CONTEXT_COMBO_KEYS],
+  ['2026-10-13 question bank sections', QBANK_SECTION_KEYS],
+  ['2026-10-16 project-env single reverify', REVERIFY_ENV_KEYS],
 ])('New i18n keys (%s)', (_label, KEYS) => {
   it('every new key exists as a non-empty string in en-US', () => {
     const enLeaves = getLeafStrings(enUS)
@@ -1651,6 +1738,42 @@ describe.each([
       }
     },
   )
+})
+
+// Placeholder Parity for the 2026-10-13 combo keys (plus the 2026-10-14
+// dirty-state pass): the delete-confirm / saved-toast / modified-label /
+// update-current / updated copies interpolate the combo {{name}}; the badge
+// interpolates {{count}}. Every locale must keep the placeholders.
+describe('New i18n keys (2026-10-13 combo placeholder parity)', () => {
+  it('keeps the {{name}}/{{count}} placeholders of the combo keys in every locale', () => {
+    for (const code of Object.keys(allResources)) {
+      const leaves = getLeafStrings(allResources[code].translation)
+      expect(
+        leaves['chat.contextComboDeleteDesc'],
+        `${code} lost the {{name}} placeholder`,
+      ).toContain('{{name}}')
+      expect(
+        leaves['chat.contextComboSaved'],
+        `${code} lost the {{name}} placeholder`,
+      ).toContain('{{name}}')
+      expect(
+        leaves['chat.contextComboActiveModifiedLabel'],
+        `${code} lost the {{name}} placeholder`,
+      ).toContain('{{name}}')
+      expect(
+        leaves['chat.contextComboUpdateCurrent'],
+        `${code} lost the {{name}} placeholder`,
+      ).toContain('{{name}}')
+      expect(
+        leaves['chat.contextComboUpdated'],
+        `${code} lost the {{name}} placeholder`,
+      ).toContain('{{name}}')
+      expect(
+        leaves['chat.contextComboCount'],
+        `${code} lost the {{count}} placeholder`,
+      ).toContain('{{count}}')
+    }
+  })
 })
 
 // Pinned inventory of the i18n keys added by the 2026-10 parallel live-card
@@ -2042,3 +2165,4 @@ describe('New i18n keys (2026-10 question workbench)', () => {
     },
   )
 })
+

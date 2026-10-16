@@ -9,12 +9,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { SuggestRewritePanel } from '@/components/project-envs/SuggestRewritePanel'
 import { cn } from '@/lib/utils'
-import { Check, ChevronDown, Loader2, X, AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, Loader2, RefreshCw, X, AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useDismissClaim,
   useProjectEnv,
   useProjectEnvVerification,
+  useReverifyProjectEnv,
   useRewriteClaim,
   useSuggestClaimRewrite,
 } from '@/lib/hooks/use-project-envs'
@@ -173,13 +174,37 @@ function RoundsHistory({ rounds }: { rounds: ProjectEnvClaimRound[] }) {
         {t('projectEnvs.roundsHistory', { count: rounds.length })}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <ol className="mt-1.5 space-y-1 border-l pl-3">
+        <ol className="mt-1.5 space-y-2 border-l pl-3">
           {rounds.map((round) => (
-            <li key={round.round} className="text-xs text-muted-foreground">
-              <span className="font-mono">#{round.round}</span>{' '}
-              {historyActionLabel(round.action, t)} · {historyVerdictLabel(round.verdict, t)}
+            <li key={round.round} className="text-xs text-muted-foreground space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-medium">#{round.round}</span>{' '}
+                <span>{historyActionLabel(round.action, t)}</span>
+                <span>·</span>
+                <span className={round.verdict === 'pass' ? 'text-fern font-medium' : 'text-destructive font-medium'}>
+                  {historyVerdictLabel(round.verdict, t)}
+                </span>
+              </div>
+              {/* 各通道裁决与错误明细 */}
+              {round.lane_results && (
+                <div className="space-y-0.5 pl-2 border-l border-muted">
+                  {Object.entries(round.lane_results).map(([laneKey, laneRes]) => {
+                    const lRes = laneRes as { verdict?: string; issues?: string[] }
+                    if (!lRes || lRes.verdict === 'pass') return null
+                    const issues = lRes.issues || []
+                    const laneLabelKey = LANE_LABEL_KEYS[laneKey as ProjectEnvLane]
+                    const laneName = laneLabelKey ? t(laneLabelKey) : laneKey
+                    return (
+                      <div key={laneKey} className="text-[11px] text-destructive/90 leading-tight">
+                        <span className="font-medium">[{laneName}]</span>{' '}
+                        {issues.length > 0 ? issues.join('；') : lRes.verdict}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {round.corrected_text && (
-                <p className="mt-0.5 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1">
+                <p className="mt-0.5 whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 text-[11px]">
                   {round.corrected_text}
                 </p>
               )}
@@ -279,6 +304,55 @@ function PointCard({
           <span className="text-warn">{reasonLabel(point.manual_reason, t)}</span>
         )}
       </div>
+
+      {/* 显式渲染未通过通道的具体问题原因，彻底告别 hover title 黑盒 */}
+      {state !== 'passed' &&
+        (() => {
+          const failureEntries = lanes
+            .map((lane) => {
+              const res = point.lanes?.[lane]
+              const issues = res?.issues ?? []
+              return { lane, verdict: res?.verdict, issues }
+            })
+            // pass 通道即使带备注 issues 也不算失败，避免误染红色警示框
+            .filter(
+              (e) =>
+                e.verdict === 'fail' ||
+                e.verdict === 'error' ||
+                (e.issues.length > 0 && e.verdict !== 'pass')
+            )
+
+          if (!failureEntries.length) return null
+
+          return (
+            <div
+              className="rounded-md border border-destructive/25 bg-destructive/5 p-2 text-xs text-destructive space-y-1"
+              data-testid={`point-issues-${point.point_id}`}
+            >
+              <div className="flex items-center gap-1 font-semibold text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {point.manual_reason === 'exhausted'
+                    ? t('projectEnvs.exhaustedIssuesTitle')
+                    : t('projectEnvs.failedIssuesTitle')}
+                </span>
+              </div>
+              <ul className="space-y-0.5 pl-4 list-disc">
+                {failureEntries.map(({ lane, verdict, issues }) => (
+                  <li key={lane} className="leading-relaxed">
+                    <span className="font-medium">[{t(LANE_LABEL_KEYS[lane])}]</span>{' '}
+                    {issues.length > 0
+                      ? issues.join('；')
+                      : verdict === 'fail'
+                      ? t('projectEnvs.historyFail')
+                      : t('projectEnvs.stateError')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })()}
+
       <RoundsHistory rounds={point.rounds ?? []} />
 
       {isManual && !pending && (
@@ -442,6 +516,7 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
   const { t } = useTranslation()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const { data, isLoading, refetch } = useProjectEnvVerification(envId)
+  const reverifyMutation = useReverifyProjectEnv()
   // Lane A never runs for mock envs (no KB evidence), so its badge and the
   // "three-lane" copy would only confuse there. Cached from the list/wizard.
   const { data: envRow } = useProjectEnv(envId)
@@ -523,29 +598,68 @@ export function VerificationPanel({ envId, onCancel }: VerificationPanelProps) {
       )}
 
       {data.status === 'verified' && (
-        <div className="flex items-center gap-2 rounded-lg border border-fern/40 bg-fern-tint/50 p-3 text-sm text-fern" data-testid="verification-verified-banner">
-          <ShieldCheck className="h-4 w-4" />
-          {t('projectEnvs.verifiedBanner')}
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-fern/40 bg-fern-tint/50 p-3 text-sm text-fern" data-testid="verification-verified-banner">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            {t('projectEnvs.verifiedBanner')}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs border-fern/60 text-fern hover:bg-fern-tint"
+            disabled={reverifyMutation.isPending}
+            onClick={() => reverifyMutation.mutate(envId)}
+            data-testid="panel-reverify-button"
+          >
+            <RefreshCw className={cn('mr-1.5 h-3 w-3', reverifyMutation.isPending && 'animate-spin')} />
+            {t('projectEnvs.reverifyEnv')}
+          </Button>
         </div>
       )}
       {data.status === 'needs_review' && (
         <div
-          className="rounded-lg border border-warn/40 bg-warn-tint/60 p-3 text-sm text-warn"
+          className="flex items-center justify-between gap-2 rounded-lg border border-warn/40 bg-warn-tint/60 p-3 text-sm text-warn"
           data-testid="verification-review-banner"
           title={t('projectEnvs.claimsConcept')}
         >
-          {t('projectEnvs.needsReviewBanner', {
-            count: summary.manual ?? 0,
-          })}
+          <div>
+            {t('projectEnvs.needsReviewBanner', {
+              count: summary.manual ?? 0,
+            })}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs border-warn/60 text-warn hover:bg-warn-tint"
+            disabled={reverifyMutation.isPending}
+            onClick={() => reverifyMutation.mutate(envId)}
+            data-testid="panel-reverify-button"
+          >
+            <RefreshCw className={cn('mr-1.5 h-3 w-3', reverifyMutation.isPending && 'animate-spin')} />
+            {t('projectEnvs.reverifyEnv')}
+          </Button>
         </div>
       )}
       {data.status === 'failed' && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" data-testid="verification-failed-banner">
-          {t('projectEnvs.failedBanner')}
-          {progress?.error && <p className="mt-1 text-xs break-all">{progress.error}</p>}
-          {data.job?.error_message && (
-            <p className="mt-1 text-xs break-all">{data.job.error_message}</p>
-          )}
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive" data-testid="verification-failed-banner">
+          <div>
+            {t('projectEnvs.failedBanner')}
+            {progress?.error && <p className="mt-1 text-xs break-all">{progress.error}</p>}
+            {data.job?.error_message && (
+              <p className="mt-1 text-xs break-all">{data.job.error_message}</p>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs border-destructive/60 text-destructive hover:bg-destructive/10"
+            disabled={reverifyMutation.isPending}
+            onClick={() => reverifyMutation.mutate(envId)}
+            data-testid="panel-reverify-button"
+          >
+            <RefreshCw className={cn('mr-1.5 h-3 w-3', reverifyMutation.isPending && 'animate-spin')} />
+            {t('projectEnvs.reverifyEnv')}
+          </Button>
         </div>
       )}
 

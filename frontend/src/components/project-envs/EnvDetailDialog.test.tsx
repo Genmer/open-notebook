@@ -11,10 +11,13 @@ import { projectEnvsApi } from '@/lib/api/project-envs'
 
 // useTranslation is mocked globally in setup.ts (t returns the key string)
 
+const mockReverify = vi.fn()
+
 vi.mock('@/lib/hooks/use-project-envs', () => ({
   useProjectEnvVerification: vi.fn(),
   useProjectEnv: vi.fn(),
   useGenerateGenericParagraph: vi.fn(),
+  useReverifyProjectEnv: () => ({ mutate: mockReverify, isPending: false }),
 }))
 
 vi.mock('@/lib/api/project-envs', () => ({
@@ -340,5 +343,24 @@ describe('EnvDetailDialog', () => {
     expect(sections.textContent).not.toContain('项目推进整体顺利')
     fireEvent.click(screen.getByText('projectEnvs.fieldProblems'))
     expect(sections.textContent).toContain('项目推进整体顺利')
+  })
+
+  it('renders reverify button in footer when not pending and triggers mutation on click', () => {
+    mockReverify.mockClear()
+    render(<EnvDetailDialog env={baseEnv} open onOpenChange={vi.fn()} />)
+
+    const button = screen.getByTestId('env-detail-reverify-button')
+    expect(button).toBeInTheDocument()
+    expect(button.textContent).toContain('projectEnvs.reverifyEnv')
+
+    fireEvent.click(button)
+    expect(mockReverify).toHaveBeenCalledWith(baseEnv.id)
+  })
+
+  it('hides reverify button in footer when environment is pending', () => {
+    const pendingEnv = { ...baseEnv, status: 'pending' } as unknown as ProjectEnv
+    render(<EnvDetailDialog env={pendingEnv} open onOpenChange={vi.fn()} />)
+
+    expect(screen.queryByTestId('env-detail-reverify-button')).not.toBeInTheDocument()
   })
 })

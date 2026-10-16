@@ -53,13 +53,16 @@ def test_verify_b_mock_render_drops_off_table_bounce():
     text = _render_b("mock")
 
     assert OFF_TABLE_BOUNCE not in text
+    assert "AI-simulated fiction" in text
     assert MOCK_PLAUSIBILITY in text
 
 
-def test_verify_b_material_render_keeps_off_table_bounce():
+def test_verify_b_material_render_drops_off_table_bounce():
     text = _render_b("material")
 
-    assert OFF_TABLE_BOUNCE in text
+    assert OFF_TABLE_BOUNCE not in text
+    assert "candidate-written material" in text
+    assert '"off_table" is retired' in text
 
 
 def test_verify_b_render_depends_on_mode():
@@ -377,6 +380,260 @@ def test_compress_template_carries_self_developed_constraint():
     )
     assert "隐性视角" in text
     assert "甲方/乙方、外包、中标、承建、承接、验收交付" in text
+
+
+# --- PRD 导入解析（prd-parse） ---
+
+
+def test_prd_parse_template_has_schema_and_bans_scale():
+    """契约：模板必须带 format_instructions 注入口与「绝不输出 scale」禁令；
+    输出结构本身没有 scale 字段（Pydantic 硬删第一层）。"""
+    from open_notebook.ai.project_env_pipeline import PrdParseDraft
+
+    parser: PydanticOutputParser = PydanticOutputParser(pydantic_object=PrdParseDraft)
+    text = Prompter(
+        prompt_template="project_env/prd_parse",
+        parser=parser,  # type: ignore[arg-type]
+    ).render(data={"prd_text": "本项目为物流行业 TMS 运输管理系统的建设需求。"})
+
+    assert '"properties"' in text  # format_instructions schema 注入成功
+    assert '"scale"' not in text  # 输出结构无 scale 字段
+    assert "绝不输出 scale" in text  # 禁令逐字在位
+    assert "YYYY.MM" in text  # period 规范化口径
+    assert "宁缺勿造" in text  # keywords 口径
+
+
+@pytest.mark.asyncio
+async def test_parse_prd_draft_passes_through_to_invoke_json():
+    """透传契约：模板名/数据/模型/max_tokens 固定，无 CallBudget。"""
+    from unittest.mock import patch
+
+    import open_notebook.ai.project_env_pipeline as pipeline
+    from open_notebook.ai.project_env_pipeline import PrdParseDraft
+
+    captured: dict = {}
+
+    async def fake_invoke(
+        template,
+        data,
+        result_model,
+        model_id,
+        budget=None,
+        validator=None,
+        max_tokens=4096,
+    ):
+        captured.update(
+            template=template,
+            data=data,
+            result_model=result_model,
+            model_id=model_id,
+            budget=budget,
+            validator=validator,
+            max_tokens=max_tokens,
+        )
+        return PrdParseDraft(name="TMS 系统")
+
+    with (
+        patch.object(pipeline, "_invoke_json", fake_invoke),
+        patch.object(pipeline, "get_light_model", lambda: "model:light"),
+    ):
+        result = await pipeline.parse_prd_draft("PRD 原文……")
+
+    assert isinstance(result, PrdParseDraft)
+    assert captured["template"] == "project_env/prd_parse"
+    assert captured["data"] == {"prd_text": "PRD 原文……"}
+    assert captured["result_model"] is PrdParseDraft
+    assert captured["model_id"] == "model:light"
+    assert captured["budget"] is None
+    assert captured["max_tokens"] == 8192
+    assert captured["validator"] is not None
+
+
+@pytest.mark.asyncio
+async def test_parse_prd_draft_validator_rejects_bad_period():
+    """validator 契约：period 非空则必须匹配 MONTH_RE。"""
+    from open_notebook.ai.project_env_pipeline import PrdParseDraft
+    from open_notebook.domain.project_env_rules import MONTH_RE
+
+    def _validate(parsed: PrdParseDraft) -> str:
+        for field in ("period_start", "period_end"):
+            value = getattr(parsed, field).strip()
+            if value and not MONTH_RE.match(value):
+                return f"{field} must use the YYYY.MM format"
+        return ""
+
+    ok = PrdParseDraft(period_start="2025.02", period_end="2025.09")
+    bad = PrdParseDraft(period_start="2025-02")
+    empty = PrdParseDraft()
+    assert _validate(ok) == ""
+    assert _validate(empty) == ""
+    assert "period_start" in _validate(bad)
+
+
+# --- PRD 导入 mock 起草（draft_from_prd） ---
+
+
+def _render_prd_draft(prd_seed: dict, keywords: list = None) -> str:
+    from open_notebook.ai.project_env_pipeline import MockDraft
+
+    return _render(
+        "project_env/draft_from_prd",
+        MockDraft,
+        {
+            "keywords": keywords if keywords is not None else ["微服务"],
+            "prd_seed": prd_seed,
+            "name": "TMS 系统",
+            "fixed_period_start": "",
+            "fixed_period_end": "",
+            "industry": "物流行业",
+            "industry_hint": "",
+            "industry_profile": None,
+            "feedback": "",
+            **_WINDOW,
+        },
+    )
+
+
+def test_draft_from_prd_template_carries_forbidden_topics_and_legal_window():
+    """契约：防穿帮三分类禁令与合法时间窗必须逐字在位（约束优先于 PRD）。"""
+    text = _render_prd_draft(
+        {
+            "background": "PRD 背景。",
+            "tech_background": "",
+            "tuning_process": "",
+            "problems_solutions": "",
+            "my_role": "",
+        }
+    )
+
+    assert "① 人员类" in text and "② 资金类" in text and "③ 规模类" in text
+    assert "甲方" in text and "外包" in text
+    assert "2026.10" in text  # now_month
+    assert "2024.12" in text  # legal_start_earliest
+    assert "2025.09" in text  # legal_end_latest
+    assert "约束冲突时约束优先" in text  # REWRITE RULES
+    assert '"scale"' in text  # MockDraft 六字段 schema 注入
+
+
+def test_draft_from_prd_template_renders_seed_fields_conditionally():
+    """契约：seed 逐字段条件渲染；全空时输出按关键词生成兜底句。"""
+    seed = {
+        "background": "PRD 背景原文。",
+        "tech_background": "",
+        "tuning_process": "PRD 调优原文。",
+        "problems_solutions": "",
+        "my_role": "",
+    }
+    text = _render_prd_draft(seed, keywords=["TMS", "物流"])
+    assert "[background PRD 提取]\nPRD 背景原文。" in text
+    assert "[tuning_process PRD 提取]\nPRD 调优原文。" in text
+    assert "tech_background PRD 提取" not in text
+    assert "PRD 未提供可用叙述" not in text
+    assert "- TMS" in text and "- 物流" in text
+
+    empty = {field: "" for field in seed}
+    text_empty = _render_prd_draft(empty, keywords=["TMS"])
+    assert "PRD 未提供可用叙述，按关键词生成" in text_empty
+    for field in seed:
+        assert f"[{field} PRD 提取]" not in text_empty
+
+
+def test_draft_from_prd_template_feedback_gate():
+    seed = {
+        "background": "PRD 背景原文。",
+        "tech_background": "",
+        "tuning_process": "",
+        "problems_solutions": "",
+        "my_role": "",
+    }
+    base = {
+        "keywords": ["微服务"],
+        "prd_seed": seed,
+        "name": "",
+        "fixed_period_start": "",
+        "fixed_period_end": "",
+        "industry": "物流行业",
+        "industry_hint": "",
+        "industry_profile": None,
+        "feedback": "",
+        **_WINDOW,
+    }
+    from open_notebook.ai.project_env_pipeline import MockDraft
+
+    text = _render("project_env/draft_from_prd", MockDraft, base)
+    assert "PREVIOUS ATTEMPT FEEDBACK" not in text
+
+    base["feedback"] = "R2: span must be 6-10 months"
+    text_fb = _render("project_env/draft_from_prd", MockDraft, base)
+    assert "PREVIOUS ATTEMPT FEEDBACK" in text_fb
+    assert "R2: span must be 6-10 months" in text_fb
+
+
+def test_draft_from_prd_template_requires_ga_before_period_start():
+    """契约：GA-before-start 约束逐字在位（PRD 技术版本照抄豁免权不存在）。"""
+    text = _render_prd_draft({"background": "PRD 背景。"})
+    assert "GA 晚于 period_start" in text  # 中文改写规则
+    assert "general availability (GA) before period_start" in text  # 英文总则
+
+
+@pytest.mark.asyncio
+async def test_render_prd_draft_passes_through_to_invoke_json():
+    """透传契约：模板名/MockDraft 输出/max_tokens 8192/seed 与行业兜底、
+    合法时间窗随 data 下发。"""
+    from unittest.mock import patch
+
+    import open_notebook.ai.project_env_pipeline as pipeline
+    from open_notebook.ai.project_env_pipeline import MockDraft
+
+    captured: dict = {}
+
+    async def fake_invoke(
+        template,
+        data,
+        result_model,
+        model_id,
+        budget=None,
+        validator=None,
+        max_tokens=4096,
+    ):
+        captured.update(
+            template=template,
+            data=data,
+            result_model=result_model,
+            model_id=model_id,
+            budget=budget,
+            validator=validator,
+            max_tokens=max_tokens,
+        )
+        return MockDraft(name="TMS 系统")
+
+    seed = {"background": "PRD 背景。", "tech_background": "PRD 技术栈。"}
+    budget = pipeline.CallBudget()
+    with patch.object(pipeline, "_invoke_json", fake_invoke):
+        result = await pipeline.render_prd_draft(
+            keywords=["TMS", "物流"],
+            prd_seed=seed,
+            name="TMS 系统",
+            period_start="2025.02",
+            period_end="2025.09",
+            industry="   ",
+            budget=budget,
+        )
+
+    assert isinstance(result, MockDraft)
+    assert captured["template"] == "project_env/draft_from_prd"
+    assert captured["result_model"] is MockDraft
+    assert captured["model_id"] is None
+    assert captured["budget"] is budget
+    assert captured["max_tokens"] == 8192
+    data = captured["data"]
+    assert data["prd_seed"] is seed
+    assert data["keywords"] == ["TMS", "物流"]
+    assert data["fixed_period_start"] == "2025.02"
+    assert data["fixed_period_end"] == "2025.09"
+    assert data["industry"] == DEFAULT_INDUSTRY  # 空白行业兜底
+    for key in _WINDOW:  # 合法时间窗键随 data 下发
+        assert key in data
 
 
 # --- 行业 + 自研视角改造（industry 参数与负面约束） ---

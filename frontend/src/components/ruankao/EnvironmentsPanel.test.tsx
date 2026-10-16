@@ -8,6 +8,14 @@ vi.mock('@/lib/hooks/use-project-envs', () => ({
   useMockGenerateProjectEnv: () => ({ mutate: vi.fn(), isPending: false }),
   usePolishBackground: () => ({ mutate: vi.fn(), isPending: false }),
   useProjectEnv: () => ({ data: undefined, isError: false }),
+  useReverifyProjectEnv: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+
+vi.mock('@/components/project-envs/ProjectEnvList', () => ({
+  ProjectEnvList: () => <div data-testid="project-env-list" />,
+  ProjectEnvEmptyState: ({ onCreate }: { onCreate: () => void }) => (
+    <button type="button" data-testid="env-create-button" onClick={onCreate} />
+  ),
 }))
 
 vi.mock('@/components/project-envs/MaterialSelectionStep', () => ({
@@ -87,3 +95,4 @@ describe('EnvironmentsPanel wizardSeed channel', () => {
     ).toBeGreaterThan(0)
   })
 })
+

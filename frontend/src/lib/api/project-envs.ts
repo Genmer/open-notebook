@@ -8,10 +8,12 @@ import {
   MockGenerateResponse,
   PolishBackgroundRequest,
   PolishBackgroundResponse,
+  PrdParseResponse,
   ProjectEnv,
   ProjectEnvDeleteResponse,
   ProjectEnvMaterialsStatus,
   ProjectEnvVerificationStatus,
+  ReverifyAllResponse,
   ReverifyResponse,
   RewriteClaimRequest,
   RewriteClaimResponse,
@@ -59,6 +61,15 @@ export const projectEnvsApi = {
     return response.data
   },
 
+  // FormData 走 multipart：拦截器剥 Content-Type，浏览器自动带 boundary
+  parsePrd: async (form: FormData): Promise<PrdParseResponse> => {
+    const response = await apiClient.post<PrdParseResponse>(
+      '/project-envs/prd-parse',
+      form
+    )
+    return response.data
+  },
+
   polishBackground: async (
     data: PolishBackgroundRequest
   ): Promise<PolishBackgroundResponse> => {
@@ -79,6 +90,13 @@ export const projectEnvsApi = {
   reverify: async (id: string): Promise<ReverifyResponse> => {
     const response = await apiClient.post<ReverifyResponse>(
       `/project-envs/${id}/reverify`
+    )
+    return response.data
+  },
+
+  reverifyAll: async (): Promise<ReverifyAllResponse> => {
+    const response = await apiClient.post<ReverifyAllResponse>(
+      '/project-envs/reverify-all'
     )
     return response.data
   },

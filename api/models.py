@@ -1662,6 +1662,9 @@ class ProjectEnvCreate(BaseModel):
     background_ai_polished: bool = Field(
         False, description="Background text came from the polish endpoint"
     )
+    prd_imported: bool = Field(
+        False, description="Fields came from the PRD-parse preview (real channel)"
+    )
 
 
 class ProjectEnvUpdate(BaseModel):
@@ -1717,11 +1720,36 @@ class MockGenerateRequest(BaseModel):
     period_start: Optional[str] = Field(None, description="YYYY.MM, optional")
     period_end: Optional[str] = Field(None, description="YYYY.MM, optional")
     flow: str = Field("direct", description="direct | materials")
+    # PRD 抽取的五叙述字段种子：仅 direct 流程（seed 与 materials 互斥）
+    prd_seed: Optional[Dict[str, str]] = Field(None)
 
 
 class MockGenerateResponse(BaseModel):
     id: str
     job_id: str
+
+
+# PRD 导入（prd-parse）：解析草稿的 API 镜像（pipeline 侧 PrdParseDraft 是 LLM
+# 解析目标，此处是响应形状——无 scale 字段是刻意的）
+class PrdParseDraft(BaseModel):
+    name: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    industry: str = ""
+    keywords: List[str] = []
+    background: str = ""
+    tech_background: str = ""
+    tuning_process: str = ""
+    problems_solutions: str = ""
+    my_role: str = ""
+
+
+class PrdParseResponse(BaseModel):
+    draft: PrdParseDraft
+    # 服务端从空值推导的未提供字段名列表（不由 LLM 自报）
+    omitted: List[str] = []
+    input_truncated: bool = False
+    extracted_chars: int = 0
 
 
 class PolishBackgroundRequest(BaseModel):
@@ -1760,6 +1788,17 @@ class MaterialsSubmitRequest(BaseModel):
 
 class ReverifyResponse(BaseModel):
     job_id: str
+
+
+class SkippedEnv(BaseModel):
+    env_id: str
+    name: str
+    reason_code: str  # "running" | "prd_basis_lost" | "error"
+
+
+class ReverifyAllResponse(BaseModel):
+    submitted: int
+    skipped: List[SkippedEnv]
 
 
 class RewriteClaimRequest(BaseModel):

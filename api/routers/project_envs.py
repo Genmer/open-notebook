@@ -7,12 +7,17 @@ the async verification job (decision ⑥).
 """
 
 import asyncio
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+import content_core as cc
+from content_core import extract_content
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from loguru import logger
 
 from api.command_service import CommandService
@@ -25,18 +30,24 @@ from api.models import (
     MockGenerateResponse,
     PolishBackgroundRequest,
     PolishBackgroundResponse,
+    PrdParseDraft,
+    PrdParseResponse,
     ProjectEnvCreate,
     ProjectEnvResponse,
     ProjectEnvUpdate,
+    ReverifyAllResponse,
     ReverifyResponse,
     RewriteClaimRequest,
     RewriteClaimResponse,
+    SkippedEnv,
     SuggestClaimRewriteResponse,
     VerificationStatusResponse,
 )
 from open_notebook.ai.project_env_pipeline import (
+    PRD_SEED_FIELDS,
     _find_verbatim,
-    prescreen_quote,
+    parse_prd_draft,
+    prescreen_point_anchors,
     render_fixed_parts,
     render_generic_paragraph,
     render_polish,
@@ -51,6 +62,7 @@ from open_notebook.domain.project_env import (
     ProjectEnv,
 )
 from open_notebook.domain.project_env_rules import (
+    MONTH_RE,
     SOURCE_TYPES,
     complete_period,
     validate_period,
@@ -72,6 +84,15 @@ RUNNING_MATERIALS_MESSAGE = (
 RUNNING_VERIFICATION_MESSAGE = (
     "A verification run is already in progress for this project env"
 )
+
+# PRD 导入（prd-parse）上限：粘贴文本 10 万字符、文件 10MB、送入 LLM 前
+# 头部截断 8 万字符
+PRD_TEXT_MAX_CHARS = 100_000
+PRD_INPUT_MAX_CHARS = 80_000
+PRD_FILE_MAX_BYTES = 10 * 1024 * 1024
+PRD_ALLOWED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}
+# 出长 JSON 的解析实测要 3 分钟以上，600 是下限，别改小
+PRD_PARSE_TIMEOUT_SECONDS = 600
 
 
 def _time_warnings(env: ProjectEnv) -> List[Dict[str, Any]]:
@@ -128,16 +149,22 @@ async def _get_env_or_404(env_id: str) -> ProjectEnv:
         raise HTTPException(status_code=404, detail="Project env not found")
 
 
-async def _submit_verification(env: ProjectEnv, mode: str) -> str:
+async def _submit_verification(
+    env: ProjectEnv, mode: str, prd_seed: Optional[Dict[str, str]] = None
+) -> str:
     """Fencing token first, then the job; active_job_id recorded for cancel
-    and status joins."""
+    and status joins. prd_seed 只在新调用点（PRD 导入 mock 通道）传入，
+    其余调用点零改动；无 seed 时 payload 不带该键。"""
     token = str(uuid4())
     env.verification_token = token
     await env.save()
+    payload: Dict[str, Any] = {"env_id": str(env.id), "mode": mode, "token": token}
+    if prd_seed:
+        payload["prd_seed"] = prd_seed
     job_id = await CommandService.submit_command_job(
         "open_notebook",
         "verify_project_env",
-        {"env_id": str(env.id), "mode": mode, "token": token},
+        payload,
     )
     env.active_job_id = job_id
     await env.save()
@@ -218,7 +245,7 @@ async def create_project_env(env_data: ProjectEnvCreate):
             period_start=env_data.period_start,
             period_end=env_data.period_end,
             source_type=env_data.source_type,
-            keywords=env_data.keywords,
+            keywords=env_data.keywords or [],
             tech_background=env_data.tech_background,
             tuning_process=env_data.tuning_process,
             problems_solutions=env_data.problems_solutions,
@@ -227,11 +254,18 @@ async def create_project_env(env_data: ProjectEnvCreate):
             generic_paragraph=env_data.generic_paragraph,
             status="pending",
         )
+        # 合并式标记：polish 与 PRD 导入可并存（先例 background_ai_polished）
+        ai_assisted: Dict[str, Any] = {}
         if env_data.background_ai_polished:
-            env.ai_assisted = {
-                "polish_count": 1,
-                "last_polished_at": datetime.now().isoformat(),
-            }
+            ai_assisted.update(
+                polish_count=1, last_polished_at=datetime.now().isoformat()
+            )
+        if env_data.prd_imported:
+            ai_assisted.update(
+                prd_import=True, prd_imported_at=datetime.now(timezone.utc).isoformat()
+            )
+        if ai_assisted:
+            env.ai_assisted = ai_assisted
         await env.save()
         await _submit_verification(env, "material")
         usage = await _session_usage_by_project_env()
@@ -245,6 +279,66 @@ async def create_project_env(env_data: ProjectEnvCreate):
     except Exception as e:
         logger.error(f"Error creating project env: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating project env: {e}")
+
+
+@router.post("/project-envs/reverify-all", response_model=ReverifyAllResponse)
+async def reverify_all():
+    """Re-verify every project env in one batch. Static path must register
+    before the {env_id} routes so "reverify-all" is never captured as an id.
+    The single-endpoint guards degrade to per-env skips; one env's failure
+    never aborts the batch."""
+    try:
+        envs = await ProjectEnv.get_all()
+        submitted = 0
+        skipped: List[SkippedEnv] = []
+        for env in envs:
+            env_id = str(env.id)
+            # concurrent-run guard: same predicate as _reject_running_env,
+            # skip instead of 409
+            if env.status in ("pending", "material_pending"):
+                age = _progress_age(env.verification_progress)
+                if age is not None and age <= REVERIFY_GUARD:
+                    skipped.append(
+                        SkippedEnv(env_id=env_id, name=env.name, reason_code="running")
+                    )
+                    continue
+            if (
+                env.source_type == "mock"
+                and not env.draft_content
+                and (env.ai_assisted or {}).get("prd_import")
+            ):
+                skipped.append(
+                    SkippedEnv(
+                        env_id=env_id, name=env.name, reason_code="prd_basis_lost"
+                    )
+                )
+                continue
+            try:
+                await _cancel_active_job(env)
+                env.status = "pending"
+                env.pending_claims = None
+                await env.save()
+                mode = "mock" if env.source_type == "mock" else "material"
+                await _submit_verification(env, mode)
+            except Exception as e:
+                logger.warning(f"reverify-all: env {env_id} submit failed: {e}")
+                skipped.append(
+                    SkippedEnv(
+                        env_id=env_id,
+                        name=f"{env.name} ({e})",
+                        reason_code="error",
+                    )
+                )
+                continue
+            submitted += 1
+        return ReverifyAllResponse(submitted=submitted, skipped=skipped)
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error re-verifying all project envs: {e}")
+        raise HTTPException(status_code=500, detail=f"Error re-verifying all: {e}")
 
 
 @router.get("/project-envs/{env_id}", response_model=ProjectEnvResponse)
@@ -278,7 +372,6 @@ async def update_project_env(env_id: str, env_update: ProjectEnvUpdate):
         if update_data.get("name"):
             env.name = update_data["name"].strip()
         for field in (
-            "keywords",
             "tuning_process",
             "problems_solutions",
             "my_role",
@@ -287,6 +380,9 @@ async def update_project_env(env_id: str, env_update: ProjectEnvUpdate):
         ):
             if field in update_data:
                 setattr(env, field, update_data[field])
+        if "keywords" in update_data:
+            # 库 schema 不接受 NONE；显式 null 视为清空成 []
+            env.keywords = update_data["keywords"] or []
         for field in ("background", "tech_background"):
             if update_data.get(field) is not None:
                 setattr(env, field, update_data[field])
@@ -354,6 +450,143 @@ async def delete_project_env(env_id: str):
 # --- AI endpoint family (T6) ---
 
 
+def _prd_error(reason: str, message: str) -> HTTPException:
+    return HTTPException(status_code=422, detail={"message": message, "reason": reason})
+
+
+def _harden_prd_seed(seed: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+    """键白名单五叙述字段；值 str 化 + strip + 各 ≤4000 字符；丢空值；
+    空 dict → None。"""
+    hardened: Dict[str, str] = {}
+    for field in PRD_SEED_FIELDS:
+        value = str((seed or {}).get(field) or "").strip()
+        if value:
+            hardened[field] = value[:4000]
+    return hardened or None
+
+
+@router.post("/project-envs/prd-parse", response_model=PrdParseResponse)
+async def prd_parse(
+    text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    """Stateless PRD -> candidate-fields parse (paste text OR file, not both).
+    Nothing persists: the temp file lives only for extraction and the draft
+    only travels back to the preview UI."""
+    pasted = (text or "").strip()
+    has_text = bool(pasted)
+    has_file = file is not None and bool(file.filename)
+    if not has_text and not has_file:
+        raise _prd_error("missing_input", "请粘贴 PRD 文本或选择一个 PRD 文件")
+    if has_text and has_file:
+        raise _prd_error("both_inputs", "文本与文件只能二选一")
+    if has_text and len(pasted) > PRD_TEXT_MAX_CHARS:
+        raise _prd_error("text_too_long", f"粘贴文本超过 {PRD_TEXT_MAX_CHARS} 字符上限")
+
+    prd_text = pasted
+    if has_file:
+        assert file is not None
+        extension = Path(file.filename or "").suffix.lower()
+        if extension not in PRD_ALLOWED_EXTENSIONS:
+            raise _prd_error("unsupported_type", "仅支持 txt / md / pdf / docx 文件")
+        content = await file.read()
+        if len(content) > PRD_FILE_MAX_BYTES:
+            raise _prd_error("file_too_large", "文件超过 10MB 上限")
+
+        # 写入或等待线程被取消时文件可能已创建，unlink 纳入同一 finally 防残留
+        tmp_path_holder: list[str] = []
+
+        def _write_tmp() -> str:
+            # 不落 UPLOADS_FOLDER：PRD 敏感内容解析即弃，finally 里删除
+            fd, path = tempfile.mkstemp(suffix=extension)
+            tmp_path_holder.append(path)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+            return path
+
+        try:
+            tmp_path = await asyncio.to_thread(_write_tmp)
+            extracted = await extract_content(file_path=tmp_path)
+        except cc.ContentCoreError as e:
+            logger.warning(f"PRD file extraction failed: {type(e).__name__}: {e}")
+            raise _prd_error(
+                "extraction_failed", "文件解析失败，请检查文件是否损坏或换个格式"
+            ) from e
+        finally:
+            if tmp_path_holder:
+                try:
+                    os.unlink(tmp_path_holder[0])
+                except OSError:
+                    pass
+        extracted_text = str(extracted.content or "")
+        if not extracted_text.strip():
+            raise _prd_error(
+                "extraction_empty",
+                "未提取到文本（扫描版 PDF 无文本层），请改用 docx 或 txt",
+            )
+        prd_text = extracted_text
+
+    extracted_chars = len(prd_text)
+    input_truncated = extracted_chars > PRD_INPUT_MAX_CHARS
+    if input_truncated:
+        prd_text = prd_text[:PRD_INPUT_MAX_CHARS]
+
+    try:
+        parsed = await asyncio.wait_for(
+            parse_prd_draft(prd_text), timeout=PRD_PARSE_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail={"reason": "model_timeout"})
+    if parsed is None:
+        raise HTTPException(status_code=502, detail={"reason": "model_error"})
+
+    # 服务端硬化：LLM 输出不可信，长度/格式/去重全部重算；omitted 从空值推导
+    keywords: List[str] = []
+    for raw in parsed.keywords:
+        value = str(raw).strip()
+        if value and value not in keywords and len(keywords) < 8:
+            keywords.append(value)
+
+    def _period(value: str) -> str:
+        stripped = value.strip()
+        return stripped if MONTH_RE.match(stripped) else ""
+
+    draft = PrdParseDraft(
+        name=parsed.name.strip()[:100],
+        period_start=_period(parsed.period_start),
+        period_end=_period(parsed.period_end),
+        industry=parsed.industry.strip()[:20],
+        keywords=keywords,
+        background=parsed.background.strip(),
+        tech_background=parsed.tech_background.strip(),
+        tuning_process=parsed.tuning_process.strip(),
+        problems_solutions=parsed.problems_solutions.strip(),
+        my_role=parsed.my_role.strip(),
+    )
+    omitted = [
+        field
+        for field in (
+            "name",
+            "period_start",
+            "period_end",
+            "industry",
+            "keywords",
+            "background",
+            "tech_background",
+            "tuning_process",
+            "problems_solutions",
+            "my_role",
+        )
+        if not (draft.keywords if field == "keywords" else getattr(draft, field))
+    ]
+    return PrdParseResponse(
+        draft=draft,
+        omitted=omitted,
+        input_truncated=input_truncated,
+        extracted_chars=extracted_chars,
+    )
+
+
 @router.post(
     "/project-envs/mock-generate", response_model=MockGenerateResponse, status_code=201
 )
@@ -361,7 +594,9 @@ async def mock_generate(request: MockGenerateRequest):
     """Create a mock env from keywords and submit the mock pipeline job. The
     narrative fields are generated by the job; the row starts blank.
     flow="materials" swaps the job for candidate generation (素材/路线候选),
-    landing the env in material_ready for the user to pick from."""
+    landing the env in material_ready for the user to pick from. prd_seed
+    (PRD 导入通道) forces the direct flow: the seed only lives in the job
+    input, never on the row."""
     try:
         if request.flow not in ("direct", "materials"):
             raise HTTPException(
@@ -369,6 +604,15 @@ async def mock_generate(request: MockGenerateRequest):
                 detail={
                     "message": "flow 必须是 direct 或 materials",
                     "reason": "invalid_flow",
+                },
+            )
+        prd_seed = _harden_prd_seed(request.prd_seed)
+        if prd_seed and request.flow == "materials":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "prd_seed 与 flow=materials 不能同时使用",
+                    "reason": "invalid_combination",
                 },
             )
         period_start: Optional[str] = None
@@ -396,11 +640,16 @@ async def mock_generate(request: MockGenerateRequest):
             tech_background="",
             status="material_pending" if request.flow == "materials" else "pending",
         )
+        if prd_seed:
+            env.ai_assisted = {
+                "prd_import": True,
+                "prd_imported_at": datetime.now(timezone.utc).isoformat(),
+            }
         await env.save()
         if request.flow == "materials":
             job_id = await _submit_materials_job(env)
         else:
-            job_id = await _submit_verification(env, "mock")
+            job_id = await _submit_verification(env, "mock", prd_seed)
         return MockGenerateResponse(id=str(env.id), job_id=job_id)
     except HTTPException:
         raise
@@ -542,6 +791,21 @@ async def reverify(env_id: str):
     try:
         env = await _get_env_or_404(env_id)
         _reject_running_env(env)
+        # prd_seed only lives in the original job input; a PRD-imported mock
+        # env whose draft never materialized would silently fall back to a
+        # keywords-only rewrite, losing the PRD basis without telling the user.
+        if (
+            env.source_type == "mock"
+            and not env.draft_content
+            and (env.ai_assisted or {}).get("prd_import")
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "PRD 导入的草稿未生成，重新验证会丢失 PRD 依据。请删除该环境后重新导入",
+                    "reason": "prd_basis_lost",
+                },
+            )
         await _cancel_active_job(env)
         env.status = "pending"
         env.pending_claims = None
@@ -1017,9 +1281,11 @@ async def rewrite_claim(env_id: str, point_id: str, request: RewriteClaimRequest
         lanes = dict(zip(lane_ids, lane_results))
 
         # R5 pre-screen covers the user's replacement text too: a GA violation
-        # fails the point even when the lanes trust it; an off-table tech
-        # (material mode) keeps it in manual review no matter what lanes say.
-        prescreen = prescreen_quote(request.text, env.period_start)
+        # fails the point even when the lanes trust it. Undated (off-table)
+        # techs no longer bounce — the lanes judge plausibility instead.
+        prescreen = await prescreen_point_anchors(
+            request.text, str(env.period_start or "")
+        )
         point["prescreen"] = prescreen
         if prescreen.get("status") == "fail":
             lanes["B"] = {
@@ -1027,14 +1293,8 @@ async def rewrite_claim(env_id: str, point_id: str, request: RewriteClaimRequest
                 "issues": [prescreen.get("message") or "GA after project start"],
                 "prescreen": True,
             }
-        off_table_prescreen = prescreen.get("status") == "off_table" and mode != "mock"
-        if off_table_prescreen:
-            point["manual_reason"] = "off_table"
 
-        passed = (
-            all(result.get("verdict") == "pass" for result in lanes.values())
-            and not off_table_prescreen
-        )
+        passed = all(result.get("verdict") == "pass" for result in lanes.values())
 
         point["lanes"] = lanes
         point.setdefault("rounds", []).append(

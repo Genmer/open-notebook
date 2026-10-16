@@ -72,13 +72,24 @@ describe('GET /config', () => {
     expect(body.apiUrl).toBe('http://[2001:db8::1]:5055')
   })
 
-  it('strips the port from a bracketed IPv6 Host header and keeps the brackets', async () => {
+  it('strips the port from a bracketed IPv6 Host header and normalizes loopback', async () => {
     const request = makeRequest({ host: '[::1]:3000' })
 
     const response = await GET(request)
     const body = await response.json()
 
-    expect(body.apiUrl).toBe('http://[::1]:5055')
+    // API 默认只绑 IPv4 127.0.0.1，浏览器直连 [::1] 会间歇拒连，归一化为 127.0.0.1
+    expect(body.apiUrl).toBe('http://127.0.0.1:5055')
+  })
+
+  it('normalizes a localhost Host header to 127.0.0.1 for the browser connection', async () => {
+    const request = makeRequest({ host: 'localhost:3000' })
+
+    const response = await GET(request)
+    const body = await response.json()
+
+    // localhost 在浏览器里 ::1 优先而 API 只听 IPv4，直连会间歇失败
+    expect(body.apiUrl).toBe('http://127.0.0.1:5055')
   })
 
   it('falls back to localhost for a bracketed IPv6 literal with trailing junk', async () => {

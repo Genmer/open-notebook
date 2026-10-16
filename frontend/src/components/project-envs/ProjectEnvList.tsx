@@ -296,7 +296,7 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                       {t('projectEnvs.regenerate')}
                     </Button>
                   )}
-                  {env.status === 'failed' && (
+                  {env.status !== 'pending' && env.status !== 'material_pending' && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -306,9 +306,12 @@ export function ProjectEnvList({ envs, isLoading, onOpenVerification, onOpenDeta
                         e.stopPropagation()
                         reverifyMutation.mutate(env.id)
                       }}
+                      aria-label={t('projectEnvs.reverifyEnv')}
+                      title={t('projectEnvs.reverifyEnv')}
+                      data-testid={`env-reverify-button-${env.id}`}
                     >
                       <RefreshCw className={cn('h-3.5 w-3.5', reverifyMutation.isPending && 'animate-spin')} />
-                      {t('projectEnvs.reverify')}
+                      {t('projectEnvs.reverifyEnv')}
                     </Button>
                   )}
                   <Button

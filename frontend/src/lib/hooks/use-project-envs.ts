@@ -163,6 +163,7 @@ export function useReverifyProjectEnv() {
   return useMutation({
     mutationFn: (id: string) => projectEnvsApi.reverify(id),
     onSuccess: () => {
+      toast.success(t('projectEnvs.reverifyStarted'))
       invalidate()
     },
     onError: (error: unknown) => {
@@ -286,5 +287,13 @@ export function useGenerateGenericParagraph() {
 export function useGenerateFixedParts() {
   return useMutation({
     mutationFn: (envId: string) => projectEnvsApi.generateFixedParts(envId),
+  })
+}
+
+// PRD 导入解析（prd-parse）：无自身 toast——面板按 detail.reason 渲染
+// 422/502/504 分支文案（先例 useGenerateFixedParts）。
+export function useParsePrd() {
+  return useMutation({
+    mutationFn: (form: FormData) => projectEnvsApi.parsePrd(form),
   })
 }

@@ -260,4 +260,25 @@ describe('ProjectEnvList whole-card open detail', () => {
     expect(onOpenDetail).toHaveBeenCalledTimes(1)
     expect(onOpenDetail).toHaveBeenCalledWith(expect.objectContaining({ id: 'project_env:e1' }))
   })
+
+  it('renders reverify button for non-pending env and triggers reverify mutation on click', () => {
+    const reverify = { mutate: vi.fn(), isPending: false }
+    vi.mocked(useReverifyProjectEnv).mockReturnValue(
+      reverify as unknown as ReturnType<typeof useReverifyProjectEnv>
+    )
+    const { onOpenDetail } = setup({ status: 'needs_review' })
+
+    const button = screen.getByTestId('env-reverify-button-project_env:e1')
+    expect(button).toBeInTheDocument()
+    expect(button.textContent).toContain('projectEnvs.reverifyEnv')
+
+    fireEvent.click(button)
+    expect(reverify.mutate).toHaveBeenCalledWith('project_env:e1')
+    expect(onOpenDetail).not.toHaveBeenCalled()
+  })
+
+  it('hides reverify button when env status is pending', () => {
+    setup({ status: 'pending' })
+    expect(screen.queryByTestId('env-reverify-button-project_env:e1')).not.toBeInTheDocument()
+  })
 })

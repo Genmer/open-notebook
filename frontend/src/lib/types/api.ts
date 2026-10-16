@@ -280,6 +280,9 @@ export type ProjectEnvStatus =
 export interface ProjectEnvAiAssisted {
   polish_count?: number
   last_polished_at?: string
+  // PRD 导入双通道标记（mock: prd_seed 任务 / real: prd_imported 创建）
+  prd_import?: boolean
+  prd_imported_at?: string
 }
 
 export interface ProjectEnvTimeAdjusted {
@@ -347,6 +350,8 @@ export interface CreateProjectEnvRequest {
   scale?: string | null
   generic_paragraph?: string | null
   background_ai_polished?: boolean
+  // PRD 导入（real 通道）：解析结果经预览确认后创建
+  prd_imported?: boolean
 }
 
 export interface UpdateProjectEnvRequest {
@@ -373,11 +378,36 @@ export interface MockGenerateRequest {
   // 'direct' (default) drafts+verifies from keywords right away;
   // 'materials' stops at the candidate step for user selection.
   flow?: 'direct' | 'materials'
+  // PRD 导入（mock 通道）：PRD 抽取的五叙述字段种子，仅 direct 流程
+  prd_seed?: Record<string, string>
 }
 
 export interface MockGenerateResponse {
   id: string
   job_id: string
+}
+
+// PRD 导入解析（prd-parse）：镜像后端 PrdParseDraft / PrdParseResponse。
+// 无 scale 字段是刻意的（解析层就不抽规模类内容）。
+export interface PrdParseDraft {
+  name: string
+  period_start: string
+  period_end: string
+  industry: string
+  keywords: string[]
+  background: string
+  tech_background: string
+  tuning_process: string
+  problems_solutions: string
+  my_role: string
+}
+
+export interface PrdParseResponse {
+  draft: PrdParseDraft
+  // 服务端从空值推导的未提供字段名列表
+  omitted: string[]
+  input_truncated: boolean
+  extracted_chars: number
 }
 
 // Materials / routes candidates (mock env 素材生成步骤) — mirror of the
@@ -503,6 +533,18 @@ export interface RewriteClaimResponse {
 
 export interface ReverifyResponse {
   job_id: string
+}
+
+// reason_code: 'running' (concurrent-run guard) | 'prd_basis_lost' | 'error'
+export interface SkippedEnv {
+  env_id: string
+  name: string
+  reason_code: string
+}
+
+export interface ReverifyAllResponse {
+  submitted: number
+  skipped: SkippedEnv[]
 }
 
 export interface SuggestClaimRewriteResponse {

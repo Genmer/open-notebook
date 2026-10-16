@@ -53,8 +53,9 @@ VERIFICATION_TRIGGER_FIELDS = (
 
 class ProjectEnv(ObjectModel):
     table_name: ClassVar[str] = "project_env"
+    # keywords 不在此列：迁移 36 起库 schema 为非空 array<string>，
+    # 允许写 NONE 会直接被 SurrealDB 拒绝（PRD/手动 real 建环境即踩）
     nullable_fields: ClassVar[set[str]] = {
-        "keywords",
         "industry",
         "tuning_process",
         "problems_solutions",
@@ -86,7 +87,8 @@ class ProjectEnv(ObjectModel):
     period_start: str = ""
     period_end: str = ""
     source_type: str
-    keywords: Optional[List[str]] = None
+    # 非 Optional：库 schema（迁移 36）要求 array<string>，API 边界负责把缺省折叠成 []
+    keywords: List[str] = []
     # mock 生成时公司所在行业（公司自研视角）
     industry: Optional[str] = None
     tech_background: str = ""

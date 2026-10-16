@@ -531,7 +531,9 @@ async def get_notebook_context_tree(
         if view_id:
             group_rows = (
                 await repo_query(
-                    "SELECT id, name, parent_id FROM source_group "
+                    # 库里字段名是 parent（模型 SourceGroup.parent）；
+                    # 误写 parent_id 会恒得 NONE，Gemini 树/上下文选择器全被拍平成根层
+                    "SELECT id, name, parent FROM source_group "
                     "WHERE source_view = $view_id;",
                     {"view_id": ensure_record_id(view_id)},
                 )
@@ -553,7 +555,7 @@ async def get_notebook_context_tree(
                 ContextTreeGroup(
                     id=str(g.get("id")),
                     name=str(g.get("name") or ""),
-                    parent_id=str(g.get("parent_id")) if g.get("parent_id") else None,
+                    parent_id=str(g.get("parent")) if g.get("parent") else None,
                 )
                 for g in group_rows
             ]

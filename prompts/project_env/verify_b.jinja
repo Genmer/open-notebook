@@ -16,14 +16,18 @@ Field: {{ field }}
 {{ anchor_table }}
 
 # VERDICT RULES
-- If the paragraph contains no technology+version/release-time assertion at all (pure amounts, dates, narrative sentences): verdict must be "pass" (this lane does not apply).
-- Enumerate EVERY technology+version pair in the paragraph and check each against the anchors: any single GA violation (GA month inside or after the project window) fails the WHOLE paragraph — name the offending technology+version in the issue.
-- pass only when every technology+version in the paragraph has its GA month on or before period_start.
+- Mature general technologies without version numbers MUST PASS: When common, mature technologies (e.g. Oracle Data Guard, MongoDB 空间索引, Redis, MySQL, Nginx, Spring Boot) are mentioned without explicit version numbers, pass directly. Strictly DO NOT nitpick or demand version numbers ("少说少露馅" is standard 软考 essay strategy; omitting version numbers is recommended and completely valid).
+- When to FAIL (Time paradox / GA violation): Fail ONLY under these two conditions:
+  1. An explicit version number is stated in the text, and its public General Availability (GA) release date is AFTER period_start.
+  2. The text uses an era-specific modern technology (e.g., modern generative AI frameworks and models like Qwen, LLaMA, DeepSeek, LangChain, Dify) whose very first appearance in the industry was AFTER period_start (even if no version number was stated).
+- If the paragraph contains no technology/version/release-time assertion at all (pure amounts, dates, narrative sentences): verdict must be "pass" (this lane does not apply).
+- Anchor rows annotated with a 来源/source were resolved dynamically (cache or web lookup): treat them exactly like static table rows, but mention the source when you fail a claim on one.
 {% if mode == "mock" %}
-- This project is AI-simulated fiction. If a technology or version is NOT in the anchor table: judge from general knowledge whether that technology was already publicly released and production-usable before period_start (plausibility only — exact dates not required); pass if plausible, fail only if clearly impossible.
+- This project is AI-simulated fiction. If a technology or version has NO anchor row: judge from general knowledge whether that technology was already publicly released and production-usable before period_start (plausibility only — exact dates not required); pass if plausible, fail only if clearly impossible.
 {% else %}
-- If ANY technology or version in the paragraph is NOT in the anchor table: verdict must be "off_table" — NEVER judge a GA date from memory. Name the off-table technology in the issue.
+- This project is candidate-written material. Technologies not in the static table have been resolved via online web lookup and dynamic cache (see sources above). If a technology or version still has NO anchor row: evaluate from general engineering knowledge whether that technology was already publicly released and production-usable before period_start; pass if plausible, fail only if clearly impossible.
 {% endif %}
+- "off_table" is retired and NOT an allowed verdict in any mode: an undated technology is judged by the plausibility rule above, never bounced back as off_table.
 - Timeline arithmetic must respect the 6-10 month window above.
 - List each violation as a short issue string pointing at the specific technology+version it concerns.
 

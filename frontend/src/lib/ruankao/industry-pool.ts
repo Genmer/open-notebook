@@ -113,6 +113,10 @@ export const INDUSTRY_MAX_CHARS = 20
 /** hint 的长度上限：只由数据完整性测试守护（无 API 字段，无后端约束） */
 export const INDUSTRY_HINT_MAX_CHARS = 40
 
+/** 向导与 PRD 导入面板共享的行业持久化键与兜底默认值 */
+export const INDUSTRY_STORAGE_KEY = 'project-env-industry'
+export const DEFAULT_INDUSTRY = '物流行业'
+
 export function filterIndustryPool(query: string): readonly IndustryPoolEntry[] {
   const q = query.trim()
   if (!q) return INDUSTRY_POOL

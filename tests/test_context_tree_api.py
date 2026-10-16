@@ -22,9 +22,10 @@ def client():
 
 def _seed_rows():
     return {
+        # 行形状对齐真实表：库字段名是 parent（SourceGroup.parent）
         "groups": [
-            {"id": "source_group:g1", "name": "论文", "parent_id": None},
-            {"id": "source_group:g2", "name": "范文", "parent_id": "source_group:g1"},
+            {"id": "source_group:g1", "name": "论文", "parent": None},
+            {"id": "source_group:g2", "name": "范文", "parent": "source_group:g1"},
         ],
         "members": [
             {"source_id": "source:s1", "group_id": "source_group:g1"},
@@ -56,9 +57,11 @@ class TestContextTree:
     def test_tree_with_view_groups_and_membership_filtering(self, client):
         rows = _seed_rows()
         source_queries: list[str] = []
+        group_queries: list[str] = []
 
         async def repo_query(sql, params=None):
             if "FROM source_group WHERE source_view" in sql:
+                group_queries.append(sql)
                 return rows["groups"]
             if "FROM source_group_member" in sql:
                 return rows["members"]
@@ -85,6 +88,11 @@ class TestContextTree:
 
         assert [g["name"] for g in body["groups"]] == ["论文", "范文"]
         assert body["groups"][1]["parent_id"] == "source_group:g1"
+        # SELECT 的必须是真实列名 parent；误写 parent_id 会恒得 NONE，
+        # Gemini 视图/上下文选择器的树会被整体拍平成根层
+        assert len(group_queries) == 1
+        assert "SELECT id, name, parent FROM source_group" in group_queries[0]
+        assert "parent_id" not in group_queries[0]
 
         # source:other belongs to a folder but not to this notebook: filtered.
         assert [m["source_id"] for m in body["memberships"]] == [

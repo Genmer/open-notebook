@@ -1322,5 +1322,107 @@ describe('QuestionBankPanel', () => {
         within(row).getByTestId(`ruankao-qbank-practiced-toggle-${LAMBDA.id}`),
       ).toBeInTheDocument()
     })
+
+    it('groups rows into recently-read and unused sections with per-section counts', () => {
+      const first = render(<QuestionBankPanel />)
+      createViaForm({ title: '论分节甲的应用' })
+      createViaForm({ title: '论分节乙的应用' })
+      const [firstId, secondId] = readStored().questions.map((q) => q.id)
+      seedGenerations(firstId, ['breakdown'], '2026-05-01T00:00:00.000Z')
+      first.unmount()
+      render(<QuestionBankPanel />)
+
+      // 两节头都在场：计数徽标 = 各段行数（分节只是渲染层派生，排序不动）
+      const recent = screen.getByTestId('ruankao-qbank-section-recent')
+      const unused = screen.getByTestId('ruankao-qbank-section-unused')
+      expect(
+        within(recent).getByText('ruankao.questionBank.list.sectionRecent'),
+      ).toBeInTheDocument()
+      expect(within(recent).getByText('1')).toBeInTheDocument()
+      const rows = screen.getAllByTestId(/^ruankao-qbank-item-/)
+      expect(
+        within(unused).getByText(String(rows.length - 1)),
+      ).toBeInTheDocument()
+
+      // recent 节在前；既有行 testid 原样保留
+      expect(rows[0]).toHaveAttribute('data-testid', `ruankao-qbank-item-${firstId}`)
+      expect(
+        within(recent.parentElement as HTMLElement).getByTestId(
+          `ruankao-qbank-item-${secondId}`,
+        ),
+      ).toBeInTheDocument()
+    })
+
+    it('hides empty sections and falls back to common.noMatches when both are empty', () => {
+      const first = render(<QuestionBankPanel />)
+      createViaForm({ title: '论分节丙的应用' })
+      const [onlyId] = readStored().questions.map((q) => q.id)
+      seedGenerations(onlyId, ['breakdown'], '2026-05-01T00:00:00.000Z')
+      first.unmount()
+      render(<QuestionBankPanel />)
+
+      // 搜索只命中「有产物」的题 → 未使用节整节隐藏（连头带行）
+      fireEvent.change(screen.getByTestId('ruankao-qbank-filter-search'), {
+        target: { value: '论分节丙' },
+      })
+      expect(screen.getByTestId('ruankao-qbank-section-recent')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('ruankao-qbank-section-unused'),
+      ).not.toBeInTheDocument()
+      expect(screen.getAllByTestId(/^ruankao-qbank-item-/)).toHaveLength(1)
+
+      // 两节皆空 → 恢复 common.noMatches，列表容器与节头一起退场
+      fireEvent.change(screen.getByTestId('ruankao-qbank-filter-search'), {
+        target: { value: '绝对不存在的题目xyz' },
+      })
+      expect(screen.getByText('common.noMatches')).toBeInTheDocument()
+      expect(screen.queryByTestId('ruankao-qbank-list')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('ruankao-qbank-section-recent'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('renders only the unused section when no question has generation products', () => {
+      // 全部无生成：recent 节整体退场，unused 节在场且计数=全部行数
+      render(<QuestionBankPanel />)
+
+      expect(
+        screen.queryByTestId('ruankao-qbank-section-recent'),
+      ).not.toBeInTheDocument()
+      const unused = screen.getByTestId('ruankao-qbank-section-unused')
+      const rows = screen.getAllByTestId(/^ruankao-qbank-item-/)
+      expect(within(unused).getByText(String(rows.length))).toBeInTheDocument()
+    })
+
+    it('keeps multiple generated questions in the recent section ordered by latest generation time', () => {
+      // 甲 06-01、乙 05-01 都有产物：都进 recent 且按生成时间降序；
+      // 从未生成的 LAMBDA 只能出现在 unused 节
+      const first = render(<QuestionBankPanel />)
+      createViaForm({ title: '论双产物甲的应用' })
+      createViaForm({ title: '论双产物乙的应用' })
+      const [idA, idB] = readStored().questions.map((q) => q.id)
+      seedGenerations(idA, ['breakdown'], '2026-06-01T00:00:00.000Z')
+      seedGenerations(idB, ['breakdown'], '2026-05-01T00:00:00.000Z')
+      first.unmount()
+      render(<QuestionBankPanel />)
+
+      // 列表容器子元素顺序：recent 头 → 甲 → 乙 → unused 头 → 其余行
+      const childIds = Array.from(
+        screen.getByTestId('ruankao-qbank-list').children,
+      ).map((el) => el.getAttribute('data-testid'))
+      const unusedIdx = childIds.indexOf('ruankao-qbank-section-unused')
+      expect(childIds[0]).toBe('ruankao-qbank-section-recent')
+      expect(childIds[1]).toBe(`ruankao-qbank-item-${idA}`)
+      expect(childIds[2]).toBe(`ruankao-qbank-item-${idB}`)
+      expect(unusedIdx).toBeGreaterThan(0)
+
+      // 节成员：产物行不在 unused 侧；从未生成的行不在 recent 侧
+      const recentSide = childIds.slice(1, unusedIdx)
+      const unusedSide = childIds.slice(unusedIdx + 1)
+      expect(recentSide).toEqual([`ruankao-qbank-item-${idA}`, `ruankao-qbank-item-${idB}`])
+      expect(unusedSide).toContain(`ruankao-qbank-item-${LAMBDA.id}`)
+      expect(unusedSide).not.toContain(`ruankao-qbank-item-${idA}`)
+      expect(unusedSide).not.toContain(`ruankao-qbank-item-${idB}`)
+    })
   })
 })

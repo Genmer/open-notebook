@@ -92,7 +92,13 @@ export async function GET(request: NextRequest) {
       if (hostname && isValidHostname(hostname)) {
         // hostname already carries brackets for IPv6 literals, so this
         // yields e.g. http://[::1]:5055, not a mangled http://::1:5055
-        const apiUrl = `${proto}://${hostname}:5055`
+        // localhost/[::1] normalize to 127.0.0.1: the API binds IPv4 by
+        // default while these names resolve ::1 first, so the browser's
+        // direct connection intermittently gets refused (connection refused
+        // on v6, fallback to v4 only after the negative cache expires).
+        const target =
+          hostname === 'localhost' || hostname === '[::1]' ? '127.0.0.1' : hostname
+        const apiUrl = `${proto}://${target}:5055`
 
         console.log(`[runtime-config] Auto-detected API URL: ${apiUrl} (proto=${proto}, host=${hostHeader})`)
 
