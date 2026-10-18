@@ -14,6 +14,8 @@ prompt-template red-line clauses against deletion.
 import asyncio
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -503,3 +505,340 @@ def test_stream_without_on_stage_consumption_keeps_plain_event_flow():
     events = _parse_sse(body)
     assert [e["type"] for e in events] == ["stage", "delta", "delta", "complete"]
     assert events[0]["stage"] == "preparing"
+
+
+# --- 整篇生成 (essay draft): POST /api/ruankao/questions/essay/generate/stream ---
+# 红线扩展（ADR-017）：语境 = 考试元数据 + note + 考生本人的项目环境（与 chat
+# 同一条 render_project_env_context 验证门通道），仍无任何范文/检索通道。
+
+ESSAY_ENV_TEXT = (
+    "项目名称：市级政务服务平台\n"
+    "项目规模：合同额约 1200 万元，团队约 40 人\n"
+    "本人角色：系统架构师，负责微服务拆分与负载均衡设计"
+)
+
+ESSAY_FULL_TEXT = "摘要\n本项目……\n正文一、……\n正文二、……\n正文三、……"
+
+
+def _essay_request(**overrides) -> dict:
+    data = {
+        "env_id": "env-essay-1",
+        "title": "论负载均衡技术的应用",
+        "year": "2024 上",
+        "domain": "微服务与分布式",
+        "prompts": {
+            "q1": "1.概要叙述你参与管理和开发的软件项目…",
+            "q2": "2.具体论述你负载均衡的技术组成…",
+            "q3": "3.通过你的切身实践谈谈效果…",
+        },
+        "note": "",
+    }
+    data.update(overrides)
+    return data
+
+
+def _patch_injectable_env():
+    return patch(
+        "api.routers.ruankao_questions.render_project_env_context",
+        new_callable=AsyncMock,
+        return_value={"text": ESSAY_ENV_TEXT, "state": "verified"},
+    )
+
+
+def test_essay_stream_success_emits_stages_deltas_and_full_text():
+    client = _client()
+
+    async def fake_render(
+        title,
+        env_id,
+        env_context,
+        year,
+        domain,
+        q1,
+        q2,
+        q3,
+        note,
+        model_id=None,
+        extra_instructions="",
+        on_delta=None,
+        on_stage=None,
+    ):
+        if on_stage:
+            on_stage("waiting")
+            on_stage("thinking")
+        if on_delta:
+            on_delta("摘要\n")
+        if on_stage:
+            on_stage("generating")
+        if on_delta:
+            on_delta("正文一、……")
+        return ESSAY_FULL_TEXT
+
+    with (
+        _patch_injectable_env() as mock_env,
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+            side_effect=fake_render,
+        ) as mock_render,
+        patch(
+            "open_notebook.database.repository.repo_query",
+            new_callable=AsyncMock,
+        ) as mock_repo_query,
+    ):
+        with client.stream(
+            "POST",
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(note="第二部分重点写网关层限流"),
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(chunk for chunk in response.iter_text())
+
+    # env 按请求里的 id 走与 chat 同一条异步通道
+    assert mock_env.await_args is not None
+    assert mock_env.await_args.args == ("env-essay-1",)
+    # 语境透传：题目元数据逐字 + env 上下文全文 + env_id（行业提示在 pipeline 侧解析）+ note
+    assert mock_render.await_args is not None
+    kwargs = mock_render.await_args.kwargs
+    assert kwargs["title"] == "论负载均衡技术的应用"
+    assert kwargs["year"] == "2024 上"
+    assert kwargs["domain"] == "微服务与分布式"
+    assert kwargs["env_id"] == "env-essay-1"
+    assert kwargs["env_context"] == ESSAY_ENV_TEXT
+    assert kwargs["note"] == "第二部分重点写网关层限流"
+    assert kwargs["q1"] == _essay_request()["prompts"]["q1"]
+    # 无智能体/显式模型：默认解析（model_id=None、无附加提示词）
+    assert kwargs["model_id"] is None
+    assert kwargs["extra_instructions"] == ""
+
+    # SSE 与既有 stream 完全同形；complete 带全文 content（非 JSON result）
+    events = _parse_sse(body)
+    assert [e["type"] for e in events] == [
+        "stage",
+        "stage",
+        "stage",
+        "delta",
+        "stage",
+        "delta",
+        "complete",
+    ]
+    assert [e["stage"] for e in events if e["type"] == "stage"] == [
+        "preparing",
+        "waiting",
+        "thinking",
+        "generating",
+    ]
+    assert [e["content"] for e in events if e["type"] == "delta"] == [
+        "摘要\n",
+        "正文一、……",
+    ]
+    completes = [e for e in events if e["type"] == "complete"]
+    assert len(completes) == 1
+    assert completes[0]["content"] == ESSAY_FULL_TEXT
+    # 无状态：成功路径零 repo_query（env 通道被 mock；路由自身零持久化绑定）
+    mock_repo_query.assert_not_called()
+
+
+def test_essay_stream_requires_injectable_env_and_title_before_stream():
+    """env 取不到（无 env_id / 门未开）→ 流前 422 no_env；空标题 → 422 no_title。"""
+    client = _client()
+    # 门未开（pending 且无 snapshot）→ text=None → no_env，渲染函数不被调用
+    with (
+        patch(
+            "api.routers.ruankao_questions.render_project_env_context",
+            new_callable=AsyncMock,
+            return_value={"text": None, "state": "pending"},
+        ),
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+        ) as mock_render,
+    ):
+        response = client.post(
+            "/api/ruankao/questions/essay/generate/stream", json=_essay_request()
+        )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["reason"] == "no_env"
+    mock_render.assert_not_awaited()
+
+    # 空标题优先于 env 解析 → no_title（env 通道也不该被碰）
+    with patch(
+        "api.routers.ruankao_questions.render_project_env_context",
+        new_callable=AsyncMock,
+    ) as mock_env:
+        response = client.post(
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(title="   "),
+        )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["reason"] == "no_title"
+    mock_env.assert_not_awaited()
+
+
+def test_essay_stream_timeout_emits_model_timeout_error_event():
+    client = _client()
+    with (
+        _patch_injectable_env(),
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+            side_effect=asyncio.TimeoutError(),
+        ),
+    ):
+        with client.stream(
+            "POST",
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(),
+        ) as response:
+            body = "".join(chunk for chunk in response.iter_text())
+
+    events = _parse_sse(body)
+    # 流首一条 stage(preparing)，随后单一 error(model_timeout) —— 与既有 stream 同形
+    assert [e["type"] for e in events] == ["stage", "error"]
+    assert events[0]["stage"] == "preparing"
+    assert events[1]["reason"] == "model_timeout"
+
+
+# --- 提示词模板（=智能体）与显式模型解析：quick_chat 同款优先级 ---
+
+FakeAgent = SimpleNamespace  # enabled / system_prompt / model_id 字段式伪智能体
+
+
+def _patch_agent(agent: Any) -> Any:
+    """悬空/在库智能体的 resolve_agent_binding 替身（Any：unittest.mock.patch
+    的泛型上下文管理器形态 mypy 不认，调用点只用作 with 组件）。"""
+    return patch(
+        "api.routers.ruankao_questions.resolve_agent_binding",
+        new_callable=AsyncMock,
+        return_value=agent,
+    )
+
+
+def test_essay_stream_prompt_template_injects_and_explicit_model_wins():
+    """提示词模板（智能体）system_prompt 注入 extra_instructions；模型优先级
+    显式 model_id > 智能体绑定 > 系统默认。"""
+    client = _client()
+    agent = FakeAgent(
+        enabled=True,
+        system_prompt="以阅卷官视角写作，强调论证链完整。",
+        model_id="provider/agent-bound-model",
+    )
+    with (
+        _patch_injectable_env(),
+        _patch_agent(agent),
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+            return_value=ESSAY_FULL_TEXT,
+        ) as mock_render,
+    ):
+        with client.stream(
+            "POST",
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(
+                agent_id="agent:tpl-1", model_id="provider/explicit-model"
+            ),
+        ) as response:
+            assert response.status_code == 200
+            "".join(chunk for chunk in response.iter_text())
+
+    assert mock_render.await_args is not None
+    kwargs = mock_render.await_args.kwargs
+    assert kwargs["model_id"] == "provider/explicit-model"
+    assert kwargs["extra_instructions"] == "以阅卷官视角写作，强调论证链完整。"
+
+    # 只有提示词模板、无显式模型 → 用智能体绑定的模型
+    with (
+        _patch_injectable_env(),
+        _patch_agent(agent),
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+            return_value=ESSAY_FULL_TEXT,
+        ) as mock_render2,
+    ):
+        with client.stream(
+            "POST",
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(agent_id="agent:tpl-1"),
+        ) as response:
+            assert response.status_code == 200
+            "".join(chunk for chunk in response.iter_text())
+    assert mock_render2.await_args is not None
+    kwargs2 = mock_render2.await_args.kwargs
+    assert kwargs2["model_id"] == "provider/agent-bound-model"
+    assert kwargs2["extra_instructions"] == agent.system_prompt
+
+
+def test_essay_stream_dangling_prompt_template_degrades_to_default():
+    """悬空/禁用智能体（resolve 返回 None）降级为默认模型与无附加提示词，
+    不报错——与 chat 会话同款降级语义。"""
+    client = _client()
+    with (
+        _patch_injectable_env(),
+        _patch_agent(None),
+        patch(
+            "api.routers.ruankao_questions.render_question_essay",
+            new_callable=AsyncMock,
+            return_value=ESSAY_FULL_TEXT,
+        ) as mock_render,
+    ):
+        with client.stream(
+            "POST",
+            "/api/ruankao/questions/essay/generate/stream",
+            json=_essay_request(agent_id="agent:deleted"),
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(chunk for chunk in response.iter_text())
+
+    assert mock_render.await_args is not None
+    kwargs = mock_render.await_args.kwargs
+    assert kwargs["model_id"] is None
+    assert kwargs["extra_instructions"] == ""
+    events = _parse_sse(body)
+    assert events[-1]["type"] == "complete"
+
+
+# --- A8 for the essay template: red line + content requirements pinned ---
+
+# 整篇生成模板的变量白名单：题目元数据 + note + 项目环境上下文/行业提示
+# （红线扩展的仅有两项）+ 附加提示词模板（智能体 system_prompt，只调风格
+# 不压红线），仍无任何检索/笔记本/范文类变量。
+ESSAY_TEMPLATE_ALLOWED_VARS = TEMPLATE_ALLOWED_VARS | {
+    "env_context",
+    "industry_hint",
+    "extra_instructions",
+}
+
+
+def test_question_essay_template_carries_red_line_and_content_requirements():
+    path = PROMPTS_DIR / "question_essay.jinja"
+    assert path.is_file(), f"missing template: {path}"
+    content = path.read_text(encoding="utf-8")
+
+    # 红线条款：无检索 / 不模仿不引用范文 / 量化数据不编造 / 考生自己定稿
+    assert "NO retrieval" in content
+    assert "范文" in content
+    assert "model essay" in content
+    assert "考生自己" in content
+    assert "严禁编造精确数字" in content
+    assert "项目环境" in content
+
+    # 内容要求：摘要 ≤320 字（背景一句 + 三问覆盖声明）、正文约 2200~2800 字
+    # 按三问分三部分、素材必须来自项目环境、输出纯文本无 markdown 记号
+    assert "320" in content
+    assert "2200~2800" in content
+    assert "三部分" in content
+    assert "必须来自" in content
+    assert "plain text" in content.lower()
+    assert "markdown" in content.lower()
+
+    # 上下文白名单：多一个检索/笔记本/范文类变量即违规
+    extra = _template_variables(content) - ESSAY_TEMPLATE_ALLOWED_VARS
+    assert extra == set(), f"question_essay has off-whitelist vars: {extra}"
+
+    # 附加提示词模板段：只调风格/侧重，冲突时以题目元数据/环境事实/红线/输出
+    # 契约为准（智能体 system_prompt 压不过红线）
+    assert "PROMPT TEMPLATE" in content
+    assert "STYLE and EMPHASIS only" in content
+    assert "latter always win" in content

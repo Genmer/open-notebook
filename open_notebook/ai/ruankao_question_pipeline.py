@@ -10,16 +10,35 @@ Red line (ADR-017): the prompt context is ONLY the exam metadata passed by
 the caller — title / year / domain / the three question prompts — plus the
 candidate's own note. No retrieval, no notebook context, no model-essay
 text: model essays are unreachable by construction.
+
+The ONE sanctioned extension is render_question_essay (整篇生成): it
+additionally receives the candidate's own project-environment context —
+the text rendered by api.project_env_service.render_project_env_context
+(the same verified-snapshot gate chat uses) — because a full essay draft
+needs the user's own project facts. Still no retrieval, no notebook, no
+model-essay text.
 """
 
+import asyncio
 import re
 from typing import Any, Dict, List, Optional
 
+from ai_prompter import Prompter
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from open_notebook.ai.project_env_pipeline import _invoke_json, get_light_model
+from open_notebook.ai.industry_pool import industry_hint_for
+from open_notebook.ai.project_env_pipeline import (
+    _emit_stage,
+    _invoke_json,
+    _pace_llm_calls,
+    get_light_model,
+)
+from open_notebook.ai.provision import provision_langchain_model_with_info
+from open_notebook.domain.project_env import ProjectEnv
 from open_notebook.domain.ruankao_concept_cache import RuankaoConceptCache
+from open_notebook.utils import clean_thinking_content
+from open_notebook.utils.text_utils import extract_text_content
 from open_notebook.utils.web_search import snippets_text, web_search
 
 # --- parsed output shapes (validator targets; api/ mirrors the response) ---
@@ -323,3 +342,107 @@ async def render_question_outline(
     return {
         "paragraphs": [paragraph.model_dump() for paragraph in parsed.paragraphs],
     }
+
+
+# --- 整篇生成 (full essay draft): bare-text streaming, no JSON parse ---
+
+# 一篇 2200~2800 字论文 + 摘要 ≈ ≤6000 tokens，8192 留足余量（无 JSON 结构
+# 开销、无 validator 重试，不需要 _invoke_json 的 parse 循环）。
+QUESTION_ESSAY_MAX_TOKENS = 8192
+
+# 与路由侧 QUESTION_GENERATE_TIMEOUT_SECONDS 同值的有界超时：路由的 wait_for
+# 先到点，这里的是保护直接调用方（worker/命令侧）不挂死的内层下界——与
+# _invoke_json 内层 LLM_CALL_TIMEOUT_SECONDS 同款双保险布局。
+QUESTION_ESSAY_TIMEOUT_SECONDS = 600
+
+
+async def render_question_essay(
+    title: str,
+    env_id: str = "",
+    env_context: str = "",
+    year: str = "",
+    domain: str = "",
+    q1: str = "",
+    q2: str = "",
+    q3: str = "",
+    note: str = "",
+    model_id: Optional[str] = None,
+    extra_instructions: str = "",
+    on_delta: Optional[Any] = None,
+    on_stage: Optional[Any] = None,
+) -> str:
+    """One full essay draft (整篇论文初稿) for one exam question, grounded in
+    the candidate's own project environment — the only render in this module
+    that takes env context (ADR-017's extension: the user's own project-env
+    data; still no retrieval / notebook / model-essay text).
+
+    Bare-text streaming (quick_chat 同款, 非 JSON 产物不走 _invoke_json):
+    provision → throwaway streaming=True copy → astream → extract_text_content,
+    returns the full plain-text draft; raises ValueError when the model yields
+    nothing usable. env_id is used ONLY to resolve the stored industry for the
+    ADR-019 hint (fetch failure degrades to no hint, never breaks the render).
+    model_id: explicit model override (None = system default chat model; the
+    caller resolves the agent-binding priority). extra_instructions: the
+    selected 提示词模板 (agent system_prompt) — style/emphasis requirements
+    that the template renders BELOW the red lines, never above them.
+    """
+    industry = ""
+    if env_id:
+        try:
+            env = await ProjectEnv.get(env_id)
+            industry = str(getattr(env, "industry", "") or "")
+        except Exception as e:
+            # 行业提示纯锦上添花：取不到就按池外行业处理（hint 为空，模板条件
+            # 行不渲染），正文语境以 env_context 文本为准。
+            logger.warning(f"Project env {env_id} industry lookup failed: {e}")
+
+    data: Dict[str, Any] = {
+        **_question_data(title, year, domain, q1, q2, q3, note),
+        "env_context": (env_context or "").strip(),
+        "industry_hint": industry_hint_for(industry),
+        "extra_instructions": (extra_instructions or "").strip(),
+    }
+
+    _emit_stage(on_stage, "waiting")
+    await _pace_llm_calls()
+    prompt = Prompter(prompt_template="ruankao/question_essay").render(  # type: ignore[arg-type]
+        data=data
+    )
+    # 整篇论文是长文旗舰产物：不走 get_light_model() 的廉价模型覆盖旋钮
+    # （那是给三个短 JSON 辅助产品的成本开关）；显式 model_id（考生选择或
+    # 智能体绑定）直通 provision 解析，None = 系统默认聊天模型。
+    prov = await provision_langchain_model_with_info(
+        prompt, model_id, "chat", max_tokens=QUESTION_ESSAY_MAX_TOKENS
+    )
+    # Provisioned chat models carry streaming=False (Esperanto's to_langchain
+    # passes it through; langchain-core treats that as a hard opt-out) — same
+    # throwaway-copy flip as _invoke_json's streaming branch and quick_chat.
+    stream_model = prov.langchain_model.model_copy(update={"streaming": True})
+
+    async def _consume_stream() -> str:
+        parts: List[str] = []
+        thinking_sent = False
+        generating_sent = False
+        async for chunk in stream_model.astream(prompt):
+            delta = extract_text_content(chunk.content)
+            if delta:
+                if not generating_sent:
+                    generating_sent = True
+                    _emit_stage(on_stage, "generating")
+                parts.append(delta)
+                if on_delta is not None:
+                    on_delta(delta)
+            elif not thinking_sent and not generating_sent:
+                # First chunk(s) with no visible text yet: a thinking model
+                # reasoning before its first token.
+                thinking_sent = True
+                _emit_stage(on_stage, "thinking")
+        return "".join(parts)
+
+    raw_content = await asyncio.wait_for(
+        _consume_stream(), timeout=QUESTION_ESSAY_TIMEOUT_SECONDS
+    )
+    content = clean_thinking_content(raw_content).strip()
+    if not content:
+        raise ValueError("question essay returned empty output")
+    return content

@@ -8,11 +8,30 @@ import {
 import { GENERATIONS_STORAGE_KEY } from '@/lib/ruankao/question-generations'
 import { SEED_QUESTIONS } from '@/lib/ruankao/question-bank-seeds.gen'
 import { QuestionStreamError } from '@/lib/api/ruankao-questions'
+import { ESSAYS_STORAGE_KEY } from '@/lib/ruankao/question-essays'
 
-const { pushMock, writeCoachHandoffMock, generateMock } = vi.hoisted(() => ({
+const {
+  pushMock,
+  writeCoachHandoffMock,
+  generateMock,
+  essayGenerateMock,
+  envsData,
+  modelsData,
+  agentsData,
+} = vi.hoisted(() => ({
   pushMock: vi.fn(),
   writeCoachHandoffMock: vi.fn(),
   generateMock: vi.fn(),
+  essayGenerateMock: vi.fn(),
+  // 项目环境列表可变 holder（整篇生成区块数据源，逐用例配置）
+  envsData: { current: [] as Array<{ id: string; name: string }> },
+  // 模型/提示词模板（=智能体）列表可变 holder（essay 区块下拉数据源）
+  modelsData: {
+    current: [] as Array<{ id: string; name: string; type: string }>,
+  },
+  agentsData: {
+    current: [] as Array<{ id: string; name: string; enabled: boolean }>,
+  },
 }))
 
 // 稳定 push spy（全局 setup 的 useRouter 每次调用新建对象，无法断言）
@@ -26,20 +45,43 @@ vi.mock('@/lib/ruankao/coach-handoff', () => ({
 }))
 
 // 生成端点 mock（工作台 C 系全程 mock ruankaoQuestionsApi.generateStream，
-// 零真调；importOriginal 保留 QuestionStreamError 真类供错误映射测试用）
+// 零真调；importOriginal 保留 QuestionStreamError 真类供错误映射测试用）。
+// 整篇生成区块同款 mock essayGenerateStream（E 系）
 vi.mock('@/lib/api/ruankao-questions', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/lib/api/ruankao-questions')>()
-  return { ...actual, ruankaoQuestionsApi: { generateStream: generateMock } }
+  return {
+    ...actual,
+    ruankaoQuestionsApi: {
+      generateStream: generateMock,
+      essayGenerateStream: essayGenerateMock,
+    },
+  }
 })
 
-// 角标文本断言需要插值：在恒等 t 之上给两枚新键钉上与 en-US 语言包一致的
+// 项目环境列表 mock（useProjectEnvs 走 react-query；组件只消费 data 字段）
+vi.mock('@/lib/hooks/use-project-envs', () => ({
+  useProjectEnvs: () => ({ data: envsData.current }),
+}))
+
+// 模型/提示词模板列表 mock（essay 区块 useModels/useAgents 数据源；只消费
+// data 字段——组件侧再做 language/enabled 过滤）
+vi.mock('@/lib/hooks/use-models', () => ({
+  useModels: () => ({ data: modelsData.current }),
+}))
+vi.mock('@/lib/hooks/use-agents', () => ({
+  useAgents: () => ({ data: agentsData.current }),
+}))
+
+// 角标文本断言需要插值：在恒等 t 之上给带参键钉上与 en-US 语言包一致的
 // 模板（其余键仍恒等返回，既有断言不受影响）
 const { T_TEMPLATES } = vi.hoisted(() => ({
   T_TEMPLATES: {
     'ruankao.questionBank.list.generatedBadge': '{{done}}/{{total}}',
     'ruankao.questionBank.list.generatedAria':
       '{{done}} of {{total}} details generated',
+    'ruankao.questionBank.essayGen.charCount': '{{count}}',
+    'ruankao.questionBank.essayGen.envUsed': '{{name}}',
   } as Record<string, string>,
 }))
 
@@ -105,6 +147,10 @@ function apiError(reason: string): { response: { status: number; data: { detail:
 // 当前提取输出里的钉扎样本：real 真题（仅真题md 来源）与 2025 回忆简记
 const LAMBDA = SEED_QUESTIONS.find((q) => q.title === '论大数据Lambda架构')!
 const NOTE = SEED_QUESTIONS.find((q) => q.title === '软件测试')!
+// 带 essay_library 专属范文引用的种子（D① 正例）：zhenti_md 整本编译不算
+const SERVERLESS = SEED_QUESTIONS.find(
+  (q) => q.id === 'ruankao-question-seed-a21ff4d1cc',
+)!
 
 // 工作台产物 mock（与端点响应同形；展示层不校验数量，两条足够）
 const BREAKDOWN_RESULT = {
@@ -245,6 +291,10 @@ describe('QuestionBankPanel', () => {
     writeCoachHandoffMock.mockReset()
     writeCoachHandoffMock.mockResolvedValue({ ok: true, notebookId: 'nb-1' })
     generateMock.mockReset()
+    essayGenerateMock.mockReset()
+    envsData.current = []
+    modelsData.current = []
+    agentsData.current = []
     mockClipboard(() => Promise.resolve())
   })
 
@@ -530,23 +580,35 @@ describe('QuestionBankPanel', () => {
       ).toBeInTheDocument()
       expect(within(dialog).getByText('真题md · zhenti_md')).toBeInTheDocument()
 
-      // D① 通道保留：真题md 来源 → 阅读对应文章（非「生成整篇练习文」）
+      // D①/D②：LAMBDA 只有 zhenti_md（整本真题编译）引用 → 无专属范文，
+      // 显示「无对应范文」弱提示 + D② 生成引导（不再跳整本 md）
       expect(
-        screen.getByTestId('ruankao-qbank-detail-action-full-read'),
-      ).toBeInTheDocument()
+        screen.getByTestId('ruankao-qbank-detail-no-essay'),
+      ).toHaveTextContent('ruankao.questionBank.noModelEssay')
       expect(
-        screen.queryByTestId('ruankao-qbank-detail-action-full-generate'),
+        screen.queryByTestId('ruankao-qbank-detail-action-full-read'),
       ).not.toBeInTheDocument()
+      expect(
+        screen.getByTestId('ruankao-qbank-detail-action-full-generate'),
+      ).toBeInTheDocument()
     })
 
-    it('routes D① to the essay read deep link for seeds with a source ref', () => {
+    it('routes D① to the essay read deep link for seeds with a dedicated essay ref', () => {
       render(<QuestionBankPanel />)
-      fireEvent.click(screen.getByTestId(`ruankao-qbank-detail-${LAMBDA.id}`))
+      // SERVERLESS（论无服务器架构及其应用）带 essay_library 专属范文引用
+      fireEvent.click(screen.getByTestId(`ruankao-qbank-detail-${SERVERLESS.id}`))
+      expect(
+        screen.queryByTestId('ruankao-qbank-detail-no-essay'),
+      ).not.toBeInTheDocument()
 
       fireEvent.click(screen.getByTestId('ruankao-qbank-detail-action-full-read'))
 
+      const essayRef = SERVERLESS.sourceRefs.find(
+        (r) => r.kind === 'essay_library',
+      )!
+      expect(essayRef.sourceId).toBe('source:f5nhm23sg2jxaptazf0k')
       expect(pushMock).toHaveBeenCalledWith(
-        `/ruankao?tab=essay&read=${encodeURIComponent(LAMBDA.sourceRefs[0].sourceId!)}`,
+        `/ruankao?tab=essay&read=${encodeURIComponent(essayRef.sourceId!)}`,
       )
       // 弹窗随跳转关闭
       expect(
@@ -879,14 +941,23 @@ describe('QuestionBankPanel', () => {
     })
 
     it('C9: streaming deltas render the live metrics panel (tail ticker + metrics row) until completion', async () => {
-      // 两个 delta 落地后挂 50ms 再完成：生成中面板必须被渲染过
+      // 两个 delta 立即落地；完成改由断言侧放行（尾部上屏后才 resolve）。
+      // 原版固定 setTimeout(600ms) 完成与 500ms 节流帧竞态：满载下事件循环
+      // 拥塞时完成事件可先于/紧贴节流帧提交，waitFor 的 1000ms 观察窗被跨过
+      // → 尾帘永不可见（5 连跑第 5 次复现 1 failed，耗时 1501ms）。握手化
+      // 后唯一的时序依赖是节流帧最终会到，观察窗放宽到 5000ms 兜满载延迟。
+      let releaseComplete!: () => void
+      const tailObserved = new Promise<void>((resolve) => {
+        releaseComplete = resolve
+      })
       generateMock.mockImplementation(
         (_data: unknown, onDelta?: (d: string) => void) =>
           new Promise((resolve) => {
             onDelta?.('{"angles": [{')
             onDelta?.('"name": "云原生弹性负载均衡"}]…尾部片段')
-            // 600ms：让 500ms 节流帧先把 stream 快照刷上屏，再完成
-            setTimeout(() => resolve(BREAKDOWN_RESULT), 600)
+            void tailObserved.then(() =>
+              setTimeout(() => resolve(BREAKDOWN_RESULT), 0),
+            )
           }),
       )
       render(<QuestionBankPanel />)
@@ -899,12 +970,15 @@ describe('QuestionBankPanel', () => {
         within(panel).getByTestId('ruankao-qbank-workbench-stream-breakdown-metrics'),
       ).toBeInTheDocument()
       // 尾部滚动要等 500ms 节流帧：含最后一个 delta 的结尾（数据流可见性）
-      await waitFor(() =>
-        expect(
-          within(panel).getByTestId('ruankao-qbank-workbench-stream-breakdown-tail')
-            .textContent,
-        ).toContain('尾部片段'),
+      await waitFor(
+        () =>
+          expect(
+            within(panel).getByTestId('ruankao-qbank-workbench-stream-breakdown-tail')
+              .textContent,
+          ).toContain('尾部片段'),
+        { timeout: 5000 }, // 节流帧在满载下可能迟到，放宽观察窗
       )
+      releaseComplete()
 
       await waitFor(() =>
         expect(
@@ -1134,6 +1208,400 @@ describe('QuestionBankPanel', () => {
       expect(text).toContain('软件测试')
       expect(text).not.toContain('ruankao.questionBank.q2Label')
       expect(text).not.toContain('ruankao.questionBank.q3Label')
+    })
+  })
+
+  // 整篇生成（E 线）：第 4 区块——环境 Select → 流式生成 → 每题缓存展示
+  describe('essay generation block', () => {
+    const ENV = { id: 'env-1', name: '电商订单中台' }
+
+    function openLambdaDetail() {
+      fireEvent.click(screen.getByTestId(`ruankao-qbank-detail-${LAMBDA.id}`))
+    }
+
+    it('E0: with no project envs the block shows the create-first hint and a disabled trigger', () => {
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+
+      // 环境空态：引导先去项目环境页创建；无 Select；生成禁用
+      expect(screen.getByTestId('ruankao-qbank-essay-env-empty')).toHaveTextContent(
+        'ruankao.questionBank.essayGen.envEmpty',
+      )
+      expect(
+        screen.queryByTestId('ruankao-qbank-essay-env-select'),
+      ).not.toBeInTheDocument()
+      expect(screen.getByTestId('ruankao-qbank-essay-generate')).toBeDisabled()
+    })
+
+    it('E1: selecting an env and sending carries env_id/note; the panel single-flight locks the workbench triggers', () => {
+      envsData.current = [ENV]
+      essayGenerateMock.mockImplementation(
+        () => new Promise(() => undefined), // 挂起：观察生成中禁态
+      )
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+
+      // 未选环境（哨兵值）：生成禁用；选完解锁
+      expect(screen.getByTestId('ruankao-qbank-essay-generate')).toBeDisabled()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      expect(screen.getByTestId('ruankao-qbank-essay-generate')).toBeEnabled()
+      fireEvent.change(screen.getByTestId('ruankao-qbank-essay-note-input'), {
+        target: { value: '突出高并发改造' },
+      })
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+
+      // 请求体：题目元数据 + env_id + 备注（红线：无 source_id，范文不可达）
+      expect(essayGenerateMock).toHaveBeenCalledTimes(1)
+      const body = essayGenerateMock.mock.calls[0][0] as Record<string, unknown>
+      expect(body).toMatchObject({
+        env_id: ENV.id,
+        title: LAMBDA.title,
+        note: '突出高并发改造',
+      })
+      expect('source_id' in body).toBe(false)
+
+      // 单飞：三区块生成触发全部禁用；弹窗标题进行中徽标；状态行=生成中
+      expect(
+        screen.getByTestId('ruankao-qbank-workbench-generate-breakdown'),
+      ).toBeDisabled()
+      expect(
+        screen.getByTestId('ruankao-qbank-workbench-generate-q2_points'),
+      ).toBeDisabled()
+      expect(
+        screen.getByTestId('ruankao-qbank-workbench-generate-outline'),
+      ).toBeDisabled()
+      expect(
+        screen.getByTestId('ruankao-qbank-detail-generating-badge'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-status').textContent,
+      ).toBe('ruankao.questionBank.workbench.statusGenerating')
+      // 生成中：流面板在场，idle 输入区退场
+      expect(screen.getByTestId('ruankao-qbank-essay-stream')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('ruankao-qbank-essay-note-input'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('E2: SSE stage events render the phase line in the essay stream panel', async () => {
+      envsData.current = [ENV]
+      let stageSink: ((stage: string) => void) | undefined
+      essayGenerateMock.mockImplementation(
+        (
+          _data: unknown,
+          _onDelta?: (d: string) => void,
+          _signal?: AbortSignal,
+          onStage?: (stage: string) => void,
+        ) => {
+          stageSink = onStage
+          onStage?.('preparing')
+          return new Promise<string>(() => undefined)
+        },
+      )
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+
+      // preparing 先上屏；thinking 覆盖（恒等 t mock 下按 i18n 键断言）
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-stream-stage').textContent,
+      ).toBe('ruankao.questionBank.workbench.stream.stage.preparing')
+      await act(async () => {
+        stageSink?.('thinking')
+      })
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-stream-stage').textContent,
+      ).toBe('ruankao.questionBank.workbench.stream.stage.thinking')
+    })
+
+    it('E3: complete renders the draft with char count and env name, and persists the per-question cache', async () => {
+      envsData.current = [ENV]
+      // countChars 口径（Unicode 码点）：3 + 497 = 500
+      const draft = `摘要段${'长'.repeat(497)}`
+      essayGenerateMock.mockResolvedValue(draft)
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-status').textContent,
+        ).toBe('ruankao.questionBank.workbench.statusReady'),
+      )
+      const content = screen.getByTestId('ruankao-qbank-essay-content')
+      expect(content).toHaveTextContent('摘要段')
+      expect(content).toHaveTextContent('长')
+      // pre-wrap 长文展示 + 总字数（模板 {{count}} → 500）
+      expect(content).toHaveClass('whitespace-pre-wrap')
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-char-count').textContent,
+      ).toBe('500')
+      // 生成时间 + 环境名（模板 {{name}}）+ ready 操作
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-generated-at'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-env-name').textContent,
+      ).toBe(ENV.name)
+      expect(screen.getByTestId('ruankao-qbank-essay-copy')).toBeEnabled()
+      expect(screen.getByTestId('ruankao-qbank-essay-regenerate')).toBeEnabled()
+
+      // 缓存落盘：ruankao.questionEssays.v1 每题最新一篇
+      const raw = localStorage.getItem(ESSAYS_STORAGE_KEY)
+      expect(raw).not.toBeNull()
+      const store = JSON.parse(raw!) as {
+        entries: Record<
+          string,
+          { envId: string; envName: string; content: string; note?: string }
+        >
+      }
+      expect(store.entries[LAMBDA.id]).toMatchObject({
+        envId: ENV.id,
+        envName: ENV.name,
+        content: draft,
+      })
+      // 本次生成未填备注 → 缓存条目不带 note
+      expect(store.entries[LAMBDA.id]?.note).toBeUndefined()
+    })
+
+    it('E4: stream error reasons map to the essayGen copy keys, with the trigger doubling as retry', async () => {
+      envsData.current = [ENV]
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+
+      // no_env → 专属错误条文案
+      essayGenerateMock.mockRejectedValueOnce(new QuestionStreamError('no_env'))
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-status').textContent,
+        ).toBe('ruankao.questionBank.workbench.statusError'),
+      )
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-error').textContent,
+      ).toBe('ruankao.questionBank.essayGen.errorNoEnv')
+
+      // error 态生成按钮仍在场（=重试入口）：model_timeout → 超时文案
+      essayGenerateMock.mockRejectedValueOnce(
+        new QuestionStreamError('model_timeout'),
+      )
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-error').textContent,
+        ).toBe('ruankao.questionBank.essayGen.errorTimeout'),
+      )
+      expect(essayGenerateMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('E5: the stop button aborts the in-flight signal and the half-run is discarded', async () => {
+      envsData.current = [ENV]
+      let abortSignal: AbortSignal | undefined
+      let rejectEssay!: (error: unknown) => void
+      essayGenerateMock.mockImplementation(
+        (
+          _data: unknown,
+          _onDelta?: (d: string) => void,
+          signal?: AbortSignal,
+        ) => {
+          abortSignal = signal
+          return new Promise<never>((_resolve, reject) => {
+            rejectEssay = reject
+          })
+        },
+      )
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      expect(abortSignal).toBeDefined()
+
+      // 点停止：essayGenerateStream 收到的 AbortSignal 被 abort
+      const aborted = new Promise<void>((resolve) => {
+        abortSignal?.addEventListener('abort', () => resolve())
+      })
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-stream-stop'))
+      await aborted
+      expect(abortSignal?.aborted).toBe(true)
+
+      // 真 fetch 语义：abort → AbortError 拒绝（终止=丢弃 → 区块回 idle）
+      await act(async () => {
+        rejectEssay(new DOMException('Aborted', 'AbortError'))
+      })
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-status').textContent,
+        ).toBe('ruankao.questionBank.workbench.statusIdle'),
+      )
+      // 半截结果不落盘
+      expect(localStorage.getItem(ESSAYS_STORAGE_KEY)).toBeNull()
+    })
+
+    it('E6: reopening the dialog restores the cached essay with the env name, zero network calls', async () => {
+      envsData.current = [ENV]
+      essayGenerateMock.mockResolvedValue('第一篇整篇草稿全文。')
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-status').textContent,
+        ).toBe('ruankao.questionBank.workbench.statusReady'),
+      )
+
+      // 关弹窗 → 重开（detailId effect 从 localStorage 重新水合）
+      fireEvent.click(screen.getByText('common.close'))
+      expect(
+        screen.queryByTestId('ruankao-qbank-detail-dialog'),
+      ).not.toBeInTheDocument()
+      essayGenerateMock.mockClear()
+      openLambdaDetail()
+
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-status').textContent,
+      ).toBe('ruankao.questionBank.workbench.statusReady')
+      expect(screen.getByTestId('ruankao-qbank-essay-content')).toHaveTextContent(
+        '第一篇整篇草稿全文。',
+      )
+      // 环境名来自缓存条目；Select 预选缓存环境（值仍在列表中）
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-env-name').textContent,
+      ).toBe(ENV.name)
+      expect(screen.getByTestId('ruankao-qbank-essay-env-select')).toHaveTextContent(
+        ENV.name,
+      )
+      // 缓存命中：端点零调用
+      expect(essayGenerateMock).not.toHaveBeenCalled()
+    })
+
+    it('E7: ready-state regenerate expands the note box and resends with the note after the overwrite confirm', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      envsData.current = [ENV]
+      essayGenerateMock.mockResolvedValueOnce('第一篇草稿')
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-regenerate'),
+        ).toBeEnabled(),
+      )
+
+      // ready 态无备注框；[重新生成] 展开（备注→确认覆盖 同款交互）
+      expect(
+        screen.queryByTestId('ruankao-qbank-essay-note-input'),
+      ).not.toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-regenerate'))
+      fireEvent.change(screen.getByTestId('ruankao-qbank-essay-note-input'), {
+        target: { value: '换 QPS 数据方向' },
+      })
+      essayGenerateMock.mockResolvedValueOnce('按备注换向后的第二篇草稿')
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-note-apply'))
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'ruankao.questionBank.workbench.overwriteConfirm',
+      )
+      await waitFor(() => expect(essayGenerateMock).toHaveBeenCalledTimes(2))
+      expect(essayGenerateMock.mock.calls[1][0]).toMatchObject({
+        env_id: ENV.id,
+        note: '换 QPS 数据方向',
+      })
+
+      // 单结果覆盖 + 备注徽标；缓存每题仍只一篇
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-content'),
+        ).toHaveTextContent('按备注换向后的第二篇草稿'),
+      )
+      expect(
+        screen.getByText('ruankao.questionBank.workbench.noteBadge'),
+      ).toBeInTheDocument()
+      const store = JSON.parse(
+        localStorage.getItem(ESSAYS_STORAGE_KEY)!,
+      ) as { entries: Record<string, unknown> }
+      expect(Object.keys(store.entries)).toEqual([LAMBDA.id])
+    })
+
+    it('E8: model and prompt-template selects ride the request body; sentinel defaults stay home', async () => {
+      envsData.current = [ENV]
+      modelsData.current = [
+        { id: 'provider/glm-4.7', name: 'GLM-4.7', type: 'language' },
+        { id: 'provider/embed-1', name: 'Embed', type: 'embedding' }, // 非语言模型不得进列表
+      ]
+      agentsData.current = [
+        { id: 'agent:coach', name: '论文写作教练', enabled: true },
+      ]
+      essayGenerateMock.mockResolvedValue('模板生成的草稿')
+      render(<QuestionBankPanel />)
+      openLambdaDetail()
+
+      // 两下拉在场，默认=哨兵（默认模型/不使用）；embedding 模型被过滤
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-model-select'),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-template-select'),
+      ).toBeInTheDocument()
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      selectOption('ruankao-qbank-essay-model-select', 'GLM-4.7')
+      selectOption('ruankao-qbank-essay-template-select', '论文写作教练')
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+
+      // 请求体：显式 model_id + agent_id（提示词模板=智能体）
+      expect(essayGenerateMock).toHaveBeenCalledTimes(1)
+      expect(essayGenerateMock.mock.calls[0][0]).toMatchObject({
+        env_id: ENV.id,
+        model_id: 'provider/glm-4.7',
+        agent_id: 'agent:coach',
+      })
+
+      // ready 态回显模型/模板名；缓存条目带 modelName/templateName
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-template-name'),
+        ).toBeInTheDocument(),
+      )
+      expect(
+        screen.getByTestId('ruankao-qbank-essay-model-name'),
+      ).toBeInTheDocument()
+      const raw = localStorage.getItem(ESSAYS_STORAGE_KEY)!
+      const store = JSON.parse(raw) as {
+        entries: Record<
+          string,
+          { modelName?: string; templateName?: string }
+        >
+      }
+      expect(store.entries[LAMBDA.id]).toMatchObject({
+        modelName: 'GLM-4.7',
+        templateName: '论文写作教练',
+      })
+
+      // 哨兵默认（清缓存重开弹窗，不选模型/模板）→ 请求体不带两字段
+      const rawStore = JSON.parse(
+        localStorage.getItem(ESSAYS_STORAGE_KEY)!,
+      ) as { entries: Record<string, unknown> }
+      delete rawStore.entries[LAMBDA.id]
+      localStorage.setItem(ESSAYS_STORAGE_KEY, JSON.stringify(rawStore))
+      fireEvent.click(screen.getByText('common.close'))
+      essayGenerateMock.mockResolvedValueOnce('默认链路的草稿')
+      openLambdaDetail()
+      // 重开后环境/模型/模板全回哨兵：只重选环境（模型/模板保持默认）
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('ruankao-qbank-essay-generate'),
+        ).toBeInTheDocument(),
+      )
+      selectOption('ruankao-qbank-essay-env-select', ENV.name)
+      fireEvent.click(screen.getByTestId('ruankao-qbank-essay-generate'))
+      await waitFor(() => expect(essayGenerateMock).toHaveBeenCalledTimes(2))
+      const body2 = essayGenerateMock.mock.calls[1][0] as Record<string, unknown>
+      expect('model_id' in body2).toBe(false)
+      expect('agent_id' in body2).toBe(false)
     })
   })
 

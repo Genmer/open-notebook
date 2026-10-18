@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardList,
   Copy,
+  FileText,
   HelpCircle,
   ListChecks,
   PenLine,
@@ -56,6 +57,9 @@ import {
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useProjectEnvs } from '@/lib/hooks/use-project-envs'
+import { useModels } from '@/lib/hooks/use-models'
+import { useAgents } from '@/lib/hooks/use-agents'
 import {
   QuestionStreamError,
   ruankaoQuestionsApi,
@@ -66,6 +70,11 @@ import {
   computeStreamMetrics,
   type StreamMetricsSample,
 } from '@/lib/ruankao/stream-metrics'
+import { countChars } from '@/lib/ruankao/essay-guardrails'
+import {
+  readQuestionEssay,
+  saveQuestionEssay,
+} from '@/lib/ruankao/question-essays'
 import {
   GENERATIONS_KINDS,
   getGenerationSummary,
@@ -199,6 +208,37 @@ const KIND_BLOCK_ICONS: Record<GenerationKind, typeof Table2> = {
   outline: PenLine,
 }
 
+// ── 第 4 区块：整篇生成（题目元数据 + 考生项目环境 → 一篇完整草稿）────
+// 状态机与三产物区块同构（idle/generating/ready/error + 单飞 + run-token
+// 丢弃语义），唯产物是纯文本（complete 事件的 content），按题缓存每题
+// 最新一篇（question-essays v1）。请求体额外携带 env_id（ADR-017 唯一
+// 认可的红线扩展：服务端经 chat 同一条 verified-snapshot 通道解析）。
+type EssayBlockState = {
+  phase: WorkbenchPhase
+  content?: string
+  generatedAt?: string
+  note?: string
+  envId?: string
+  envName?: string
+  /** 本次生成显式选择的模型（未选=系统默认，不展示） */
+  modelName?: string
+  /** 本次生成选用的提示词模板（=智能体名；未选不展示） */
+  templateName?: string
+  errorKey?: string
+  /** generating 期间由 500ms 节流快照刷新（流式速度/峰值/已用时） */
+  stream?: StreamMetricsSample
+  /** SSE stage 事件值；complete/error 清空 */
+  stage?: string
+}
+
+const INITIAL_ESSAY: EssayBlockState = { phase: 'idle' }
+
+// Radix SelectItem 禁空串 value：未选环境用哨兵值（EssayPanel NONE_ENV 惯例）
+const ESSAY_ENV_NONE = '__none__'
+// 模型/提示词模板（=智能体）下拉哨兵：default=系统默认聊天模型 / none=不使用
+const ESSAY_MODEL_DEFAULT = '__default__'
+const ESSAY_TEMPLATE_NONE = '__tpl_none__'
+
 const DIFFICULTY_KEYS: Record<'easy' | 'medium' | 'hard', string> = {
   easy: 'ruankao.questionBank.workbench.breakdown.difficultyEasy',
   medium: 'ruankao.questionBank.workbench.breakdown.difficultyMedium',
@@ -234,6 +274,35 @@ export function questionGenerationErrorKey(error: unknown): string {
   if (!axiosError?.response)
     return 'ruankao.questionBank.workbench.errorNetwork'
   return 'ruankao.questionBank.workbench.errorModel'
+}
+
+// 整篇生成的错误分流（questionGenerationErrorKey 同款骨架，键独立：
+// 多一个 no_env 分支——env 解析失败/验证门未开）。键用完整字面量
+// （Unused Key Detection 门禁）；导出供测试直接钉分流口径。
+export function essayGenerationErrorKey(error: unknown): string {
+  if (error instanceof QuestionStreamError) {
+    if (error.reason === 'no_env')
+      return 'ruankao.questionBank.essayGen.errorNoEnv'
+    if (error.reason === 'no_title')
+      return 'ruankao.questionBank.essayGen.errorNoTitle'
+    if (error.reason === 'model_timeout')
+      return 'ruankao.questionBank.essayGen.errorTimeout'
+    if (error.reason === 'network')
+      return 'ruankao.questionBank.essayGen.errorNetwork'
+    return 'ruankao.questionBank.essayGen.errorModel'
+  }
+  const axiosError = error as
+    | { response?: { data?: { detail?: { reason?: string } } } }
+    | null
+  const reason = axiosError?.response?.data?.detail?.reason
+  if (reason === 'no_env') return 'ruankao.questionBank.essayGen.errorNoEnv'
+  if (reason === 'no_title')
+    return 'ruankao.questionBank.essayGen.errorNoTitle'
+  if (reason === 'model_timeout')
+    return 'ruankao.questionBank.essayGen.errorTimeout'
+  if (!axiosError?.response)
+    return 'ruankao.questionBank.essayGen.errorNetwork'
+  return 'ruankao.questionBank.essayGen.errorModel'
 }
 
 // 挂载水合：读缓存命中 → ready（显示生成时间与备注徽标），未命中 → idle
@@ -392,10 +461,12 @@ export function compareQuestionsDesc(
   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
 }
 
-// D① 通道优先级（设计稿 ①）：范文正文夹 → 真题 md → 论文 PDF，都跳
-// read 视图人眼阅读（ADR-017 例行通道）；exam_note 纯文本出处不参与。
+// D① 通道（设计稿 ①）：只有「一题一篇」的专属范文源（范文正文夹 / 论文
+// PDF）算对应文章，跳 read 视图人眼阅读（ADR-017 例行通道）。zhenti_md 是
+// 整本真题题目编译（51 题共享一个源，跳进去无法定位），按无范文处理（用户
+// 裁决 2026-10-12：不拆源，无专属范文直接显示无范文）；exam_note 不参与。
 function readSourceIdFor(q: RuankaoQuestion): string | null {
-  for (const kind of ['essay_library', 'zhenti_md', 'lunwen_pdf'] as const) {
+  for (const kind of ['essay_library', 'lunwen_pdf'] as const) {
     const ref = q.sourceRefs.find((r) => r.kind === kind && r.sourceId)
     if (ref?.sourceId) return ref.sourceId
   }
@@ -457,8 +528,11 @@ export function QuestionBankPanel() {
     q2_points: '',
     outline: '',
   })
-  // 面板级单飞：同一时刻至多 1 个生成请求在途（限流第一道闸，设计稿 1.5.3）
-  const [flightKind, setFlightKind] = useState<GenerationKind | null>(null)
+  // 面板级单飞：同一时刻至多 1 个生成请求在途（限流第一道闸，设计稿 1.5.3）；
+  // 'essay' = 第 4 区块整篇生成，与三产物区块共用同一把锁（互斥）
+  const [flightKind, setFlightKind] = useState<
+    GenerationKind | 'essay' | null
+  >(null)
   // 在途请求令牌：detailId 任何变化（含关闭）都递增 → 旧请求结果一律丢弃
   const runTokenRef = useRef(0)
   // 流式在途请求的中止器：关弹窗/切题时 abort——服务端同步取消模型调用省额度
@@ -471,6 +545,35 @@ export function QuestionBankPanel() {
     startedAt: 0,
     peakTps: 0,
   })
+
+  // ── 第 4 区块：整篇生成 ────────────────────────────────────────────
+  // 项目环境列表（复用 use-project-envs；manage 视图与写作台固定件生成同源）
+  const { data: projectEnvs } = useProjectEnvs('manage')
+  const envList = projectEnvs ?? []
+  const [essayBlock, setEssayBlock] = useState<EssayBlockState>(INITIAL_ESSAY)
+  // 环境选择（会话内存态；缓存命中的 envId 预选，悬空 id 渲染期回落哨兵）
+  const [essayEnvId, setEssayEnvId] = useState<string>(ESSAY_ENV_NONE)
+  // 备注草稿（首次生成的可选备注与重新生成的备注框共用，会话内存态）
+  const [essayNoteDraft, setEssayNoteDraft] = useState('')
+  // ready 态的重新生成备注框开关（三产物区块 noteOpen 同款交互）
+  const [essayNoteOpen, setEssayNoteOpen] = useState(false)
+  // 模型/提示词模板（=智能体）选择（快捷问答侧边卡同源数据；哨兵=默认/不使用）
+  const [essayModelId, setEssayModelId] = useState<string>(ESSAY_MODEL_DEFAULT)
+  const [essayTemplateId, setEssayTemplateId] = useState<string>(
+    ESSAY_TEMPLATE_NONE,
+  )
+  const { data: allModels } = useModels()
+  const { data: allAgents } = useAgents()
+  // 与快捷问答侧边卡同过滤口径：仅语言模型 / 仅启用智能体
+  const languageModels = (allModels ?? []).filter((m) => m.type === 'language')
+  const agentsList = (allAgents ?? []).filter((a) => a.enabled)
+  // 渲染期回落：选中的模型/模板被删（列表里没了）→ 显示层回落哨兵，请求不发
+  const essayModelValue = languageModels.some((m) => m.id === essayModelId)
+    ? essayModelId
+    : ESSAY_MODEL_DEFAULT
+  const essayTemplateValue = agentsList.some((a) => a.id === essayTemplateId)
+    ? essayTemplateId
+    : ESSAY_TEMPLATE_NONE
 
   // 生成刷新信号：runGeneration 收尾（成功/失败）递增，强制 visible 重读
   // 生成缓存 —— 生成完成后列表排序与角标即时刷新（产物在 then 落盘，先于 finally）
@@ -526,13 +629,19 @@ export function QuestionBankPanel() {
   // 工作台水合：detailId 变化时按题目×kind 从缓存恢复（ready 直接展示、
   // idle 折叠一行，设计稿 1.5.2）；生成中关弹窗 = 中断（token 失配 → 结果
   // 丢弃），重开回 idle 无残留 loading。依赖只跟 detailId：练过翻转等列表
-  // 刷新不得打断生成中的区块。
+  // 刷新不得打断生成中的区块。整篇生成区块同构水合（每题最新一篇）。
   useEffect(() => {
     runTokenRef.current += 1
     abortRef.current?.abort()
     setFlightKind(null)
     setNoteOpen(INITIAL_COLLAPSED)
     setNoteDrafts({ breakdown: '', q2_points: '', outline: '' })
+    setEssayBlock(INITIAL_ESSAY)
+    setEssayEnvId(ESSAY_ENV_NONE)
+    setEssayNoteDraft('')
+    setEssayNoteOpen(false)
+    setEssayModelId(ESSAY_MODEL_DEFAULT)
+    setEssayTemplateId(ESSAY_TEMPLATE_NONE)
     if (detailId == null) return
     const q = questions.find((item) => item.id === detailId)
     if (!q) return
@@ -544,6 +653,24 @@ export function QuestionBankPanel() {
     }
     setBlocks(nextBlocks)
     setCollapsed(nextCollapsed)
+    // 整篇生成缓存命中：直接 ready（展示生成时间/环境名/备注徽标），并把
+    // 缓存环境预选进 Select（env 已删除时渲染期回落哨兵，正文仍可读）
+    const cachedEssay = readQuestionEssay(detailId)
+    if (cachedEssay) {
+      setEssayBlock({
+        phase: 'ready',
+        content: cachedEssay.content,
+        generatedAt: cachedEssay.generatedAt,
+        note: cachedEssay.note,
+        envId: cachedEssay.envId,
+        envName: cachedEssay.envName,
+        ...(cachedEssay.modelName ? { modelName: cachedEssay.modelName } : {}),
+        ...(cachedEssay.templateName
+          ? { templateName: cachedEssay.templateName }
+          : {}),
+      })
+      setEssayEnvId(cachedEssay.envId)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 故意只跟 detailId：列表刷新不打断生成中区块
   }, [detailId])
 
@@ -840,6 +967,125 @@ export function QuestionBankPanel() {
       })
   }
 
+  // 整篇生成（runGeneration 同款骨架）：单飞锁 + run-token 丢弃 + abort
+  // 中止语义一致。请求体 = 考试元数据 + env_id + 备注（ADR-017 唯一认可
+  // 的红线扩展：env 上下文由服务端解析，前端不携带 source 正文）。
+  const runEssayGeneration = (q: RuankaoQuestion) => {
+    const env = envList.find((item) => item.id === essayEnvId)
+    if (!env) return // 哨兵/悬空 id：触发按钮已禁用，防御
+    const token = runTokenRef.current
+    const trimmedNote = essayNoteDraft.trim() || undefined
+    // 模型/提示词模板（哨兵→不传=系统默认/不使用）；名称进缓存供 ready 态回显
+    const modelSel =
+      essayModelValue !== ESSAY_MODEL_DEFAULT
+        ? languageModels.find((m) => m.id === essayModelValue)
+        : undefined
+    const templateSel =
+      essayTemplateValue !== ESSAY_TEMPLATE_NONE
+        ? agentsList.find((a) => a.id === essayTemplateValue)
+        : undefined
+    const modelName = modelSel?.name || modelSel?.id
+    const templateName = templateSel?.name || templateSel?.id
+    setFlightKind('essay')
+    setEssayBlock({ phase: 'generating' })
+    setEssayNoteOpen(false)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    streamStatsRef.current = {
+      deltaTimes: [],
+      chars: 0,
+      tail: '',
+      startedAt:
+        typeof performance !== 'undefined' ? performance.now() : Date.now(),
+      peakTps: 0,
+    }
+    ruankaoQuestionsApi
+      .essayGenerateStream(
+        {
+          env_id: env.id,
+          title: q.title,
+          year: q.year.trim() || undefined,
+          domain: q.domain.trim() || undefined,
+          prompts: {
+            q1: q.q1.trim() || undefined,
+            q2: q.q2.trim() || undefined,
+            q3: q.q3.trim() || undefined,
+          },
+          note: trimmedNote,
+          ...(modelSel ? { model_id: modelSel.id } : {}),
+          ...(templateSel ? { agent_id: templateSel.id } : {}),
+        },
+        (delta) => {
+          const stats = streamStatsRef.current
+          stats.deltaTimes.push(
+            typeof performance !== 'undefined'
+              ? performance.now()
+              : Date.now(),
+          )
+          stats.chars += delta.length
+          stats.tail = (stats.tail + delta).slice(-60)
+        },
+        controller.signal,
+        (stage) => {
+          // 阶段推进只进 generating 块（runGeneration 同款乱序防回退规则）
+          setEssayBlock((prev) => {
+            if (prev.phase !== 'generating') return prev
+            if (
+              (stage === 'waiting' || stage === 'preparing') &&
+              (prev.stage === 'generating' || prev.stage === 'thinking')
+            ) {
+              return prev
+            }
+            if (prev.stage === stage) return prev
+            return { ...prev, stage }
+          })
+        },
+      )
+      .then((content) => {
+        if (runTokenRef.current !== token) return // 弹窗已关/已切题 → 结果丢弃
+        const generatedAt = nowIso()
+        saveQuestionEssay(q.id, {
+          envId: env.id,
+          envName: env.name,
+          content,
+          generatedAt,
+          note: trimmedNote,
+          ...(modelName ? { modelName } : {}),
+          ...(templateName ? { templateName } : {}),
+        })
+        setEssayBlock({
+          phase: 'ready',
+          content,
+          generatedAt,
+          note: trimmedNote,
+          envId: env.id,
+          envName: env.name,
+          ...(modelName ? { modelName } : {}),
+          ...(templateName ? { templateName } : {}),
+        })
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          // 终止=丢弃本次运行（runGeneration 同语义）：token 仍匹配 → 回
+          // idle 可再生成；关弹窗/切题的 abort 在水合 effect 已重置。
+          if (runTokenRef.current === token) {
+            setEssayBlock({ phase: 'idle' })
+          }
+          return
+        }
+        if (runTokenRef.current !== token) return
+        setEssayBlock({
+          phase: 'error',
+          errorKey: essayGenerationErrorKey(error),
+        })
+      })
+      .finally(() => {
+        if (runTokenRef.current !== token) return // 关弹窗/切题：结果已丢弃
+        setFlightKind(null)
+      })
+  }
+
   // 流式指标节流：500ms 一帧（逐 delta setState 会把渲染打满），峰值在
   // ref 内只增不减，帧间由 computeStreamMetrics 统一口径
   useEffect(() => {
@@ -857,6 +1103,13 @@ export function QuestionBankPanel() {
         stats.peakTps,
       )
       stats.peakTps = sample.peakTps
+      if (flightKind === 'essay') {
+        // 整篇生成区块独立状态机（展开既有块：保留 SSE stage 不抹掉阶段行）
+        setEssayBlock((prev) =>
+          prev.phase === 'generating' ? { ...prev, stream: sample } : prev,
+        )
+        return
+      }
       setBlocks((prev) =>
         prev[flightKind].phase === 'generating'
           ? {
@@ -912,6 +1165,35 @@ export function QuestionBankPanel() {
     } else {
       toast.error(t('ruankao.questionBank.handoffNoNotebook'))
     }
+  }
+
+  // 整篇复制：全文进剪贴板；失败走既有兜底弹窗（doneKey 分流到整篇文案）
+  const handleEssayCopy = async (content: string) => {
+    try {
+      if (
+        typeof navigator === 'undefined' ||
+        !navigator.clipboard ||
+        typeof navigator.clipboard.writeText !== 'function'
+      ) {
+        throw new Error('clipboard unavailable')
+      }
+      await navigator.clipboard.writeText(content)
+      toast.success(t('ruankao.questionBank.essayGen.copyDone'))
+    } catch {
+      setFallbackCopy({
+        text: content,
+        doneKey: 'ruankao.questionBank.essayGen.copyDone',
+      })
+    }
+  }
+
+  // 整篇重新生成：备注→确认覆盖（applyNote 同款交互，confirm 文案复用
+  // overwriteConfirm——含「覆盖」语义），确认后携当前环境与备注重发
+  const applyEssayNote = (q: RuankaoQuestion) => {
+    if (!window.confirm(t('ruankao.questionBank.workbench.overwriteConfirm'))) {
+      return
+    }
+    runEssayGeneration(q)
   }
 
   // 重新生成：展开备注框；覆盖 confirm 在 apply 时弹出（文案含「覆盖」语义）
@@ -1084,6 +1366,22 @@ export function QuestionBankPanel() {
       </div>
     </div>
   )
+
+  // 整篇生成区块派生态：Select 有效值（缓存环境已删除等悬空 id 渲染期
+  // 回落哨兵）、触发禁态（单飞 + 未选环境）与状态行文案（复用三区块键）
+  const essayEnvValue = envList.some((env) => env.id === essayEnvId)
+    ? essayEnvId
+    : ESSAY_ENV_NONE
+  const essayEnvSelected = essayEnvValue !== ESSAY_ENV_NONE
+  const essayTriggerDisabled = flightKind !== null || !essayEnvSelected
+  const essayStatusText =
+    essayBlock.phase === 'idle'
+      ? t('ruankao.questionBank.workbench.statusIdle')
+      : essayBlock.phase === 'generating'
+        ? t('ruankao.questionBank.workbench.statusGenerating')
+        : essayBlock.phase === 'ready'
+          ? t('ruankao.questionBank.workbench.statusReady')
+          : t('ruankao.questionBank.workbench.statusError')
 
   if (!ready) {
     return (
@@ -1571,8 +1869,7 @@ export function QuestionBankPanel() {
                                 )}
                               </p>
                             </>
-                          )}
-                          {state.phase === 'ready' && state.content && (
+                          )}                          {state.phase === 'ready' && state.content && (
                             <>
                               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                                 <span
@@ -1677,10 +1974,307 @@ export function QuestionBankPanel() {
                     </div>
                   )
                 })}
+                {/* 第 4 区块：整篇生成。环境 Select + 可选备注 + 生成按钮；
+                    生成中并入面板级单飞（GenerationStatusPanel + 停止按钮）；
+                    ready 展示正文（pre-wrap）/总字数/生成时间/环境名 + 复制
+                    全文/重新生成（备注→确认覆盖同款）。请求体 = 考试元数据 +
+                    env_id + 备注（ADR-017 唯一认可的红线扩展）。 */}
+                <div
+                  className="rounded-md border"
+                  data-testid="ruankao-qbank-essay-block"
+                >
+                  <div className="flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      <span className="truncate text-sm font-medium">
+                        {t('ruankao.questionBank.essayGen.title')}
+                      </span>
+                      <span
+                        className="shrink-0 text-xs text-muted-foreground"
+                        data-testid="ruankao-qbank-essay-status"
+                      >
+                        {essayStatusText}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {essayBlock.phase === 'ready' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={flightKind !== null}
+                            data-testid="ruankao-qbank-essay-regenerate"
+                            onClick={() => setEssayNoteOpen((prev) => !prev)}
+                          >
+                            {t('ruankao.questionBank.essayGen.regenerate')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            data-testid="ruankao-qbank-essay-copy"
+                            onClick={() =>
+                              handleEssayCopy(essayBlock.content ?? '')
+                            }
+                          >
+                            <Copy className="h-4 w-4" />
+                            {t('ruankao.questionBank.essayGen.copy')}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 border-t px-3 py-3">
+                    {/* 环境选择行常驻（ready 态重新生成也用当前选择）；空
+                        列表给「先去项目环境页创建」引导提示 */}
+                    <div className="grid gap-2">
+                      <Label htmlFor="ruankao-qbank-essay-env">
+                        {t('ruankao.questionBank.essayGen.envLabel')}
+                      </Label>
+                      {envList.length === 0 ? (
+                        <p
+                          className="text-sm text-muted-foreground"
+                          data-testid="ruankao-qbank-essay-env-empty"
+                        >
+                          {t('ruankao.questionBank.essayGen.envEmpty')}
+                        </p>
+                      ) : (
+                        <Select value={essayEnvValue} onValueChange={setEssayEnvId}>
+                          <SelectTrigger
+                            size="sm"
+                            className="w-64"
+                            disabled={flightKind !== null}
+                            data-testid="ruankao-qbank-essay-env-select"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {/* Radix SelectItem 禁空串 value：哨兵项占位未选 */}
+                            <SelectItem value={ESSAY_ENV_NONE}>
+                              {t('ruankao.questionBank.essayGen.envNone')}
+                            </SelectItem>
+                            {envList.map((env) => (
+                              <SelectItem key={env.id} value={env.id}>
+                                {env.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    {/* 模型 / 提示词模板（=智能体，快捷问答侧边卡同源数据）；
+                        哨兵=系统默认聊天模型 / 不使用，悬空 id 渲染期回落 */}
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="ruankao-qbank-essay-model">
+                          {t('ruankao.questionBank.essayGen.modelLabel')}
+                        </Label>
+                        <Select
+                          value={essayModelValue}
+                          onValueChange={setEssayModelId}
+                        >
+                          <SelectTrigger
+                            size="sm"
+                            disabled={flightKind !== null}
+                            data-testid="ruankao-qbank-essay-model-select"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ESSAY_MODEL_DEFAULT}>
+                              {t('ruankao.questionBank.essayGen.modelDefault')}
+                            </SelectItem>
+                            {languageModels.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.name || m.id}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="ruankao-qbank-essay-template">
+                          {t('ruankao.questionBank.essayGen.templateLabel')}
+                        </Label>
+                        <Select
+                          value={essayTemplateValue}
+                          onValueChange={setEssayTemplateId}
+                        >
+                          <SelectTrigger
+                            size="sm"
+                            disabled={flightKind !== null}
+                            data-testid="ruankao-qbank-essay-template-select"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ESSAY_TEMPLATE_NONE}>
+                              {t('ruankao.questionBank.essayGen.templateNone')}
+                            </SelectItem>
+                            {agentsList.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    {essayBlock.phase === 'generating' && (
+                      <>
+                        <GenerationStatusPanel
+                          title={t('ruankao.questionBank.essayGen.title')}
+                          metrics={
+                            essayBlock.stream ?? {
+                              tokens: 0,
+                              chars: 0,
+                              tail: '',
+                              speedTps: 0,
+                              peakTps: 0,
+                              elapsedMs: 0,
+                            }
+                          }
+                          testId="ruankao-qbank-essay-stream"
+                          stage={essayBlock.stage}
+                          onStop={() => abortRef.current?.abort()}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          {t('ruankao.questionBank.workbench.interruptHint')}
+                        </p>
+                      </>
+                    )}
+                    {essayBlock.phase === 'ready' && essayBlock.content && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span data-testid="ruankao-qbank-essay-generated-at">
+                            {t('ruankao.questionBank.workbench.generatedAt', {
+                              time: essayBlock.generatedAt
+                                ? new Date(essayBlock.generatedAt).toLocaleString()
+                                : '',
+                            })}
+                          </span>
+                          <span data-testid="ruankao-qbank-essay-env-name">
+                            {t('ruankao.questionBank.essayGen.envUsed', {
+                              name: essayBlock.envName ?? '',
+                            })}
+                          </span>
+                          {essayBlock.modelName && (
+                            <span data-testid="ruankao-qbank-essay-model-name">
+                              {t('ruankao.questionBank.essayGen.modelUsed', {
+                                name: essayBlock.modelName,
+                              })}
+                            </span>
+                          )}
+                          {essayBlock.templateName && (
+                            <span data-testid="ruankao-qbank-essay-template-name">
+                              {t('ruankao.questionBank.essayGen.templateUsed', {
+                                name: essayBlock.templateName,
+                              })}
+                            </span>
+                          )}
+                          {essayBlock.note && (
+                            <Badge variant="outline">
+                              {t('ruankao.questionBank.workbench.noteBadge')}
+                            </Badge>
+                          )}
+                        </div>
+                        <p
+                          className="whitespace-pre-wrap text-sm"
+                          data-testid="ruankao-qbank-essay-content"
+                        >
+                          {essayBlock.content}
+                        </p>
+                        <p
+                          className="text-xs text-muted-foreground"
+                          data-testid="ruankao-qbank-essay-char-count"
+                        >
+                          {t('ruankao.questionBank.essayGen.charCount', {
+                            count: countChars(essayBlock.content),
+                          })}
+                        </p>
+                      </>
+                    )}
+                    {essayBlock.phase === 'error' && (
+                      <p
+                        className="text-sm text-destructive"
+                        data-testid="ruankao-qbank-essay-error"
+                      >
+                        {t(
+                          essayBlock.errorKey ??
+                            'ruankao.questionBank.essayGen.errorModel',
+                        )}
+                      </p>
+                    )}
+                    {(essayBlock.phase === 'idle' ||
+                      essayBlock.phase === 'error') && (
+                      <div className="grid gap-2">
+                        <Label htmlFor="ruankao-qbank-essay-note">
+                          {t('ruankao.questionBank.essayGen.noteLabel')}
+                        </Label>
+                        <Textarea
+                          id="ruankao-qbank-essay-note"
+                          value={essayNoteDraft}
+                          placeholder={t(
+                            'ruankao.questionBank.essayGen.notePlaceholder',
+                          )}
+                          onChange={(event) =>
+                            setEssayNoteDraft(event.target.value)
+                          }
+                          data-testid="ruankao-qbank-essay-note-input"
+                        />
+                        <div>
+                          <Button
+                            size="sm"
+                            disabled={essayTriggerDisabled}
+                            data-testid="ruankao-qbank-essay-generate"
+                            onClick={() => runEssayGeneration(detailQuestion)}
+                          >
+                            {t('ruankao.questionBank.essayGen.generate')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {essayBlock.phase === 'ready' && essayNoteOpen && (
+                      <div className="grid gap-2 border-t pt-3">
+                        <Label htmlFor="ruankao-qbank-essay-note">
+                          {t('ruankao.questionBank.essayGen.noteLabel')}
+                        </Label>
+                        <Textarea
+                          id="ruankao-qbank-essay-note"
+                          value={essayNoteDraft}
+                          placeholder={t(
+                            'ruankao.questionBank.essayGen.notePlaceholder',
+                          )}
+                          onChange={(event) =>
+                            setEssayNoteDraft(event.target.value)
+                          }
+                          data-testid="ruankao-qbank-essay-note-input"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEssayNoteOpen(false)}
+                          >
+                            {t('common.cancel')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={essayTriggerDisabled}
+                            data-testid="ruankao-qbank-essay-note-apply"
+                            onClick={() => applyEssayNote(detailQuestion)}
+                          >
+                            {t('ruankao.questionBank.workbench.noteApply')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <DialogFooter className="flex flex-wrap items-center gap-2 sm:justify-between">
-                {/* D①/D② 完整文章通道：原样保留（红线 5） */}
+                {/* D①/D② 完整文章通道（红线 5）：有专属范文 → 阅读；无 →
+                    「无对应范文」弱提示 + D② 生成引导 */}
                 {readSourceIdFor(detailQuestion) ? (
                   <Button
                     size="sm"
@@ -1691,14 +2285,22 @@ export function QuestionBankPanel() {
                     {t('ruankao.questionBank.actionFullEssayRead')}
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    data-testid="ruankao-qbank-detail-action-full-generate"
-                    onClick={() => handleFullEssayGenerate(detailQuestion)}
-                  >
-                    <Wand2 className="h-4 w-4" />
-                    {t('ruankao.questionBank.actionFullEssayGenerate')}
-                  </Button>
+                  <>
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid="ruankao-qbank-detail-no-essay"
+                    >
+                      {t('ruankao.questionBank.noModelEssay')}
+                    </span>
+                    <Button
+                      size="sm"
+                      data-testid="ruankao-qbank-detail-action-full-generate"
+                      onClick={() => handleFullEssayGenerate(detailQuestion)}
+                    >
+                      <Wand2 className="h-4 w-4" />
+                      {t('ruankao.questionBank.actionFullEssayGenerate')}
+                    </Button>
+                  </>
                 )}
               </DialogFooter>
             </>

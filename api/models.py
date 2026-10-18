@@ -1933,6 +1933,24 @@ class QuestionGenerateRequest(BaseModel):
     note: str = ""
 
 
+# 整篇生成（essay draft）请求体：题目元数据与 QuestionGenerateRequest 同构
+# （无 kind），外加 env_id —— 项目环境由服务端按 id 取并经
+# render_project_env_context 的验证门渲染成上下文；取不到/门未开在流前 422
+# no_env。红线（ADR-017 扩展）：语境 = 考试元数据 + 备注 + 考生本人的项目
+# 环境数据，仍无任何范文/检索通道。model_id/agent_id（UI 名「提示词模板」）
+# 走 quick_chat 同款解析：智能体悬空/禁用降级为默认，显式模型优先于智能体
+# 绑定模型；智能体 system_prompt 仅作附加写作要求注入，压不过红线。
+class QuestionEssayGenerateRequest(BaseModel):
+    env_id: str = ""
+    title: str = ""
+    year: str = ""
+    domain: str = ""
+    prompts: QuestionGeneratePrompts = Field(default_factory=QuestionGeneratePrompts)
+    note: str = ""
+    model_id: str = ""
+    agent_id: str = ""
+
+
 class QuestionBreakdownAngle(BaseModel):
     name: str
     thesis_hint: str

@@ -979,6 +979,23 @@ export interface QuestionGenerateRequest {
   note?: string
 }
 
+// Full-essay generation (整篇生成, POST /api/ruankao/questions/essay/generate/stream).
+// The one sanctioned red-line extension (ADR-017): beyond exam metadata + note it
+// also carries env_id, resolved server-side through the same verified-snapshot
+// channel chat uses — the only added context is the candidate's own project env.
+// model_id (explicit model) and agent_id (提示词模板 — the agent's system prompt
+// becomes style-only extra instructions) follow the quick-chat resolution chain.
+export interface QuestionEssayGenerateRequest {
+  env_id: string
+  title: string
+  year?: string
+  domain?: string
+  prompts?: QuestionGeneratePrompts
+  note?: string
+  model_id?: string
+  agent_id?: string
+}
+
 export interface BreakdownAngle {
   name: string
   thesis_hint: string

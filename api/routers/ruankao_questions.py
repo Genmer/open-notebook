@@ -24,6 +24,18 @@ Red line (ADR-017): the request carries ONLY exam metadata (title / year /
 domain / three question prompts) plus the candidate's own note; the
 pipeline does no retrieval, so marked model essays are unreachable by
 construction.
+
+POST /ruankao/questions/essay/generate/stream — 整篇生成 (one full essay
+draft) SSE endpoint. Same event grammar as the stream twin above (stage /
+delta / complete / error + 15s ping + disconnect-cancels-render), except
+``complete`` carries the plain-text draft in ``content`` (no JSON product,
+so no result wrapping). The one sanctioned red-line extension: the request
+also carries env_id, resolved server-side through the SAME async channel
+chat uses (api.project_env_service.render_project_env_context — verified
+snapshot gate, dangling refs degrade); unresolvable/closed gate raises
+422 no_env BEFORE the stream starts. Still no retrieval, no notebook, no
+model-essay text — the only added context is the candidate's own project
+environment.
 """
 
 import asyncio
@@ -39,14 +51,18 @@ from api.models import (
     OutlineResult,
     Q2PointsResult,
     QuestionBreakdownAngle,
+    QuestionEssayGenerateRequest,
     QuestionGeneratePrompts,
     QuestionGenerateRequest,
     QuestionGenerateResponse,
     QuestionOutlineParagraph,
     QuestionQ2Point,
 )
+from api.project_env_service import render_project_env_context
+from api.routers._chat_shared import resolve_agent_binding
 from open_notebook.ai.ruankao_question_pipeline import (
     render_question_breakdown,
+    render_question_essay,
     render_question_outline,
     render_question_q2_points,
 )
@@ -277,6 +293,129 @@ async def generate_question_workbench_stream(
         # block cancels the task, and the in-flight model call is aborted.
         # "preparing" is queued before the first yield so the client sees the
         # stream is alive even while the first model call is still pending.
+        queue.put_nowait({"type": "stage", "stage": "preparing"})
+        task = asyncio.create_task(_render())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=_STREAM_KEEPALIVE_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        finally:
+            task.cancel()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/ruankao/questions/essay/generate/stream")
+async def generate_question_essay_stream(
+    request: QuestionEssayGenerateRequest,
+) -> StreamingResponse:
+    """SSE 整篇生成: one full plain-text essay draft grounded in the
+    candidate's own project environment. Event grammar identical to the
+    workbench stream (stage preparing/waiting/thinking/generating → delta →
+    complete/error, 15s ping, client disconnect cancels the render); the
+    ``complete`` event carries the draft itself in ``content`` (bare-text
+    product — no JSON result wrapping). Pre-stream validation: empty title →
+    422 no_title; env unresolvable or gate closed → 422 no_env. Stateless —
+    nothing is persisted."""
+    if not request.title.strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "题目缺少标题，无法生成",
+                "reason": "no_title",
+            },
+        )
+    env_id = (request.env_id or "").strip()
+    # 与 chat 同一条异步取 env 通道 + 验证门渲染（verified snapshot 才可注入；
+    # dangling/未验证都拿不到 text）——取不到可注入上下文就在流前 422。
+    env_context = await render_project_env_context(env_id)
+    env_text = str((env_context or {}).get("text") or "").strip()
+    if not env_text:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "未找到可用的项目环境，无法生成整篇论文",
+                "reason": "no_env",
+            },
+        )
+
+    # 模型/提示词模板（=智能体）解析，quick_chat 同款：悬空/禁用智能体降级为
+    # 默认（不报错）；模型优先级 显式 model_id > 智能体绑定 > 系统默认。
+    agent = await resolve_agent_binding(request.agent_id or None)
+    model_id = (request.model_id or "").strip() or (
+        agent.model_id if agent is not None else None
+    )
+    extra_instructions = (
+        str(agent.system_prompt or "").strip() if agent is not None else ""
+    )
+
+    prompts = request.prompts or QuestionGeneratePrompts()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _put_stage(stage: str) -> None:
+        queue.put_nowait({"type": "stage", "stage": stage})
+
+    async def _render() -> None:
+        def _put_delta(delta: str) -> None:
+            queue.put_nowait({"type": "delta", "content": delta})
+
+        try:
+            content = await asyncio.wait_for(
+                render_question_essay(
+                    title=request.title.strip(),
+                    year=request.year,
+                    domain=request.domain,
+                    q1=prompts.q1,
+                    q2=prompts.q2,
+                    q3=prompts.q3,
+                    note=request.note,
+                    env_id=env_id,
+                    env_context=env_text,
+                    model_id=model_id,
+                    extra_instructions=extra_instructions,
+                    on_delta=_put_delta,
+                    on_stage=_put_stage,
+                ),
+                timeout=QUESTION_GENERATE_TIMEOUT_SECONDS,
+            )
+            await queue.put({"type": "complete", "content": content})
+        except asyncio.CancelledError:
+            raise  # client disconnect: propagate, nothing to report
+        except asyncio.TimeoutError:
+            await queue.put({"type": "error", "reason": "model_timeout"})
+        except ValueError as e:
+            logger.warning(f"Question essay stream generation failed: {e}")
+            await queue.put({"type": "error", "reason": "model_error"})
+        except OpenNotebookError as e:
+            await queue.put(
+                {"type": "error", "reason": "model_error", "message": str(e)}
+            )
+        except Exception as e:
+            logger.error(f"Error streaming question essay: {e}")
+            await queue.put({"type": "error", "reason": "model_error"})
+        finally:
+            await queue.put(None)
+
+    async def event_stream():
+        # Same lifetime contract as the workbench stream: the render task is
+        # owned by this generator, so a client disconnect cancels the in-flight
+        # model call (stateless — nothing to keep, quota saved).
         queue.put_nowait({"type": "stage", "stage": "preparing"})
         task = asyncio.create_task(_render())
         try:
